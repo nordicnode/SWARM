@@ -12,6 +12,9 @@ using DragDropEffects = System.Windows.DragDropEffects;
 using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using Brush = System.Windows.Media.Brush;
 using Swarm.UI;
+using System.Windows.Forms;
+using Drawing = System.Drawing;
+using Swarm.Helpers;
 
 namespace Swarm;
 
@@ -21,6 +24,7 @@ public partial class MainWindow : Window
     private readonly DiscoveryService _discoveryService;
     private readonly TransferService _transferService;
     private readonly SyncService _syncService;
+    private NotifyIcon? _trayIcon;
     private Peer? _selectedPeer;
 
     public MainWindow()
@@ -49,8 +53,35 @@ public partial class MainWindow : Window
         _syncService.FileChanged += OnSyncFileChanged;
         _syncService.IncomingSyncFile += OnIncomingSyncFile;
 
+        InitializeTrayIcon();
+
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
+    }
+
+    private void InitializeTrayIcon()
+    {
+        try
+        {
+            _trayIcon = new NotifyIcon
+            {
+                Icon = Drawing.Icon.ExtractAssociatedIcon(Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty),
+                Text = "Swarm",
+                Visible = true
+            };
+
+            _trayIcon.Click += (s, e) =>
+            {
+                Show();
+                WindowState = WindowState.Normal;
+                ShowInTaskbar = true;
+                Activate();
+            };
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to initialize tray icon: {ex.Message}");
+        }
     }
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -75,13 +106,41 @@ public partial class MainWindow : Window
 
         UpdatePeerUI();
         UpdateSyncUI();
+
+        // Check if we should start minimized
+        if (_settings.StartMinimized)
+        {
+            HideToTray();
+        }
+    }
+
+    private void HideToTray()
+    {
+        WindowState = WindowState.Minimized;
+        Hide();
+        ShowInTaskbar = false;
     }
 
     private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (_trayIcon != null)
+        {
+            _trayIcon.Visible = false;
+            _trayIcon.Dispose();
+        }
+
         _syncService.Dispose();
         _discoveryService.Dispose();
         _transferService.Dispose();
+    }
+
+    protected override void OnStateChanged(EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized)
+        {
+            HideToTray();
+        }
+        base.OnStateChanged(e);
     }
 
     private void UpdatePeerUI()
@@ -154,7 +213,14 @@ public partial class MainWindow : Window
 
     private void OnIncomingFileRequest(string fileName, string senderName, long fileSize, Action<bool> acceptCallback)
     {
-        var sizeStr = FormatFileSize(fileSize);
+        if (!_settings.NotificationsEnabled)
+        {
+            // Auto-deny if notifications are disabled (unless it's auto-accepted by other logic)
+            acceptCallback(false);
+            return;
+        }
+
+        var sizeStr = FileHelpers.FormatBytes(fileSize);
         var result = MessageBox.Show(
             $"{senderName} wants to send you:\n\n{fileName} ({sizeStr})\n\nAccept?",
             "Incoming File",
@@ -178,7 +244,7 @@ public partial class MainWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
-            if (transfer.Direction == TransferDirection.Incoming && _settings.ShowTransferComplete)
+            if (transfer.Direction == TransferDirection.Incoming && _settings.NotificationsEnabled && _settings.ShowTransferComplete)
             {
                 MessageBox.Show($"File received:\n{transfer.LocalPath}", "Transfer Complete", MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -405,20 +471,5 @@ public partial class MainWindow : Window
 
     #endregion
 
-    #region Helpers
 
-    private static string FormatFileSize(long bytes)
-    {
-        string[] sizes = ["B", "KB", "MB", "GB", "TB"];
-        int order = 0;
-        double size = bytes;
-        while (size >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            size /= 1024;
-        }
-        return $"{size:0.##} {sizes[order]}";
-    }
-
-    #endregion
 }

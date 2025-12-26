@@ -13,8 +13,8 @@ namespace Swarm.Core;
 /// </summary>
 public class TransferService : IDisposable
 {
-    private const int BUFFER_SIZE = 1024 * 1024; // 1MB buffer for speed
-    private const string PROTOCOL_HEADER = "SWARM_TRANSFER:1.0";
+    private const int BUFFER_SIZE = ProtocolConstants.DEFAULT_BUFFER_SIZE;
+    private const string PROTOCOL_HEADER = ProtocolConstants.TRANSFER_HEADER;
 
     private readonly Settings _settings;
     private TcpListener? _listener;
@@ -89,7 +89,7 @@ public class TransferService : IDisposable
                 var header = reader.ReadString();
                 
                 // Check if this is a sync message
-                if (header == SyncProtocol.SYNC_HEADER)
+                if (header == ProtocolConstants.SYNC_HEADER)
                 {
                     await HandleSyncMessage(reader, stream, client, ct);
                     return;
@@ -163,27 +163,27 @@ public class TransferService : IDisposable
 
         switch (messageType)
         {
-            case SyncProtocol.MSG_FILE_CHANGED:
+            case ProtocolConstants.MSG_FILE_CHANGED:
                 await HandleSyncFileChanged(reader, stream, remotePeer, ct);
                 break;
 
-            case SyncProtocol.MSG_FILE_DELETED:
+            case ProtocolConstants.MSG_FILE_DELETED:
                 HandleSyncFileDeleted(reader, remotePeer);
                 break;
 
-            case SyncProtocol.MSG_DIR_CREATED:
+            case ProtocolConstants.MSG_DIR_CREATED:
                 HandleSyncDirCreated(reader, remotePeer);
                 break;
 
-            case SyncProtocol.MSG_DIR_DELETED:
+            case ProtocolConstants.MSG_DIR_DELETED:
                 HandleSyncDirDeleted(reader, remotePeer);
                 break;
 
-            case SyncProtocol.MSG_SYNC_MANIFEST:
+            case ProtocolConstants.MSG_SYNC_MANIFEST:
                 HandleSyncManifest(reader, remotePeer);
                 break;
 
-            case SyncProtocol.MSG_REQUEST_FILE:
+            case ProtocolConstants.MSG_REQUEST_FILE:
                 HandleSyncFileRequest(reader, remotePeer);
                 break;
 
@@ -459,8 +459,8 @@ public class TransferService : IDisposable
             using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
 
             // Send sync header and metadata
-            writer.Write(SyncProtocol.SYNC_HEADER);
-            writer.Write(SyncProtocol.MSG_FILE_CHANGED);
+            writer.Write(ProtocolConstants.SYNC_HEADER);
+            writer.Write(ProtocolConstants.MSG_FILE_CHANGED);
             writer.Write(syncFile.RelativePath);
             writer.Write(syncFile.ContentHash);
             writer.Write(syncFile.LastModified.ToBinary());
@@ -498,8 +498,8 @@ public class TransferService : IDisposable
             var stream = client.GetStream();
             using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
 
-            writer.Write(SyncProtocol.SYNC_HEADER);
-            writer.Write(SyncProtocol.MSG_FILE_DELETED);
+            writer.Write(ProtocolConstants.SYNC_HEADER);
+            writer.Write(ProtocolConstants.MSG_FILE_DELETED);
             writer.Write(syncFile.RelativePath);
             writer.Write(syncFile.IsDirectory);
 
@@ -524,8 +524,8 @@ public class TransferService : IDisposable
             var stream = client.GetStream();
             using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
 
-            writer.Write(SyncProtocol.SYNC_HEADER);
-            writer.Write(SyncProtocol.MSG_DIR_CREATED);
+            writer.Write(ProtocolConstants.SYNC_HEADER);
+            writer.Write(ProtocolConstants.MSG_DIR_CREATED);
             writer.Write(syncFile.RelativePath);
 
             System.Diagnostics.Debug.WriteLine($"Sync dir sent: {syncFile.RelativePath} to {peer.Name}");
@@ -549,8 +549,8 @@ public class TransferService : IDisposable
             var stream = client.GetStream();
             using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
 
-            writer.Write(SyncProtocol.SYNC_HEADER);
-            writer.Write(SyncProtocol.MSG_SYNC_MANIFEST);
+            writer.Write(ProtocolConstants.SYNC_HEADER);
+            writer.Write(ProtocolConstants.MSG_SYNC_MANIFEST);
             
             var json = JsonSerializer.Serialize(manifest);
             writer.Write(json);
@@ -576,8 +576,8 @@ public class TransferService : IDisposable
             var stream = client.GetStream();
             using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
 
-            writer.Write(SyncProtocol.SYNC_HEADER);
-            writer.Write(SyncProtocol.MSG_REQUEST_FILE);
+            writer.Write(ProtocolConstants.SYNC_HEADER);
+            writer.Write(ProtocolConstants.MSG_REQUEST_FILE);
             writer.Write(relativePath);
 
             System.Diagnostics.Debug.WriteLine($"Sync file requested: {relativePath} from {peer.Name}");
@@ -600,8 +600,17 @@ public class TransferService : IDisposable
 
     public void Dispose()
     {
-        _cts?.Cancel();
-        _listener?.Stop();
-        _cts?.Dispose();
+        if (_cts != null)
+        {
+            _cts.Cancel();
+            _cts.Dispose();
+            _cts = null;
+        }
+
+        if (_listener != null)
+        {
+            _listener.Stop();
+            _listener = null;
+        }
     }
 }

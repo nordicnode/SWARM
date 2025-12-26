@@ -1,3 +1,5 @@
+using Swarm.Helpers;
+
 namespace Swarm.Models;
 
 /// <summary>
@@ -25,21 +27,11 @@ public class FileTransfer
             var elapsed = (DateTime.Now - StartTime).TotalSeconds;
             if (elapsed < 0.1) return "--";
             var bytesPerSecond = BytesTransferred / elapsed;
-            return FormatBytes(bytesPerSecond) + "/s";
+            return FileHelpers.FormatBytes(bytesPerSecond) + "/s";
         }
     }
 
-    private static string FormatBytes(double bytes)
-    {
-        string[] sizes = ["B", "KB", "MB", "GB", "TB"];
-        int order = 0;
-        while (bytes >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            bytes /= 1024;
-        }
-        return $"{bytes:0.##} {sizes[order]}";
-    }
+
 }
 
 public enum TransferDirection

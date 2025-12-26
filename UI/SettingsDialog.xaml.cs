@@ -33,6 +33,7 @@ public partial class SettingsDialog : Window
         StartMinimizedToggle.IsChecked = _workingSettings.StartMinimized;
         
         // Transfers
+        NotificationsToggle.IsChecked = _workingSettings.NotificationsEnabled;
         DownloadPathText.Text = ShortenPath(_workingSettings.DownloadPath);
         DownloadPathText.ToolTip = _workingSettings.DownloadPath;
         AutoAcceptToggle.IsChecked = _workingSettings.AutoAcceptFromTrusted;
@@ -125,6 +126,7 @@ public partial class SettingsDialog : Window
             ? Environment.MachineName 
             : DeviceNameTextBox.Text.Trim();
         _workingSettings.StartMinimized = StartMinimizedToggle.IsChecked ?? false;
+        _workingSettings.NotificationsEnabled = NotificationsToggle.IsChecked ?? true;
         _workingSettings.AutoAcceptFromTrusted = AutoAcceptToggle.IsChecked ?? false;
         _workingSettings.ShowTransferComplete = ShowCompleteToggle.IsChecked ?? true;
         _workingSettings.IsSyncEnabled = SyncEnabledToggle.IsChecked ?? true;

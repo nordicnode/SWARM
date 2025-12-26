@@ -83,6 +83,22 @@
                     <!-- ===== TRANSFERS SECTION ===== -->
                     <TextBlock Text="TRANSFERS" Style="{StaticResource SettingsSectionStyle}"/>
                     
+                    <!-- Notifications Enabled -->
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Show Notifications" Style="{StaticResource SettingsLabelStyle}"/>
+                            <TextBlock Text="Show dialogs for incoming files and other alerts" 
+                                       Style="{StaticResource SettingsDescriptionStyle}"/>
+                        </StackPanel>
+                        <CheckBox x:Name="NotificationsToggle" Grid.Column="1" 
+                                  Style="{StaticResource ToggleSwitchStyle}"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
+                    
                     <!-- Download Location -->
                     <StackPanel Margin="0,0,0,16">
                         <TextBlock Text="Download Location" Style="{StaticResource SettingsLabelStyle}"/>

@@ -11,10 +11,10 @@ namespace Swarm.Core;
 /// </summary>
 public class DiscoveryService : IDisposable
 {
-    private const int DISCOVERY_PORT = 37420;
-    private const string PROTOCOL_HEADER = "SWARM:1.0";
-    private const int BROADCAST_INTERVAL_MS = 3000;
-    private const int PEER_TIMEOUT_SECONDS = 15;
+    private const int DISCOVERY_PORT = ProtocolConstants.DISCOVERY_PORT;
+    private const string PROTOCOL_HEADER = ProtocolConstants.DISCOVERY_HEADER;
+    private const int BROADCAST_INTERVAL_MS = ProtocolConstants.BROADCAST_INTERVAL_MS;
+    private const int PEER_TIMEOUT_SECONDS = ProtocolConstants.PEER_TIMEOUT_SECONDS;
 
     private UdpClient? _udpClient;
     private CancellationTokenSource? _cts;
@@ -190,7 +190,7 @@ public class DiscoveryService : IDisposable
         {
             try
             {
-                await Task.Delay(5000, ct);
+                await Task.Delay(ProtocolConstants.CLEANUP_INTERVAL_MS, ct);
                 CleanupStalePeers();
             }
             catch (OperationCanceledException) { break; }

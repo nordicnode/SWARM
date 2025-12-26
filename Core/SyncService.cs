@@ -24,11 +24,11 @@ public class SyncService : IDisposable
     
     // Debounce rapid changes
     private readonly ConcurrentDictionary<string, DateTime> _pendingChanges = new();
-    private const int DEBOUNCE_MS = 500;
+    private const int DEBOUNCE_MS = ProtocolConstants.SYNC_DEBOUNCE_MS;
     
     // Ignore list for files currently being written by sync
     private readonly ConcurrentDictionary<string, DateTime> _ignoreList = new();
-    private const int IGNORE_DURATION_MS = 5000;
+    private const int IGNORE_DURATION_MS = ProtocolConstants.SYNC_IGNORE_DURATION_MS;
 
     public string SyncFolderPath => _settings.SyncFolderPath;
     public bool IsEnabled => _settings.IsSyncEnabled;
@@ -522,7 +522,7 @@ public class SyncService : IDisposable
         }
         else
         {
-            await using var fileStream = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+            await using var fileStream = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None, ProtocolConstants.FILE_STREAM_BUFFER_SIZE, useAsync: true);
             await dataStream.CopyToAsync(fileStream);
         }
 
@@ -560,17 +560,10 @@ public class SyncService : IDisposable
 
     private static string ComputeFileHash(string filePath)
     {
-        try
-        {
-            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920);
-            using var sha = SHA256.Create();
-            var hash = sha.ComputeHash(stream);
-            return Convert.ToHexString(hash);
-        }
-        catch
-        {
-            return string.Empty;
-        }
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, ProtocolConstants.FILE_STREAM_BUFFER_SIZE);
+        using var sha = SHA256.Create();
+        var hash = sha.ComputeHash(stream);
+        return Convert.ToHexString(hash);
     }
 
     #endregion
