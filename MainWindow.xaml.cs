@@ -34,7 +34,7 @@ public partial class MainWindow : Window
         // Load settings
         _settings = Settings.Load();
 
-        _discoveryService = new DiscoveryService();
+        _discoveryService = new DiscoveryService(_settings.LocalId);
         _transferService = new TransferService(_settings);
         _syncService = new SyncService(_settings, _discoveryService, _transferService);
 
@@ -44,6 +44,7 @@ public partial class MainWindow : Window
 
         // Wire up events
         _discoveryService.Peers.CollectionChanged += (s, e) => UpdatePeerUI();
+        _discoveryService.BindingFailed += OnDiscoveryBindingFailed;
         _transferService.IncomingFileRequest += OnIncomingFileRequest;
         _transferService.TransferProgress += OnTransferProgress;
         _transferService.TransferCompleted += OnTransferCompleted;
@@ -52,6 +53,8 @@ public partial class MainWindow : Window
         _syncService.SyncStatusChanged += OnSyncStatusChanged;
         _syncService.FileChanged += OnSyncFileChanged;
         _syncService.IncomingSyncFile += OnIncomingSyncFile;
+        _syncService.SyncProgressChanged += OnSyncProgressChanged;
+        _syncService.FileConflictDetected += OnFileConflictDetected;
 
         InitializeTrayIcon();
 
@@ -178,7 +181,34 @@ public partial class MainWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
-            SyncStatusText.Text = status;
+            // Only update if we aren't showing progress, or if it's a "complete" status
+            if (SyncProgressBar.Visibility == Visibility.Collapsed || status.Contains("complete") || status.Contains("disabled"))
+            {
+                SyncStatusText.Text = status;
+                if (status.Contains("complete") || status.Contains("disabled"))
+                {
+                    SyncProgressBar.Visibility = Visibility.Collapsed;
+                }
+            }
+        });
+    }
+
+    private void OnSyncProgressChanged(SyncProgress progress)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (progress.TotalFiles > 0 && progress.CompletedFiles < progress.TotalFiles)
+            {
+                SyncProgressBar.Visibility = Visibility.Visible;
+                SyncProgressBar.Value = progress.CurrentFilePercent;
+                
+                SyncStatusText.Text = $"Syncing {progress.CompletedFiles + 1}/{progress.TotalFiles}: {Path.GetFileName(progress.CurrentFileName)}";
+            }
+            else
+            {
+                SyncProgressBar.Visibility = Visibility.Collapsed;
+                SyncStatusText.Text = "Sync complete";
+            }
         });
     }
 
@@ -208,6 +238,23 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() =>
         {
             System.Diagnostics.Debug.WriteLine($"Synced: {file.RelativePath}");
+        });
+    }
+
+    private void OnFileConflictDetected(string filePath, string backupPath)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            var fileName = Path.GetFileName(filePath);
+            var msg = $"Conflict detected in {fileName}. Backup created.";
+            
+            System.Diagnostics.Debug.WriteLine($"[CONFLICT] {filePath} backed up to {backupPath}");
+            
+            // Show tray notification if available
+            if (_trayIcon != null && _trayIcon.Visible && _settings.NotificationsEnabled)
+            {
+                _trayIcon.ShowBalloonTip(3000, "Sync Conflict", msg, ToolTipIcon.Info);
+            }
         });
     }
 
@@ -248,6 +295,20 @@ public partial class MainWindow : Window
             {
                 MessageBox.Show($"File received:\n{transfer.LocalPath}", "Transfer Complete", MessageBoxButton.OK, MessageBoxImage.Information);
             }
+        });
+    }
+
+    private void OnDiscoveryBindingFailed()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            MessageBox.Show(
+                "Could not bind to the standard discovery port (37420).\n\n" +
+                "You may not be visible to other peers, but you can still search for them.\n" +
+                "This usually happens if another application is using the port.",
+                "Discovery Warning",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
         });
     }
 

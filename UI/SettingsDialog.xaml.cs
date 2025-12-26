@@ -55,8 +55,8 @@ public partial class SettingsDialog : Window
     private void UpdateTrustedPeersList()
     {
         TrustedPeersListBox.ItemsSource = null;
-        TrustedPeersListBox.ItemsSource = _workingSettings.TrustedPeerIds;
-        NoTrustedPeersText.Visibility = _workingSettings.TrustedPeerIds.Count == 0 
+        TrustedPeersListBox.ItemsSource = _workingSettings.TrustedPeers;
+        NoTrustedPeersText.Visibility = _workingSettings.TrustedPeers.Count == 0 
             ? Visibility.Visible 
             : Visibility.Collapsed;
     }
@@ -112,10 +112,14 @@ public partial class SettingsDialog : Window
     private void RemoveTrustedPeer_Click(object sender, RoutedEventArgs e)
     {
         if (sender is System.Windows.Controls.Button button && 
-            button.DataContext is string peerId)
+            button.DataContext is Swarm.Models.TrustedPeer peer)
         {
-            _workingSettings.TrustedPeerIds.Remove(peerId);
-            UpdateTrustedPeersList();
+            var itemToRemove = _workingSettings.TrustedPeers.FirstOrDefault(p => p.Id == peer.Id);
+            if (itemToRemove != null)
+            {
+                _workingSettings.TrustedPeers.Remove(itemToRemove);
+                UpdateTrustedPeersList();
+            }
         }
     }
 

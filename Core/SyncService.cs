@@ -8,6 +8,14 @@ using Swarm.Models;
 
 namespace Swarm.Core;
 
+public struct SyncProgress
+{
+    public int TotalFiles { get; set; }
+    public int CompletedFiles { get; set; }
+    public string CurrentFileName { get; set; }
+    public double CurrentFilePercent { get; set; } // 0-100
+}
+
 /// <summary>
 /// Service for monitoring and synchronizing a local folder with peers.
 /// </summary>
@@ -38,6 +46,12 @@ public class SyncService : IDisposable
     public event Action<SyncedFile>? FileChanged;
     public event Action<string>? SyncStatusChanged;
     public event Action<SyncedFile>? IncomingSyncFile;
+    public event Action<string, string>? FileConflictDetected;
+    public event Action<SyncProgress>? SyncProgressChanged;
+
+    private int _totalFilesCount;
+    private int _completedFilesCount;
+    private object _progressLock = new();
 
     public SyncService(Settings settings, DiscoveryService discoveryService, TransferService transferService)
     {
@@ -46,32 +60,10 @@ public class SyncService : IDisposable
         _transferService = transferService;
 
         // Subscribe to TransferService sync events
-        _transferService.SyncFileReceived += async (syncFile, stream, peer) =>
-        {
-            await HandleIncomingSyncFile(syncFile, stream);
-        };
-        _transferService.SyncDeleteReceived += async (syncFile, peer) =>
-        {
-            await HandleIncomingSyncFile(syncFile, Stream.Null);
-        };
-        _transferService.SyncManifestReceived += async (manifest, peer) =>
-        {
-            await ProcessIncomingManifest(manifest, peer);
-        };
-        _transferService.SyncFileRequested += async (relativePath, peer) =>
-        {
-            // Peer is requesting a file from us
-            var manifest = GetManifest();
-            var file = manifest.FirstOrDefault(f => f.RelativePath == relativePath);
-            if (file != null)
-            {
-                var fullPath = Path.Combine(SyncFolderPath, relativePath);
-                if (File.Exists(fullPath))
-                {
-                    await _transferService.SendSyncFile(peer, fullPath, file);
-                }
-            }
-        };
+        _transferService.SyncFileReceived += OnSyncFileReceived;
+        _transferService.SyncDeleteReceived += OnSyncDeleteReceived;
+        _transferService.SyncManifestReceived += OnSyncManifestReceived;
+        _transferService.SyncFileRequested += OnSyncFileRequested;
     }
 
     /// <summary>
@@ -85,7 +77,7 @@ public class SyncService : IDisposable
         _settings.EnsureSyncFolderExists();
 
         // Run initialization in background to prevent UI freeze
-        Task.Run(() =>
+        Task.Run(async () =>
         {
             try
             {
@@ -93,7 +85,7 @@ public class SyncService : IDisposable
                 if (_cts.Token.IsCancellationRequested) return;
 
                 // Build initial file state
-                BuildInitialFileStates();
+                await BuildInitialFileStates();
 
                 // Check again before enabling watcher
                 if (_cts.Token.IsCancellationRequested) return;
@@ -187,7 +179,7 @@ public class SyncService : IDisposable
         SyncStatusChanged?.Invoke("Syncing...");
         
         // Rebuild local state
-        BuildInitialFileStates();
+        await BuildInitialFileStates();
         
         // Send manifest to all peers with sync enabled
         foreach (var peer in _discoveryService.Peers.Where(p => p.IsSyncEnabled))
@@ -258,6 +250,9 @@ public class SyncService : IDisposable
     /// </summary>
     public async Task ProcessIncomingManifest(IEnumerable<SyncedFile> remoteManifest, Peer sourcePeer)
     {
+        var filesToRequest = new List<string>();
+        var filesToSend = new List<SyncedFile>();
+
         foreach (var remoteFile in remoteManifest)
         {
             if (_fileStates.TryGetValue(remoteFile.RelativePath, out var localFile))
@@ -265,13 +260,36 @@ public class SyncService : IDisposable
                 // File exists locally - check for conflict
                 if (remoteFile.ContentHash != localFile.ContentHash)
                 {
-                    // Conflict! Use Last Write Wins
+                    // Check for future timestamp (Clock Drift Protection)
+                    if (remoteFile.LastModified > DateTime.UtcNow.AddMinutes(10))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[Warning] Peer {sourcePeer.Name} has file {remoteFile.RelativePath} from the future ({remoteFile.LastModified}). Ignoring to prevent corruption.");
+                        continue;
+                    }
+
+                    // Conflict resolution
+                    bool shouldRequest = false;
+
                     if (remoteFile.LastModified > localFile.LastModified)
                     {
-                        // Remote is newer - request the file
+                        // Remote is newer - Last Write Wins
+                        shouldRequest = true;
+                    }
+                    else if (remoteFile.LastModified == localFile.LastModified)
+                    {
+                        // Timestamps equal but content differs - Tie-break using ContentHash
+                        // Deterministic convergence: lexicographically smaller hash wins
+                        if (string.Compare(remoteFile.ContentHash, localFile.ContentHash, StringComparison.Ordinal) < 0)
+                        {
+                            shouldRequest = true;
+                        }
+                    }
+
+                    if (shouldRequest)
+                    {
                         await RequestFileFromPeer(sourcePeer, remoteFile.RelativePath);
                     }
-                    // Else: local is newer, we'll push our version during next sync
+                    // Else: local is newer (or wins tie-break), we'll push our version during next sync
                 }
             }
             else
@@ -279,6 +297,13 @@ public class SyncService : IDisposable
                 // File doesn't exist locally - request it
                 if (remoteFile.Action != SyncAction.Delete)
                 {
+                    // Check for future timestamp on new files too
+                    if (remoteFile.LastModified > DateTime.UtcNow.AddMinutes(10))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[Warning] Peer {sourcePeer.Name} offering new file {remoteFile.RelativePath} from the future. Ignoring.");
+                        continue;
+                    }
+                    
                     await RequestFileFromPeer(sourcePeer, remoteFile.RelativePath);
                 }
             }
@@ -298,7 +323,7 @@ public class SyncService : IDisposable
 
     #region Private Methods
 
-    private void BuildInitialFileStates()
+    private async Task BuildInitialFileStates()
     {
         _fileStates.Clear();
         
@@ -314,7 +339,7 @@ public class SyncService : IDisposable
                 _fileStates[relativePath] = new SyncedFile
                 {
                     RelativePath = relativePath,
-                    ContentHash = ComputeFileHash(filePath),
+                    ContentHash = await ComputeFileHash(filePath),
                     LastModified = fileInfo.LastWriteTimeUtc,
                     FileSize = fileInfo.Length,
                     Action = SyncAction.Create,
@@ -434,7 +459,7 @@ public class SyncService : IDisposable
         {
             // File exists - create or update
             var fileInfo = new FileInfo(fullPath);
-            var hash = await Task.Run(() => ComputeFileHash(fullPath));
+            var hash = await ComputeFileHash(fullPath);
             
             var action = _fileStates.ContainsKey(relativePath) ? SyncAction.Update : SyncAction.Create;
             
@@ -510,7 +535,16 @@ public class SyncService : IDisposable
             var fullPath = Path.Combine(_settings.SyncFolderPath, syncFile.RelativePath);
             if (File.Exists(fullPath))
             {
-                await _transferService.SendSyncFile(peer, fullPath, syncFile);
+                await _transferService.SendSyncFile(peer, fullPath, syncFile, (sent, total) => 
+                {
+                    ReportProgress(syncFile.RelativePath, (double)sent / total * 100);
+                });
+                
+                lock(_progressLock)
+                {
+                    _completedFilesCount++;
+                    ReportProgress(null, 0);
+                }
             }
         }
         else
@@ -544,13 +578,53 @@ public class SyncService : IDisposable
         }
         else
         {
+            // Conflict detection: If file exists and content differs, backup local version
+            if (File.Exists(localPath))
+            {
+                try
+                {
+                    var currentHash = await ComputeFileHash(localPath);
+                    if (currentHash != syncFile.ContentHash)
+                    {
+                        var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                        var backupPath = $"{localPath}.conflict-{timestamp}.bak";
+                        
+                        File.Copy(localPath, backupPath, overwrite: true);
+                        FileConflictDetected?.Invoke(localPath, backupPath);
+                        System.Diagnostics.Debug.WriteLine($"Conflict detected! Backed up to {backupPath}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Failed to process conflict backup: {ex.Message}");
+                }
+            }
+
             await FileHelpers.ExecuteWithRetryAsync(async () =>
             {
                 await using var fileStream = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None, ProtocolConstants.FILE_STREAM_BUFFER_SIZE, useAsync: true);
-                // Position stream to 0 just in case it was read from before (though unlikely here)
-                if (dataStream.CanSeek) dataStream.Position = 0;
-                await dataStream.CopyToAsync(fileStream);
+                
+                // Read exactly FileSize bytes
+                var buffer = new byte[ProtocolConstants.DEFAULT_BUFFER_SIZE]; // Use 1MB buffer from constants
+                long totalRead = 0;
+                while (totalRead < syncFile.FileSize)
+                {
+                    var toRead = (int)Math.Min(buffer.Length, syncFile.FileSize - totalRead);
+                    var bytesRead = await dataStream.ReadAsync(buffer.AsMemory(0, toRead));
+                    if (bytesRead == 0) throw new EndOfStreamException("Unexpected end of stream while receiving synced file");
+                    
+                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
+                    totalRead += bytesRead;
+
+                    ReportProgress(syncFile.RelativePath, (double)totalRead / syncFile.FileSize * 100);
+                }
             });
+
+            lock(_progressLock)
+            {
+                _completedFilesCount++;
+                ReportProgress(null, 0);
+            }
         }
 
         // Preserve modification time
@@ -566,6 +640,7 @@ public class SyncService : IDisposable
             }
         }
     }
+
 
     private void DeleteLocalFile(SyncedFile syncFile, string localPath)
     {
@@ -604,11 +679,63 @@ public class SyncService : IDisposable
         });
     }
 
+
+    private async void OnSyncFileReceived(SyncedFile syncFile, Stream stream, Peer peer)
+    {
+        await HandleIncomingSyncFile(syncFile, stream);
+    }
+
+    private async void OnSyncDeleteReceived(SyncedFile syncFile, Peer peer)
+    {
+        await HandleIncomingSyncFile(syncFile, Stream.Null);
+    }
+
+    private async void OnSyncManifestReceived(List<SyncedFile> manifest, Peer peer)
+    {
+        await ProcessIncomingManifest(manifest, peer);
+    }
+
+    private async void OnSyncFileRequested(string relativePath, Peer peer)
+    {
+        // Peer is requesting a file from us
+        var manifest = GetManifest();
+        var file = manifest.FirstOrDefault(f => f.RelativePath == relativePath);
+        if (file != null)
+        {
+            var fullPath = Path.Combine(SyncFolderPath, relativePath);
+            if (File.Exists(fullPath))
+            {
+                await _transferService.SendSyncFile(peer, fullPath, file);
+            }
+        }
+    }
+
+    private void ReportProgress(string? currentFile, double percent)
+    {
+        if (currentFile == null) currentFile = "Syncing...";
+        
+        SyncProgressChanged?.Invoke(new SyncProgress
+        {
+            TotalFiles = _totalFilesCount,
+            CompletedFiles = _completedFilesCount,
+            CurrentFileName = currentFile,
+            CurrentFilePercent = percent
+        });
+    }
+
     #endregion
 
     public void Dispose()
     {
         Stop();
         _cts?.Dispose();
+
+        if (_transferService != null)
+        {
+            _transferService.SyncFileReceived -= OnSyncFileReceived;
+            _transferService.SyncDeleteReceived -= OnSyncDeleteReceived;
+            _transferService.SyncManifestReceived -= OnSyncManifestReceived;
+            _transferService.SyncFileRequested -= OnSyncFileRequested;
+        }
     }
 }

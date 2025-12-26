@@ -21,17 +21,23 @@ public class DiscoveryService : IDisposable
     private readonly object _peersLock = new();
     
     public ObservableCollection<Peer> Peers { get; } = [];
-    public string LocalId { get; } = Guid.NewGuid().ToString()[..8];
+    public string LocalId { get; }
     public string LocalName { get; set; } = Environment.MachineName;
     public int TransferPort { get; private set; }
 
     public event Action<Peer>? PeerDiscovered;
     public event Action<Peer>? PeerLost;
+    public event Action? BindingFailed;
 
     /// <summary>
     /// Whether this local instance has sync enabled. Set by SyncService.
     /// </summary>
     public bool IsSyncEnabled { get; set; }
+
+    public DiscoveryService(string localId)
+    {
+        LocalId = localId;
+    }
 
     public void Start(int transferPort)
     {
@@ -42,12 +48,14 @@ public class DiscoveryService : IDisposable
         {
             _udpClient = new UdpClient();
             _udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            _udpClient.ExclusiveAddressUse = false;
             _udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, DISCOVERY_PORT));
             _udpClient.EnableBroadcast = true;
         }
         catch (SocketException ex)
         {
             System.Diagnostics.Debug.WriteLine($"Discovery socket error: {ex.Message}");
+            BindingFailed?.Invoke();
             // Port might be in use, try a different one
             _udpClient = new UdpClient(0);
             _udpClient.EnableBroadcast = true;

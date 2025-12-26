@@ -217,9 +217,13 @@
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding}" 
-                                                       Foreground="{StaticResource TextPrimaryBrush}"
-                                                       VerticalAlignment="Center"/>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" 
+                                                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                <TextBlock Text="{Binding Id}" 
+                                                           FontSize="11"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            </StackPanel>
                                             <Button Grid.Column="1" Content="✕" 
                                                     Foreground="#F85149"
                                                     Background="Transparent" 

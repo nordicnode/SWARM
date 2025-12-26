@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.Threading;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -30,6 +32,62 @@ public class TransferService : IDisposable
         _settings = settings;
     }
     
+    private readonly ConcurrentDictionary<string, PeerConnection> _activeConnections = new();
+
+    private class PeerConnection : IDisposable
+    {
+        public TcpClient Client { get; }
+        public NetworkStream Stream { get; }
+        public BinaryWriter Writer { get; }
+        public BinaryReader Reader { get; }
+        public SemaphoreSlim Lock { get; } = new(1, 1);
+
+        public PeerConnection(TcpClient client)
+        {
+            Client = client;
+            Stream = client.GetStream();
+            Writer = new BinaryWriter(Stream, Encoding.UTF8, leaveOpen: true);
+            Reader = new BinaryReader(Stream, Encoding.UTF8, leaveOpen: true);
+        }
+
+        public bool IsConnected => Client.Connected;
+
+        public void Dispose()
+        {
+            try { Lock.Dispose(); } catch { }
+            try { Writer.Dispose(); } catch { }
+            try { Reader.Dispose(); } catch { }
+            try { Client.Dispose(); } catch { }
+        }
+    }
+
+    private async Task<PeerConnection> GetOrCreatePeerConnection(Peer peer, CancellationToken ct)
+    {
+        var key = $"{peer.IpAddress}:{peer.Port}";
+        
+        // Remove stale connection if exists and not connected
+        if (_activeConnections.TryGetValue(key, out var existing))
+        {
+            if (existing.IsConnected) return existing;
+            
+            existing.Dispose();
+            _activeConnections.TryRemove(key, out _);
+        }
+
+        var client = new TcpClient();
+        await client.ConnectAsync(peer.IpAddress, peer.Port, ct);
+        var connection = new PeerConnection(client);
+        
+        _activeConnections.AddOrUpdate(key, connection, (k, old) => 
+        {
+            old.Dispose();
+            return connection;
+        });
+
+        System.Diagnostics.Debug.WriteLine($"Created new connection to {peer.Name} ({key})");
+        return connection;
+    }
+
     public event Action<FileTransfer>? TransferStarted;
     public event Action<FileTransfer>? TransferProgress;
     public event Action<FileTransfer>? TransferCompleted;
@@ -86,65 +144,80 @@ public class TransferService : IDisposable
                 using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
                 using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
 
-                // Read header
-                var header = reader.ReadString();
-                
-                // Check if this is a sync message
-                if (header == ProtocolConstants.SYNC_HEADER)
+                while (!ct.IsCancellationRequested && client.Connected)
                 {
-                    await HandleSyncMessage(reader, stream, client, ct);
-                    return;
+                    string header;
+                    try
+                    {
+                        // Peek to see if there's data (optional, but effectively we just wait for ReadString)
+                        // If peer disconnects, ReadString throws EndOfStreamException or IOException
+                        header = reader.ReadString();
+                    }
+                    catch (EndOfStreamException) { break; }
+                    catch (IOException) { break; }
+                    catch (ObjectDisposedException) { break; }
+
+                    // Check if this is a sync message
+                    if (header == ProtocolConstants.SYNC_HEADER)
+                    {
+                        await HandleSyncMessage(reader, stream, client, ct);
+                        continue;
+                    }
+                    
+                    if (header != PROTOCOL_HEADER)
+                    {
+                        writer.Write("ERROR:INVALID_PROTOCOL");
+                        return;
+                    }
+
+                    // Process manual file transfer (legacy single-file mode logic preserved)
+                    // We extract this to keep main loop clean or just keep it here.
+                    // Since specific variables like transfer/senderName are needed, let's keep it but ensure it doesn't break the loop logic if we wanted to reuse (though SendFile makes new conn).
+                    
+                    // Read transfer metadata
+                    var senderName = reader.ReadString();
+                    var fileName = reader.ReadString();
+                    var fileSize = reader.ReadInt64();
+
+                    // Create transfer record
+                    var transfer = new FileTransfer
+                    {
+                        FileName = fileName,
+                        FileSize = fileSize,
+                        Direction = TransferDirection.Incoming,
+                        Status = TransferStatus.Pending,
+                        RemotePeer = new Peer { Name = senderName, IpAddress = ((IPEndPoint)client.Client.RemoteEndPoint!).Address.ToString() },
+                        StartTime = DateTime.Now
+                    };
+
+                    // Request user acceptance
+                    var accepted = await RequestUserAcceptance(transfer);
+                    
+                    if (!accepted)
+                    {
+                        writer.Write("REJECTED");
+                        transfer.Status = TransferStatus.Cancelled;
+                        continue; // Go back to waiting, though sender likely disconnects
+                    }
+
+                    writer.Write("ACCEPTED");
+                    
+                    // Begin receiving file
+                    transfer.Status = TransferStatus.InProgress;
+                    transfer.LocalPath = Path.Combine(_downloadPath, GetSafeFileName(fileName));
+
+                    System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                    {
+                        Transfers.Add(transfer);
+                        TransferStarted?.Invoke(transfer);
+                    });
+
+                    await ReceiveFile(stream, transfer, ct);
+
+                    transfer.Status = TransferStatus.Completed;
+                    transfer.EndTime = DateTime.Now;
+                    TransferCompleted?.Invoke(transfer);
                 }
-                
-                if (header != PROTOCOL_HEADER)
-                {
-                    writer.Write("ERROR:INVALID_PROTOCOL");
-                    return;
-                }
-
-                // Read transfer metadata
-                var senderName = reader.ReadString();
-                var fileName = reader.ReadString();
-                var fileSize = reader.ReadInt64();
-
-                // Create transfer record
-                var transfer = new FileTransfer
-                {
-                    FileName = fileName,
-                    FileSize = fileSize,
-                    Direction = TransferDirection.Incoming,
-                    Status = TransferStatus.Pending,
-                    RemotePeer = new Peer { Name = senderName, IpAddress = ((IPEndPoint)client.Client.RemoteEndPoint!).Address.ToString() },
-                    StartTime = DateTime.Now
-                };
-
-                // Request user acceptance
-                var accepted = await RequestUserAcceptance(transfer);
-                
-                if (!accepted)
-                {
-                    writer.Write("REJECTED");
-                    transfer.Status = TransferStatus.Cancelled;
-                    return;
-                }
-
-                writer.Write("ACCEPTED");
-                
-                // Begin receiving file
-                transfer.Status = TransferStatus.InProgress;
-                transfer.LocalPath = Path.Combine(_downloadPath, GetSafeFileName(fileName));
-
-                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
-                {
-                    Transfers.Add(transfer);
-                    TransferStarted?.Invoke(transfer);
-                });
-
-                await ReceiveFile(stream, transfer, ct);
-
-                transfer.Status = TransferStatus.Completed;
-                transfer.EndTime = DateTime.Now;
-                TransferCompleted?.Invoke(transfer);
             }
             catch (Exception ex)
             {
@@ -290,10 +363,9 @@ public class TransferService : IDisposable
     {
         var tcs = new TaskCompletionSource<bool>();
 
-        // Check if auto-accept from trusted peers is enabled
         if (_settings.AutoAcceptFromTrusted && transfer.RemotePeer != null)
         {
-            if (_settings.TrustedPeerIds.Contains(transfer.RemotePeer.Id))
+            if (_settings.TrustedPeers.Any(p => p.Id == transfer.RemotePeer.Id))
             {
                 tcs.SetResult(true);
                 return tcs.Task;
@@ -450,42 +522,55 @@ public class TransferService : IDisposable
     /// <summary>
     /// Sends a synced file to a peer (auto-accepted, no confirmation).
     /// </summary>
-    public async Task SendSyncFile(Peer peer, string filePath, SyncedFile syncFile, CancellationToken ct = default)
+    public async Task SendSyncFile(Peer peer, string filePath, SyncedFile syncFile, Action<long, long>? progressCallback = null, CancellationToken ct = default)
     {
         var fileInfo = new FileInfo(filePath);
         if (!fileInfo.Exists) return;
 
-        using var client = new TcpClient();
-        
         try
         {
-            await client.ConnectAsync(peer.IpAddress, peer.Port, ct);
-            var stream = client.GetStream();
-            using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
-
-            // Send sync header and metadata
-            writer.Write(ProtocolConstants.SYNC_HEADER);
-            writer.Write(ProtocolConstants.MSG_FILE_CHANGED);
-            writer.Write(syncFile.RelativePath);
-            writer.Write(syncFile.ContentHash);
-            writer.Write(syncFile.LastModified.ToBinary());
-            writer.Write(fileInfo.Length);
-            writer.Write(syncFile.IsDirectory);
-
-            // Send file content
-            var buffer = new byte[BUFFER_SIZE];
-            await using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, BUFFER_SIZE, useAsync: true);
-            
-            int bytesRead;
-            while ((bytesRead = await fileStream.ReadAsync(buffer, ct)) > 0)
+            var connection = await GetOrCreatePeerConnection(peer, ct);
+            await connection.Lock.WaitAsync(ct);
+            try
             {
-                await stream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
-            }
+                // Send sync header and metadata
+                connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
+                connection.Writer.Write(ProtocolConstants.MSG_FILE_CHANGED);
+                connection.Writer.Write(syncFile.RelativePath);
+                connection.Writer.Write(syncFile.ContentHash);
+                connection.Writer.Write(syncFile.LastModified.ToBinary());
+                connection.Writer.Write(fileInfo.Length);
+                connection.Writer.Write(syncFile.IsDirectory);
 
-            System.Diagnostics.Debug.WriteLine($"Sync sent: {syncFile.RelativePath} to {peer.Name}");
+                // Send file content
+                var buffer = new byte[BUFFER_SIZE];
+                await using var fileStream = await FileHelpers.ExecuteWithRetryAsync(async () =>
+                {
+                    return new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, BUFFER_SIZE, useAsync: true);
+                });
+                
+                long totalSent = 0;
+                int bytesRead;
+                while ((bytesRead = await fileStream.ReadAsync(buffer, ct)) > 0)
+                {
+                    await connection.Stream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
+                    totalSent += bytesRead;
+                    progressCallback?.Invoke(totalSent, fileInfo.Length);
+                }
+
+                System.Diagnostics.Debug.WriteLine($"Sync sent: {syncFile.RelativePath} to {peer.Name}");
+            }
+            finally
+            {
+                connection.Lock.Release();
+            }
         }
         catch (Exception ex)
         {
+            // If connection failed, remove it so we retry next time
+            var key = $"{peer.IpAddress}:{peer.Port}";
+            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+            
             System.Diagnostics.Debug.WriteLine($"Sync send error: {ex.Message}");
         }
     }
@@ -495,23 +580,28 @@ public class TransferService : IDisposable
     /// </summary>
     public async Task SendSyncDelete(Peer peer, SyncedFile syncFile, CancellationToken ct = default)
     {
-        using var client = new TcpClient();
-        
         try
         {
-            await client.ConnectAsync(peer.IpAddress, peer.Port, ct);
-            var stream = client.GetStream();
-            using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+            var connection = await GetOrCreatePeerConnection(peer, ct);
+            await connection.Lock.WaitAsync(ct);
+            try
+            {
+                connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
+                connection.Writer.Write(ProtocolConstants.MSG_FILE_DELETED);
+                connection.Writer.Write(syncFile.RelativePath);
+                connection.Writer.Write(syncFile.IsDirectory);
 
-            writer.Write(ProtocolConstants.SYNC_HEADER);
-            writer.Write(ProtocolConstants.MSG_FILE_DELETED);
-            writer.Write(syncFile.RelativePath);
-            writer.Write(syncFile.IsDirectory);
-
-            System.Diagnostics.Debug.WriteLine($"Sync delete sent: {syncFile.RelativePath} to {peer.Name}");
+                System.Diagnostics.Debug.WriteLine($"Sync delete sent: {syncFile.RelativePath} to {peer.Name}");
+            }
+            finally
+            {
+                connection.Lock.Release();
+            }
         }
         catch (Exception ex)
         {
+            var key = $"{peer.IpAddress}:{peer.Port}";
+            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
             System.Diagnostics.Debug.WriteLine($"Sync delete error: {ex.Message}");
         }
     }
@@ -521,22 +611,27 @@ public class TransferService : IDisposable
     /// </summary>
     public async Task SendSyncDirectory(Peer peer, SyncedFile syncFile, CancellationToken ct = default)
     {
-        using var client = new TcpClient();
-        
         try
         {
-            await client.ConnectAsync(peer.IpAddress, peer.Port, ct);
-            var stream = client.GetStream();
-            using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+            var connection = await GetOrCreatePeerConnection(peer, ct);
+            await connection.Lock.WaitAsync(ct);
+            try
+            {
+                connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
+                connection.Writer.Write(ProtocolConstants.MSG_DIR_CREATED);
+                connection.Writer.Write(syncFile.RelativePath);
 
-            writer.Write(ProtocolConstants.SYNC_HEADER);
-            writer.Write(ProtocolConstants.MSG_DIR_CREATED);
-            writer.Write(syncFile.RelativePath);
-
-            System.Diagnostics.Debug.WriteLine($"Sync dir sent: {syncFile.RelativePath} to {peer.Name}");
+                System.Diagnostics.Debug.WriteLine($"Sync dir sent: {syncFile.RelativePath} to {peer.Name}");
+            }
+            finally 
+            {
+                connection.Lock.Release();
+            }
         }
         catch (Exception ex)
         {
+            var key = $"{peer.IpAddress}:{peer.Port}";
+            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
             System.Diagnostics.Debug.WriteLine($"Sync dir error: {ex.Message}");
         }
     }
@@ -546,24 +641,29 @@ public class TransferService : IDisposable
     /// </summary>
     public async Task SendSyncManifest(Peer peer, List<SyncedFile> manifest, CancellationToken ct = default)
     {
-        using var client = new TcpClient();
-        
         try
         {
-            await client.ConnectAsync(peer.IpAddress, peer.Port, ct);
-            var stream = client.GetStream();
-            using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+            var connection = await GetOrCreatePeerConnection(peer, ct);
+            await connection.Lock.WaitAsync(ct);
+            try
+            {
+                connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
+                connection.Writer.Write(ProtocolConstants.MSG_SYNC_MANIFEST);
+                
+                var json = JsonSerializer.Serialize(manifest);
+                connection.Writer.Write(json);
 
-            writer.Write(ProtocolConstants.SYNC_HEADER);
-            writer.Write(ProtocolConstants.MSG_SYNC_MANIFEST);
-            
-            var json = JsonSerializer.Serialize(manifest);
-            writer.Write(json);
-
-            System.Diagnostics.Debug.WriteLine($"Sync manifest sent to {peer.Name}: {manifest.Count} files");
+                System.Diagnostics.Debug.WriteLine($"Sync manifest sent to {peer.Name}: {manifest.Count} files");
+            }
+            finally
+            {
+                connection.Lock.Release();
+            }
         }
         catch (Exception ex)
         {
+            var key = $"{peer.IpAddress}:{peer.Port}";
+            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
             System.Diagnostics.Debug.WriteLine($"Sync manifest error: {ex.Message}");
         }
     }
@@ -573,22 +673,27 @@ public class TransferService : IDisposable
     /// </summary>
     public async Task RequestSyncFile(Peer peer, string relativePath, CancellationToken ct = default)
     {
-        using var client = new TcpClient();
-        
         try
         {
-            await client.ConnectAsync(peer.IpAddress, peer.Port, ct);
-            var stream = client.GetStream();
-            using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+            var connection = await GetOrCreatePeerConnection(peer, ct);
+            await connection.Lock.WaitAsync(ct);
+            try
+            {
+                connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
+                connection.Writer.Write(ProtocolConstants.MSG_REQUEST_FILE);
+                connection.Writer.Write(relativePath);
 
-            writer.Write(ProtocolConstants.SYNC_HEADER);
-            writer.Write(ProtocolConstants.MSG_REQUEST_FILE);
-            writer.Write(relativePath);
-
-            System.Diagnostics.Debug.WriteLine($"Sync file requested: {relativePath} from {peer.Name}");
+                System.Diagnostics.Debug.WriteLine($"Sync file requested: {relativePath} from {peer.Name}");
+            }
+            finally
+            {
+                connection.Lock.Release();
+            }
         }
         catch (Exception ex)
         {
+            var key = $"{peer.IpAddress}:{peer.Port}";
+            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
             System.Diagnostics.Debug.WriteLine($"Sync request error: {ex.Message}");
         }
     }
@@ -617,5 +722,11 @@ public class TransferService : IDisposable
             _listener.Stop();
             _listener = null;
         }
+        
+        foreach (var conn in _activeConnections.Values)
+        {
+            conn.Dispose();
+        }
+        _activeConnections.Clear();
     }
 }

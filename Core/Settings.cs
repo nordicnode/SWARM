@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Swarm.Core;
 
@@ -28,9 +29,15 @@ public class Settings
     public bool IsSyncEnabled { get; set; } = true;
 
     /// <summary>
-    /// List of trusted peer IDs that can sync without confirmation.
+    /// List of trusted peers that can sync without confirmation.
     /// </summary>
-    public List<string> TrustedPeerIds { get; set; } = [];
+    public List<Swarm.Models.TrustedPeer> TrustedPeers { get; set; } = [];
+
+    /// <summary>
+    /// Legacy list of trusted peer IDs (for migration purposes).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? TrustedPeerIds { get; set; }
 
     /// <summary>
     /// Default download path for manual file transfers.
@@ -66,24 +73,56 @@ public class Settings
     public bool ShowTransferComplete { get; set; } = true;
 
     /// <summary>
+    /// Unique identifier for this device.
+    /// </summary>
+    public string LocalId { get; set; } = string.Empty;
+
+    /// <summary>
     /// Loads settings from disk, or returns default settings if file doesn't exist.
     /// </summary>
     public static Settings Load()
     {
+        Settings settings;
         try
         {
             if (File.Exists(SettingsFilePath))
             {
                 var json = File.ReadAllText(SettingsFilePath);
-                return JsonSerializer.Deserialize<Settings>(json) ?? new Settings();
+                settings = JsonSerializer.Deserialize<Settings>(json) ?? new Settings();
+            }
+            else
+            {
+                settings = new Settings();
             }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to load settings: {ex.Message}");
+            settings = new Settings();
         }
 
-        return new Settings();
+        // Ensure LocalId exists
+        if (string.IsNullOrEmpty(settings.LocalId))
+        {
+            settings.LocalId = Guid.NewGuid().ToString()[..8];
+            settings.Save();
+        }
+
+        // Migration: Convert old TrustedPeerIds to TrustedPeers
+        if (settings.TrustedPeerIds != null && settings.TrustedPeerIds.Count > 0)
+        {
+            foreach (var id in settings.TrustedPeerIds)
+            {
+                if (!settings.TrustedPeers.Any(p => p.Id == id))
+                {
+                    settings.TrustedPeers.Add(new Swarm.Models.TrustedPeer { Id = id, Name = "Unknown Peer" });
+                }
+            }
+            settings.TrustedPeerIds = null; // Clear after migration
+            settings.Save(); // Save migrated settings
+        }
+
+        return settings;
     }
 
     /// <summary>
@@ -118,11 +157,11 @@ public class Settings
     /// </summary>
     public Settings Clone()
     {
-        return new Settings
+        var clone = new Settings
         {
+            LocalId = LocalId,
             SyncFolderPath = SyncFolderPath,
             IsSyncEnabled = IsSyncEnabled,
-            TrustedPeerIds = new List<string>(TrustedPeerIds),
             DownloadPath = DownloadPath,
             DeviceName = DeviceName,
             AutoAcceptFromTrusted = AutoAcceptFromTrusted,
@@ -130,6 +169,13 @@ public class Settings
             StartMinimized = StartMinimized,
             ShowTransferComplete = ShowTransferComplete
         };
+
+        foreach (var peer in TrustedPeers)
+        {
+            clone.TrustedPeers.Add(new Swarm.Models.TrustedPeer { Id = peer.Id, Name = peer.Name });
+        }
+
+        return clone;
     }
 
     /// <summary>
@@ -137,14 +183,20 @@ public class Settings
     /// </summary>
     public void UpdateFrom(Settings source)
     {
+        LocalId = source.LocalId;
         SyncFolderPath = source.SyncFolderPath;
         IsSyncEnabled = source.IsSyncEnabled;
-        TrustedPeerIds = new List<string>(source.TrustedPeerIds);
         DownloadPath = source.DownloadPath;
         DeviceName = source.DeviceName;
         AutoAcceptFromTrusted = source.AutoAcceptFromTrusted;
         NotificationsEnabled = source.NotificationsEnabled;
         StartMinimized = source.StartMinimized;
         ShowTransferComplete = source.ShowTransferComplete;
+        
+        TrustedPeers.Clear();
+        foreach (var peer in source.TrustedPeers)
+        {
+            TrustedPeers.Add(new Swarm.Models.TrustedPeer { Id = peer.Id, Name = peer.Name });
+        }
     }
 }
