@@ -22,7 +22,7 @@ public class DiscoveryService : IDisposable
     
     public ObservableCollection<Peer> Peers { get; } = [];
     public string LocalId { get; } = Guid.NewGuid().ToString()[..8];
-    public string LocalName { get; } = Environment.MachineName;
+    public string LocalName { get; set; } = Environment.MachineName;
     public int TransferPort { get; private set; }
 
     public event Action<Peer>? PeerDiscovered;

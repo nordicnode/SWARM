@@ -11,14 +11,16 @@ namespace Swarm.UI;
 /// </summary>
 public partial class SettingsDialog : Window
 {
-    private readonly Settings _settings;
+    private readonly Settings _originalSettings;
+    private readonly Settings _workingSettings;
     private readonly Action<Settings>? _onSettingsChanged;
 
     public SettingsDialog(Settings settings, Action<Settings>? onSettingsChanged = null)
     {
         InitializeComponent();
         
-        _settings = settings;
+        _originalSettings = settings;
+        _workingSettings = settings.Clone();
         _onSettingsChanged = onSettingsChanged;
         
         LoadSettings();
@@ -27,19 +29,19 @@ public partial class SettingsDialog : Window
     private void LoadSettings()
     {
         // General
-        DeviceNameTextBox.Text = _settings.DeviceName;
-        StartMinimizedToggle.IsChecked = _settings.StartMinimized;
+        DeviceNameTextBox.Text = _workingSettings.DeviceName;
+        StartMinimizedToggle.IsChecked = _workingSettings.StartMinimized;
         
         // Transfers
-        DownloadPathText.Text = ShortenPath(_settings.DownloadPath);
-        DownloadPathText.ToolTip = _settings.DownloadPath;
-        AutoAcceptToggle.IsChecked = _settings.AutoAcceptFromTrusted;
-        ShowCompleteToggle.IsChecked = _settings.ShowTransferComplete;
+        DownloadPathText.Text = ShortenPath(_workingSettings.DownloadPath);
+        DownloadPathText.ToolTip = _workingSettings.DownloadPath;
+        AutoAcceptToggle.IsChecked = _workingSettings.AutoAcceptFromTrusted;
+        ShowCompleteToggle.IsChecked = _workingSettings.ShowTransferComplete;
         
         // Sync
-        SyncEnabledToggle.IsChecked = _settings.IsSyncEnabled;
-        SyncFolderPathText.Text = ShortenPath(_settings.SyncFolderPath);
-        SyncFolderPathText.ToolTip = _settings.SyncFolderPath;
+        SyncEnabledToggle.IsChecked = _workingSettings.IsSyncEnabled;
+        SyncFolderPathText.Text = ShortenPath(_workingSettings.SyncFolderPath);
+        SyncFolderPathText.ToolTip = _workingSettings.SyncFolderPath;
         
         // Trusted Peers
         UpdateTrustedPeersList();
@@ -52,8 +54,8 @@ public partial class SettingsDialog : Window
     private void UpdateTrustedPeersList()
     {
         TrustedPeersListBox.ItemsSource = null;
-        TrustedPeersListBox.ItemsSource = _settings.TrustedPeerIds;
-        NoTrustedPeersText.Visibility = _settings.TrustedPeerIds.Count == 0 
+        TrustedPeersListBox.ItemsSource = _workingSettings.TrustedPeerIds;
+        NoTrustedPeersText.Visibility = _workingSettings.TrustedPeerIds.Count == 0 
             ? Visibility.Visible 
             : Visibility.Collapsed;
     }
@@ -77,13 +79,13 @@ public partial class SettingsDialog : Window
         var dialog = new System.Windows.Forms.FolderBrowserDialog
         {
             Description = "Select download folder",
-            SelectedPath = _settings.DownloadPath,
+            SelectedPath = _workingSettings.DownloadPath,
             ShowNewFolderButton = true
         };
 
         if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
         {
-            _settings.DownloadPath = dialog.SelectedPath;
+            _workingSettings.DownloadPath = dialog.SelectedPath;
             DownloadPathText.Text = ShortenPath(dialog.SelectedPath);
             DownloadPathText.ToolTip = dialog.SelectedPath;
         }
@@ -94,13 +96,13 @@ public partial class SettingsDialog : Window
         var dialog = new System.Windows.Forms.FolderBrowserDialog
         {
             Description = "Select sync folder",
-            SelectedPath = _settings.SyncFolderPath,
+            SelectedPath = _workingSettings.SyncFolderPath,
             ShowNewFolderButton = true
         };
 
         if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
         {
-            _settings.SyncFolderPath = dialog.SelectedPath;
+            _workingSettings.SyncFolderPath = dialog.SelectedPath;
             SyncFolderPathText.Text = ShortenPath(dialog.SelectedPath);
             SyncFolderPathText.ToolTip = dialog.SelectedPath;
         }
@@ -111,27 +113,30 @@ public partial class SettingsDialog : Window
         if (sender is System.Windows.Controls.Button button && 
             button.DataContext is string peerId)
         {
-            _settings.TrustedPeerIds.Remove(peerId);
+            _workingSettings.TrustedPeerIds.Remove(peerId);
             UpdateTrustedPeersList();
         }
     }
 
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
-        // Apply settings from UI
-        _settings.DeviceName = string.IsNullOrWhiteSpace(DeviceNameTextBox.Text) 
+        // Apply remaining settings from UI to working copy
+        _workingSettings.DeviceName = string.IsNullOrWhiteSpace(DeviceNameTextBox.Text) 
             ? Environment.MachineName 
             : DeviceNameTextBox.Text.Trim();
-        _settings.StartMinimized = StartMinimizedToggle.IsChecked ?? false;
-        _settings.AutoAcceptFromTrusted = AutoAcceptToggle.IsChecked ?? false;
-        _settings.ShowTransferComplete = ShowCompleteToggle.IsChecked ?? true;
-        _settings.IsSyncEnabled = SyncEnabledToggle.IsChecked ?? true;
+        _workingSettings.StartMinimized = StartMinimizedToggle.IsChecked ?? false;
+        _workingSettings.AutoAcceptFromTrusted = AutoAcceptToggle.IsChecked ?? false;
+        _workingSettings.ShowTransferComplete = ShowCompleteToggle.IsChecked ?? true;
+        _workingSettings.IsSyncEnabled = SyncEnabledToggle.IsChecked ?? true;
+        
+        // Update original settings from working copy
+        _originalSettings.UpdateFrom(_workingSettings);
         
         // Save to disk
-        _settings.Save();
+        _originalSettings.Save();
         
         // Notify parent
-        _onSettingsChanged?.Invoke(_settings);
+        _onSettingsChanged?.Invoke(_originalSettings);
         
         DialogResult = true;
         Close();

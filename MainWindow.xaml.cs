@@ -87,7 +87,8 @@ public partial class MainWindow : Window
         _transferService.Start();
         _discoveryService.Start(_transferService.ListenPort);
 
-        // Update discovery service's sync status
+        // Update discovery service's settings
+        _discoveryService.LocalName = _settings.DeviceName;
         _discoveryService.IsSyncEnabled = _settings.IsSyncEnabled;
 
         // Start sync service
@@ -385,6 +386,7 @@ public partial class MainWindow : Window
     private void OnSettingsChanged(Settings settings)
     {
         // Apply changes that affect running services
+        _discoveryService.LocalName = settings.DeviceName;
         _discoveryService.IsSyncEnabled = settings.IsSyncEnabled;
         
         // Update sync service state

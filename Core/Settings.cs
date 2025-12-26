@@ -112,4 +112,39 @@ public class Settings
     {
         Directory.CreateDirectory(SyncFolderPath);
     }
+
+    /// <summary>
+    /// Creates a deep copy of the settings.
+    /// </summary>
+    public Settings Clone()
+    {
+        return new Settings
+        {
+            SyncFolderPath = SyncFolderPath,
+            IsSyncEnabled = IsSyncEnabled,
+            TrustedPeerIds = new List<string>(TrustedPeerIds),
+            DownloadPath = DownloadPath,
+            DeviceName = DeviceName,
+            AutoAcceptFromTrusted = AutoAcceptFromTrusted,
+            NotificationsEnabled = NotificationsEnabled,
+            StartMinimized = StartMinimized,
+            ShowTransferComplete = ShowTransferComplete
+        };
+    }
+
+    /// <summary>
+    /// Updates this instance with values from another settings instance.
+    /// </summary>
+    public void UpdateFrom(Settings source)
+    {
+        SyncFolderPath = source.SyncFolderPath;
+        IsSyncEnabled = source.IsSyncEnabled;
+        TrustedPeerIds = new List<string>(source.TrustedPeerIds);
+        DownloadPath = source.DownloadPath;
+        DeviceName = source.DeviceName;
+        AutoAcceptFromTrusted = source.AutoAcceptFromTrusted;
+        NotificationsEnabled = source.NotificationsEnabled;
+        StartMinimized = source.StartMinimized;
+        ShowTransferComplete = source.ShowTransferComplete;
+    }
 }
