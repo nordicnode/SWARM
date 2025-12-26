@@ -3,6 +3,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Swarm.Helpers;
 using Swarm.Models;
 
 namespace Swarm.Core;
@@ -83,32 +84,50 @@ public class SyncService : IDisposable
         _cts = new CancellationTokenSource();
         _settings.EnsureSyncFolderExists();
 
-        // Build initial file state
-        BuildInitialFileStates();
-
-        // Set up FileSystemWatcher
-        _watcher = new FileSystemWatcher(_settings.SyncFolderPath)
+        // Run initialization in background to prevent UI freeze
+        Task.Run(() =>
         {
-            NotifyFilter = NotifyFilters.FileName
-                         | NotifyFilters.DirectoryName
-                         | NotifyFilters.LastWrite
-                         | NotifyFilters.Size
-                         | NotifyFilters.CreationTime,
-            IncludeSubdirectories = true,
-            EnableRaisingEvents = true
-        };
+            try
+            {
+                // Check if cancelled before starting heavy work
+                if (_cts.Token.IsCancellationRequested) return;
 
-        _watcher.Created += OnFileCreated;
-        _watcher.Changed += OnFileChanged;
-        _watcher.Deleted += OnFileDeleted;
-        _watcher.Renamed += OnFileRenamed;
-        _watcher.Error += OnWatcherError;
+                // Build initial file state
+                BuildInitialFileStates();
 
-        // Start debounce processor
-        Task.Run(() => ProcessPendingChanges(_cts.Token));
+                // Check again before enabling watcher
+                if (_cts.Token.IsCancellationRequested) return;
 
-        SyncStatusChanged?.Invoke("Sync enabled - Watching for changes");
-        System.Diagnostics.Debug.WriteLine($"SyncService started, watching: {_settings.SyncFolderPath}");
+                // Set up FileSystemWatcher
+                _watcher = new FileSystemWatcher(_settings.SyncFolderPath)
+                {
+                    NotifyFilter = NotifyFilters.FileName
+                                 | NotifyFilters.DirectoryName
+                                 | NotifyFilters.LastWrite
+                                 | NotifyFilters.Size
+                                 | NotifyFilters.CreationTime,
+                    IncludeSubdirectories = true,
+                    EnableRaisingEvents = true
+                };
+
+                _watcher.Created += OnFileCreated;
+                _watcher.Changed += OnFileChanged;
+                _watcher.Deleted += OnFileDeleted;
+                _watcher.Renamed += OnFileRenamed;
+                _watcher.Error += OnWatcherError;
+
+                // Start debounce processor
+                Task.Run(() => ProcessPendingChanges(_cts.Token));
+
+                SyncStatusChanged?.Invoke("Sync enabled - Watching for changes");
+                System.Diagnostics.Debug.WriteLine($"SyncService started, watching: {_settings.SyncFolderPath}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to start SyncService: {ex.Message}");
+                SyncStatusChanged?.Invoke("Sync failed to start");
+            }
+        });
     }
 
     /// <summary>
@@ -185,9 +204,10 @@ public class SyncService : IDisposable
     public async Task HandleIncomingSyncFile(SyncedFile syncFile, Stream dataStream)
     {
         var localPath = Path.Combine(_settings.SyncFolderPath, syncFile.RelativePath);
+        var normalizedPath = FileHelpers.NormalizePath(localPath);
         
         // Add to ignore list to prevent echo
-        _ignoreList[localPath] = DateTime.Now;
+        _ignoreList[normalizedPath] = DateTime.Now;
 
         try
         {
@@ -349,14 +369,16 @@ public class SyncService : IDisposable
 
     private bool ShouldIgnore(string path)
     {
+        var normalizedPath = FileHelpers.NormalizePath(path);
+
         // Check if this file is being written by sync
-        if (_ignoreList.TryGetValue(path, out var ignoreTime))
+        if (_ignoreList.TryGetValue(normalizedPath, out var ignoreTime))
         {
             if ((DateTime.Now - ignoreTime).TotalMilliseconds < IGNORE_DURATION_MS)
             {
                 return true;
             }
-            _ignoreList.TryRemove(path, out _);
+            _ignoreList.TryRemove(normalizedPath, out _);
         }
 
         // Ignore system/hidden files
@@ -412,7 +434,7 @@ public class SyncService : IDisposable
         {
             // File exists - create or update
             var fileInfo = new FileInfo(fullPath);
-            var hash = ComputeFileHash(fullPath);
+            var hash = await Task.Run(() => ComputeFileHash(fullPath));
             
             var action = _fileStates.ContainsKey(relativePath) ? SyncAction.Update : SyncAction.Create;
             
@@ -522,14 +544,26 @@ public class SyncService : IDisposable
         }
         else
         {
-            await using var fileStream = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None, ProtocolConstants.FILE_STREAM_BUFFER_SIZE, useAsync: true);
-            await dataStream.CopyToAsync(fileStream);
+            await FileHelpers.ExecuteWithRetryAsync(async () =>
+            {
+                await using var fileStream = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None, ProtocolConstants.FILE_STREAM_BUFFER_SIZE, useAsync: true);
+                // Position stream to 0 just in case it was read from before (though unlikely here)
+                if (dataStream.CanSeek) dataStream.Position = 0;
+                await dataStream.CopyToAsync(fileStream);
+            });
         }
 
         // Preserve modification time
         if (!syncFile.IsDirectory)
         {
-            File.SetLastWriteTimeUtc(localPath, syncFile.LastModified);
+            try
+            {
+                File.SetLastWriteTimeUtc(localPath, syncFile.LastModified);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to set timestamp for {localPath}: {ex.Message}");
+            }
         }
     }
 
@@ -558,12 +592,16 @@ public class SyncService : IDisposable
         }
     }
 
-    private static string ComputeFileHash(string filePath)
+    private static async Task<string> ComputeFileHash(string filePath)
     {
-        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, ProtocolConstants.FILE_STREAM_BUFFER_SIZE);
-        using var sha = SHA256.Create();
-        var hash = sha.ComputeHash(stream);
-        return Convert.ToHexString(hash);
+        // Use retry logic as file might be briefly locked
+        return await FileHelpers.ExecuteWithRetryAsync(async () =>
+        {
+            await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, ProtocolConstants.FILE_STREAM_BUFFER_SIZE, useAsync: true);
+            using var sha = SHA256.Create();
+            var hash = await sha.ComputeHashAsync(stream);
+            return Convert.ToHexString(hash);
+        });
     }
 
     #endregion

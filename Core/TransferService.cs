@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using Swarm.Helpers;
 using Swarm.Models;
 
 namespace Swarm.Core;
@@ -325,7 +326,11 @@ public class TransferService : IDisposable
         var buffer = new byte[BUFFER_SIZE];
         var totalReceived = 0L;
 
-        await using var fileStream = new FileStream(transfer.LocalPath!, FileMode.Create, FileAccess.Write, FileShare.None, BUFFER_SIZE, useAsync: true);
+        // Only retry opening the file stream, not the whole network transfer
+        await using var fileStream = await FileHelpers.ExecuteWithRetryAsync(async () =>
+        {
+            return new FileStream(transfer.LocalPath!, FileMode.Create, FileAccess.Write, FileShare.None, BUFFER_SIZE, useAsync: true);
+        });
 
         while (totalReceived < transfer.FileSize && !ct.IsCancellationRequested)
         {
