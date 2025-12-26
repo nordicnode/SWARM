@@ -31,7 +31,7 @@ public partial class MainWindow : Window
         _settings = Settings.Load();
 
         _discoveryService = new DiscoveryService();
-        _transferService = new TransferService();
+        _transferService = new TransferService(_settings);
         _syncService = new SyncService(_settings, _discoveryService, _transferService);
 
         // Bind collections
@@ -48,34 +48,6 @@ public partial class MainWindow : Window
         _syncService.SyncStatusChanged += OnSyncStatusChanged;
         _syncService.FileChanged += OnSyncFileChanged;
         _syncService.IncomingSyncFile += OnIncomingSyncFile;
-
-        // Wire up transfer service sync events to sync service
-        _transferService.SyncFileReceived += async (syncFile, stream, peer) =>
-        {
-            await _syncService.HandleIncomingSyncFile(syncFile, stream);
-        };
-        _transferService.SyncDeleteReceived += async (syncFile, peer) =>
-        {
-            await _syncService.HandleIncomingSyncFile(syncFile, Stream.Null);
-        };
-        _transferService.SyncManifestReceived += async (manifest, peer) =>
-        {
-            await _syncService.ProcessIncomingManifest(manifest, peer);
-        };
-        _transferService.SyncFileRequested += async (relativePath, peer) =>
-        {
-            // Peer is requesting a file from us
-            var manifest = _syncService.GetManifest();
-            var file = manifest.FirstOrDefault(f => f.RelativePath == relativePath);
-            if (file != null)
-            {
-                var fullPath = Path.Combine(_syncService.SyncFolderPath, relativePath);
-                if (File.Exists(fullPath))
-                {
-                    await _transferService.SendSyncFile(peer, fullPath, file);
-                }
-            }
-        };
 
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
@@ -388,6 +360,7 @@ public partial class MainWindow : Window
         // Apply changes that affect running services
         _discoveryService.LocalName = settings.DeviceName;
         _discoveryService.IsSyncEnabled = settings.IsSyncEnabled;
+        _transferService.SetDownloadPath(settings.DownloadPath);
         
         // Update sync service state
         if (settings.IsSyncEnabled && !_syncService.IsRunning)

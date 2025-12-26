@@ -43,6 +43,34 @@ public class SyncService : IDisposable
         _settings = settings;
         _discoveryService = discoveryService;
         _transferService = transferService;
+
+        // Subscribe to TransferService sync events
+        _transferService.SyncFileReceived += async (syncFile, stream, peer) =>
+        {
+            await HandleIncomingSyncFile(syncFile, stream);
+        };
+        _transferService.SyncDeleteReceived += async (syncFile, peer) =>
+        {
+            await HandleIncomingSyncFile(syncFile, Stream.Null);
+        };
+        _transferService.SyncManifestReceived += async (manifest, peer) =>
+        {
+            await ProcessIncomingManifest(manifest, peer);
+        };
+        _transferService.SyncFileRequested += async (relativePath, peer) =>
+        {
+            // Peer is requesting a file from us
+            var manifest = GetManifest();
+            var file = manifest.FirstOrDefault(f => f.RelativePath == relativePath);
+            if (file != null)
+            {
+                var fullPath = Path.Combine(SyncFolderPath, relativePath);
+                if (File.Exists(fullPath))
+                {
+                    await _transferService.SendSyncFile(peer, fullPath, file);
+                }
+            }
+        };
     }
 
     /// <summary>

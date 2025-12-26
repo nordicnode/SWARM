@@ -16,12 +16,18 @@ public class TransferService : IDisposable
     private const int BUFFER_SIZE = 1024 * 1024; // 1MB buffer for speed
     private const string PROTOCOL_HEADER = "SWARM_TRANSFER:1.0";
 
+    private readonly Settings _settings;
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
     private string _downloadPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Swarm");
 
     public int ListenPort { get; private set; }
     public ObservableCollection<FileTransfer> Transfers { get; } = [];
+    
+    public TransferService(Settings settings)
+    {
+        _settings = settings;
+    }
     
     public event Action<FileTransfer>? TransferStarted;
     public event Action<FileTransfer>? TransferProgress;
@@ -282,6 +288,16 @@ public class TransferService : IDisposable
     private Task<bool> RequestUserAcceptance(FileTransfer transfer)
     {
         var tcs = new TaskCompletionSource<bool>();
+
+        // Check if auto-accept from trusted peers is enabled
+        if (_settings.AutoAcceptFromTrusted && transfer.RemotePeer != null)
+        {
+            if (_settings.TrustedPeerIds.Contains(transfer.RemotePeer.Id))
+            {
+                tcs.SetResult(true);
+                return tcs.Task;
+            }
+        }
 
         if (IncomingFileRequest != null)
         {

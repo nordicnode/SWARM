@@ -11,7 +11,7 @@ public class SyncedFile
     public string RelativePath { get; set; } = string.Empty;
 
     /// <summary>
-    /// XXHash64 of the file content for change detection.
+    /// SHA256 hash of the file content for change detection.
     /// </summary>
     public string ContentHash { get; set; } = string.Empty;
 

@@ -147,6 +147,8 @@ public class DiscoveryService : IDisposable
         // Ignore our own broadcasts
         if (peerId == LocalId) return;
 
+        Peer? newPeer = null;
+
         lock (_peersLock)
         {
             var existingPeer = Peers.FirstOrDefault(p => p.Id == peerId);
@@ -159,7 +161,7 @@ public class DiscoveryService : IDisposable
             }
             else
             {
-                var newPeer = new Peer
+                newPeer = new Peer
                 {
                     Id = peerId,
                     Name = peerName,
@@ -168,13 +170,17 @@ public class DiscoveryService : IDisposable
                     LastSeen = DateTime.Now,
                     IsSyncEnabled = isSyncEnabled
                 };
-
-                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
-                {
-                    Peers.Add(newPeer);
-                    PeerDiscovered?.Invoke(newPeer);
-                });
             }
+        }
+
+        // Add new peer outside the lock to prevent deadlocks with UI thread
+        if (newPeer != null)
+        {
+            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            {
+                Peers.Add(newPeer);
+                PeerDiscovered?.Invoke(newPeer);
+            });
         }
     }
 
@@ -193,20 +199,23 @@ public class DiscoveryService : IDisposable
 
     private void CleanupStalePeers()
     {
+        List<Peer> stalePeers;
+
         lock (_peersLock)
         {
-            var stalePeers = Peers
+            stalePeers = Peers
                 .Where(p => (DateTime.Now - p.LastSeen).TotalSeconds > PEER_TIMEOUT_SECONDS)
                 .ToList();
+        }
 
-            foreach (var peer in stalePeers)
+        // Remove stale peers outside the lock to prevent deadlocks with UI thread
+        foreach (var peer in stalePeers)
+        {
+            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
             {
-                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
-                {
-                    Peers.Remove(peer);
-                    PeerLost?.Invoke(peer);
-                });
-            }
+                Peers.Remove(peer);
+                PeerLost?.Invoke(peer);
+            });
         }
     }
 
