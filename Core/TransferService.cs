@@ -607,6 +607,10 @@ public class TransferService : IDisposable
                 await HandleDeltaData(reader, stream, remotePeer, ct);
                 break;
 
+            case ProtocolConstants.MSG_FILE_RENAMED:
+                HandleSyncFileRenamed(reader, remotePeer);
+                break;
+
             default:
                 System.Diagnostics.Debug.WriteLine($"Unknown sync message type: {messageType}");
                 break;
@@ -686,6 +690,25 @@ public class TransferService : IDisposable
 
         System.Diagnostics.Debug.WriteLine($"Sync dir deleted received: {relativePath}");
         SyncDeleteReceived?.Invoke(syncFile, remotePeer);
+    }
+
+    private void HandleSyncFileRenamed(BinaryReader reader, Peer remotePeer)
+    {
+        var oldRelativePath = reader.ReadString();
+        var newRelativePath = reader.ReadString();
+        var isDirectory = reader.ReadBoolean();
+
+        var syncFile = new SyncedFile
+        {
+            RelativePath = newRelativePath,
+            OldRelativePath = oldRelativePath,
+            IsDirectory = isDirectory,
+            Action = SyncAction.Rename,
+            SourcePeerId = remotePeer.Id
+        };
+
+        System.Diagnostics.Debug.WriteLine($"Sync rename received: {oldRelativePath} -> {newRelativePath}");
+        SyncRenameReceived?.Invoke(syncFile, remotePeer);
     }
 
     private void HandleSyncManifest(BinaryReader reader, Peer remotePeer)
@@ -1031,6 +1054,38 @@ public class TransferService : IDisposable
     }
 
     /// <summary>
+    /// Sends a rename notification to a peer.
+    /// </summary>
+    public async Task SendSyncRename(Peer peer, SyncedFile syncFile, CancellationToken ct = default)
+    {
+        try
+        {
+            var connection = await GetOrCreatePeerConnection(peer, ct);
+            await connection.Lock.WaitAsync(ct);
+            try
+            {
+                connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
+                connection.Writer.Write(ProtocolConstants.MSG_FILE_RENAMED);
+                connection.Writer.Write(syncFile.OldRelativePath);
+                connection.Writer.Write(syncFile.RelativePath);
+                connection.Writer.Write(syncFile.IsDirectory);
+
+                System.Diagnostics.Debug.WriteLine($"Sync rename sent: {syncFile.OldRelativePath} -> {syncFile.RelativePath} to {peer.Name}");
+            }
+            finally
+            {
+                connection.Lock.Release();
+            }
+        }
+        catch (Exception ex)
+        {
+            var key = $"{peer.IpAddress}:{peer.Port}";
+            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+            System.Diagnostics.Debug.WriteLine($"Sync rename error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Sends a directory creation notification to a peer.
     /// </summary>
     public async Task SendSyncDirectory(Peer peer, SyncedFile syncFile, CancellationToken ct = default)
@@ -1253,6 +1308,7 @@ public class TransferService : IDisposable
     /// </summary>
     public event Action<SyncedFile, Stream, Peer>? SyncFileReceived;
     public event Action<SyncedFile, Peer>? SyncDeleteReceived;
+    public event Action<SyncedFile, Peer>? SyncRenameReceived;
     public event Action<List<SyncedFile>, Peer>? SyncManifestReceived;
     public event Action<string, Peer>? SyncFileRequested;
 

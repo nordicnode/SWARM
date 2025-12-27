@@ -9,11 +9,45 @@ namespace Swarm.Core;
 /// </summary>
 public class Settings
 {
-    private static readonly string SettingsDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Swarm");
+    private const string PortableMarkerFile = "portable.marker";
+    private const string SettingsFileName = "settings.json";
 
-    private static readonly string SettingsFilePath = Path.Combine(SettingsDirectory, "settings.json");
+    /// <summary>
+    /// Gets whether the application is running in portable mode.
+    /// Portable mode is active when a 'portable.marker' file exists next to the executable.
+    /// </summary>
+    public static bool IsPortableMode { get; } = CheckPortableMode();
+
+    private static bool CheckPortableMode()
+    {
+        var exeDir = GetExecutableDirectory();
+        return File.Exists(Path.Combine(exeDir, PortableMarkerFile));
+    }
+
+    private static string GetExecutableDirectory()
+    {
+        // For single-file apps, use the process path
+        var processPath = Environment.ProcessPath;
+        if (!string.IsNullOrEmpty(processPath))
+        {
+            return Path.GetDirectoryName(processPath) ?? AppContext.BaseDirectory;
+        }
+        return AppContext.BaseDirectory;
+    }
+
+    private static string GetSettingsDirectory()
+    {
+        if (IsPortableMode)
+        {
+            return GetExecutableDirectory();
+        }
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Swarm");
+    }
+
+    private static readonly string SettingsDirectory = GetSettingsDirectory();
+    private static readonly string SettingsFilePath = Path.Combine(SettingsDirectory, SettingsFileName);
 
     /// <summary>
     /// Path to the sync folder.

@@ -33,6 +33,7 @@ public class SyncService : IDisposable
     
     // Debounce rapid changes
     private readonly ConcurrentDictionary<string, DateTime> _pendingChanges = new();
+    private readonly ConcurrentDictionary<string, (string OldPath, DateTime Time)> _pendingRenames = new();
     private const int DEBOUNCE_MS = ProtocolConstants.SYNC_DEBOUNCE_MS;
     
     // Ignore list for files currently being written by sync
@@ -69,6 +70,7 @@ public class SyncService : IDisposable
         _transferService.SyncDeleteReceived += OnSyncDeleteReceived;
         _transferService.SyncManifestReceived += OnSyncManifestReceived;
         _transferService.SyncFileRequested += OnSyncFileRequested;
+        _transferService.SyncRenameReceived += OnSyncRenameReceived;
 
         // Subscribe to delta sync events
         _transferService.SignaturesRequested += OnSignaturesRequested;
@@ -389,9 +391,8 @@ public class SyncService : IDisposable
     {
         if (ShouldIgnore(e.FullPath)) return;
         
-        // Handle as delete old + create new
-        QueueChange(e.OldFullPath, SyncAction.Delete);
-        QueueChange(e.FullPath, SyncAction.Create);
+        // Queue as a proper rename operation with both old and new paths
+        QueueRename(e.OldFullPath, e.FullPath);
     }
 
     private void OnWatcherError(object sender, ErrorEventArgs e)
@@ -479,6 +480,12 @@ public class SyncService : IDisposable
         System.Diagnostics.Debug.WriteLine($"Queued change: {action} - {fullPath}");
     }
 
+    private void QueueRename(string oldFullPath, string newFullPath)
+    {
+        _pendingRenames[newFullPath] = (oldFullPath, DateTime.Now);
+        System.Diagnostics.Debug.WriteLine($"Queued rename: {oldFullPath} -> {newFullPath}");
+    }
+
     private async Task ProcessPendingChanges(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -488,6 +495,22 @@ public class SyncService : IDisposable
                 await Task.Delay(100, ct);
                 
                 var now = DateTime.Now;
+
+                // Process pending renames first
+                var renamesToProcess = _pendingRenames
+                    .Where(kvp => (now - kvp.Value.Time).TotalMilliseconds >= DEBOUNCE_MS)
+                    .Select(kvp => (NewPath: kvp.Key, OldPath: kvp.Value.OldPath))
+                    .ToList();
+
+                foreach (var (newPath, oldPath) in renamesToProcess)
+                {
+                    if (_pendingRenames.TryRemove(newPath, out _))
+                    {
+                        await ProcessFileRename(oldPath, newPath);
+                    }
+                }
+
+                // Process other changes
                 var toProcess = _pendingChanges
                     .Where(kvp => (now - kvp.Value).TotalMilliseconds >= DEBOUNCE_MS)
                     .Select(kvp => kvp.Key)
@@ -568,6 +591,44 @@ public class SyncService : IDisposable
         await BroadcastChangeToAllPeers(syncFile, fullPath);
     }
 
+    private async Task ProcessFileRename(string oldFullPath, string newFullPath)
+    {
+        var oldRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, oldFullPath);
+        var newRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, newFullPath);
+        
+        // Check if the new path exists (it should after rename)
+        var isDirectory = Directory.Exists(newFullPath);
+        var isFile = File.Exists(newFullPath);
+        
+        if (!isDirectory && !isFile)
+        {
+            System.Diagnostics.Debug.WriteLine($"Rename target no longer exists: {newFullPath}");
+            return;
+        }
+
+        // Update our local file state
+        if (_fileStates.TryRemove(oldRelativePath, out var existingState))
+        {
+            existingState.RelativePath = newRelativePath;
+            _fileStates[newRelativePath] = existingState;
+        }
+
+        var syncFile = new SyncedFile
+        {
+            RelativePath = newRelativePath,
+            OldRelativePath = oldRelativePath,
+            Action = SyncAction.Rename,
+            SourcePeerId = _discoveryService.LocalId,
+            IsDirectory = isDirectory,
+            LastModified = DateTime.UtcNow
+        };
+
+        FileChanged?.Invoke(syncFile);
+
+        // Broadcast rename to all peers
+        await BroadcastChangeToAllPeers(syncFile, newFullPath);
+    }
+
     private async Task BroadcastChangeToAllPeers(SyncedFile syncFile, string fullPath)
     {
         foreach (var peer in _discoveryService.Peers.Where(p => p.IsSyncEnabled))
@@ -588,6 +649,11 @@ public class SyncService : IDisposable
         if (syncFile.Action == SyncAction.Delete)
         {
             await _transferService.SendSyncDelete(peer, syncFile);
+        }
+        else if (syncFile.Action == SyncAction.Rename)
+        {
+            // Send rename notification - no file data needed!
+            await _transferService.SendSyncRename(peer, syncFile);
         }
         else if (!syncFile.IsDirectory)
         {
@@ -764,6 +830,57 @@ public class SyncService : IDisposable
     private async void OnSyncDeleteReceived(SyncedFile syncFile, Peer peer)
     {
         await HandleIncomingSyncFile(syncFile, Stream.Null);
+    }
+
+    private void OnSyncRenameReceived(SyncedFile syncFile, Peer peer)
+    {
+        // Handle incoming rename - move the local file
+        var oldLocalPath = Path.Combine(_settings.SyncFolderPath, syncFile.OldRelativePath);
+        var newLocalPath = Path.Combine(_settings.SyncFolderPath, syncFile.RelativePath);
+        var normalizedNewPath = FileHelpers.NormalizePath(newLocalPath);
+
+        // Add to ignore list to prevent echo
+        _ignoreList[normalizedNewPath] = DateTime.Now;
+
+        try
+        {
+            // Ensure target directory exists
+            var directory = Path.GetDirectoryName(newLocalPath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            if (syncFile.IsDirectory)
+            {
+                if (Directory.Exists(oldLocalPath))
+                {
+                    Directory.Move(oldLocalPath, newLocalPath);
+                    System.Diagnostics.Debug.WriteLine($"Directory renamed: {syncFile.OldRelativePath} -> {syncFile.RelativePath}");
+                }
+            }
+            else
+            {
+                if (File.Exists(oldLocalPath))
+                {
+                    File.Move(oldLocalPath, newLocalPath, overwrite: true);
+                    System.Diagnostics.Debug.WriteLine($"File renamed: {syncFile.OldRelativePath} -> {syncFile.RelativePath}");
+                }
+            }
+
+            // Update our state
+            if (_fileStates.TryRemove(syncFile.OldRelativePath, out var existingState))
+            {
+                existingState.RelativePath = syncFile.RelativePath;
+                _fileStates[syncFile.RelativePath] = existingState;
+            }
+
+            IncomingSyncFile?.Invoke(syncFile);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to process rename {syncFile.OldRelativePath} -> {syncFile.RelativePath}: {ex.Message}");
+        }
     }
 
     private async void OnSyncManifestReceived(List<SyncedFile> manifest, Peer peer)
@@ -959,6 +1076,7 @@ public class SyncService : IDisposable
             _transferService.SyncDeleteReceived -= OnSyncDeleteReceived;
             _transferService.SyncManifestReceived -= OnSyncManifestReceived;
             _transferService.SyncFileRequested -= OnSyncFileRequested;
+            _transferService.SyncRenameReceived -= OnSyncRenameReceived;
 
             // Unsubscribe from delta sync events
             _transferService.SignaturesRequested -= OnSignaturesRequested;

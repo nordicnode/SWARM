@@ -39,6 +39,11 @@ public class SyncedFile
     /// Whether this is a directory (folder) rather than a file.
     /// </summary>
     public bool IsDirectory { get; set; }
+
+    /// <summary>
+    /// The old relative path before a rename operation (only used for SyncAction.Rename).
+    /// </summary>
+    public string OldRelativePath { get; set; } = string.Empty;
 }
 
 /// <summary>
