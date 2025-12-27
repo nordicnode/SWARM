@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using Swarm.Models;
 
 namespace Swarm.Core;
@@ -19,6 +20,8 @@ public class DiscoveryService : IDisposable
     private UdpClient? _udpClient;
     private CancellationTokenSource? _cts;
     private readonly object _peersLock = new();
+    private readonly CryptoService _cryptoService;
+    private readonly Settings _settings;
     
     public ObservableCollection<Peer> Peers { get; } = [];
     public string LocalId { get; }
@@ -28,15 +31,22 @@ public class DiscoveryService : IDisposable
     public event Action<Peer>? PeerDiscovered;
     public event Action<Peer>? PeerLost;
     public event Action? BindingFailed;
+    
+    /// <summary>
+    /// Event raised when an untrusted peer is discovered. UI should prompt for trust confirmation.
+    /// </summary>
+    public event Action<Peer>? UntrustedPeerDiscovered;
 
     /// <summary>
     /// Whether this local instance has sync enabled. Set by SyncService.
     /// </summary>
     public bool IsSyncEnabled { get; set; }
 
-    public DiscoveryService(string localId)
+    public DiscoveryService(string localId, CryptoService cryptoService, Settings settings)
     {
         LocalId = localId;
+        _cryptoService = cryptoService;
+        _settings = settings;
     }
 
     public void Start(int transferPort)
@@ -92,10 +102,25 @@ public class DiscoveryService : IDisposable
     {
         if (_udpClient == null) return;
 
-        // Format: SWARM:1.0|ID|NAME|TRANSFER_PORT|SYNC_ENABLED
-        var syncEnabled = IsSyncEnabled ? "1" : "0";
-        var message = $"{PROTOCOL_HEADER}|{LocalId}|{LocalName}|{TransferPort}|{syncEnabled}";
-        var data = Encoding.UTF8.GetBytes(message);
+        // Create structured JSON discovery message
+        var discoveryMessage = new DiscoveryMessage
+        {
+            Protocol = ProtocolConstants.DISCOVERY_PROTOCOL_ID,
+            Version = "2.0", // Secure protocol version
+            PeerId = LocalId,
+            PeerName = LocalName,
+            TransferPort = TransferPort,
+            SyncEnabled = IsSyncEnabled,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            PublicKey = Convert.ToBase64String(_cryptoService.GetPublicKey())
+        };
+
+        // Sign the message payload
+        var signature = _cryptoService.Sign(discoveryMessage.GetSignablePayload());
+        discoveryMessage.Signature = Convert.ToBase64String(signature);
+
+        var json = JsonSerializer.Serialize(discoveryMessage);
+        var data = Encoding.UTF8.GetBytes(json);
 
         // Broadcast to all network adapters
         var broadcastEndpoint = new IPEndPoint(IPAddress.Broadcast, DISCOVERY_PORT);
@@ -141,21 +166,81 @@ public class DiscoveryService : IDisposable
 
     private void ProcessDiscoveryMessage(string message, IPEndPoint remoteEndPoint)
     {
-        // Format: SWARM:1.0|ID|NAME|TRANSFER_PORT|SYNC_ENABLED
-        var parts = message.Split('|');
-        if (parts.Length < 4 || parts[0] != PROTOCOL_HEADER) return;
+        string peerId;
+        string peerName;
+        int transferPort;
+        bool isSyncEnabled;
+        string? publicKeyBase64 = null;
+        bool signatureValid = false;
 
-        var peerId = parts[1];
-        var peerName = parts[2];
-        if (!int.TryParse(parts[3], out var transferPort)) return;
-        
-        // Parse sync enabled flag (optional for backwards compatibility)
-        var isSyncEnabled = parts.Length >= 5 && parts[4] == "1";
+        // Try JSON format first (v1.1+)
+        if (message.TrimStart().StartsWith("{"))
+        {
+            try
+            {
+                var discoveryMessage = JsonSerializer.Deserialize<DiscoveryMessage>(message);
+                if (discoveryMessage == null || discoveryMessage.Protocol != ProtocolConstants.DISCOVERY_PROTOCOL_ID)
+                    return;
+
+                peerId = discoveryMessage.PeerId;
+                peerName = discoveryMessage.PeerName;
+                transferPort = discoveryMessage.TransferPort;
+                isSyncEnabled = discoveryMessage.SyncEnabled;
+                publicKeyBase64 = discoveryMessage.PublicKey;
+
+                // Verify signature if present (v2.0)
+                if (!string.IsNullOrEmpty(discoveryMessage.PublicKey) && !string.IsNullOrEmpty(discoveryMessage.Signature))
+                {
+                    try
+                    {
+                        var publicKey = Convert.FromBase64String(discoveryMessage.PublicKey);
+                        var signature = Convert.FromBase64String(discoveryMessage.Signature);
+                        signatureValid = CryptoService.Verify(discoveryMessage.GetSignablePayload(), signature, publicKey);
+                        
+                        if (!signatureValid)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Invalid signature from peer {peerId}");
+                            return; // Reject messages with invalid signatures
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Signature verification error: {ex.Message}");
+                        return;
+                    }
+                }
+            }
+            catch (JsonException ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"JSON parse error: {ex.Message}");
+                return;
+            }
+        }
+        else
+        {
+            // Fallback: Legacy pipe-delimited format (v1.0)
+            // Format: SWARM:1.0|ID|NAME|TRANSFER_PORT|SYNC_ENABLED
+            var parts = message.Split('|');
+            if (parts.Length < 4 || parts[0] != PROTOCOL_HEADER) return;
+
+            peerId = parts[1];
+            peerName = parts[2];
+            if (!int.TryParse(parts[3], out transferPort)) return;
+            
+            // Parse sync enabled flag (optional for backwards compatibility)
+            isSyncEnabled = parts.Length >= 5 && parts[4] == "1";
+        }
 
         // Ignore our own broadcasts
         if (peerId == LocalId) return;
 
+        // Check if this peer is trusted
+        bool isTrusted = !string.IsNullOrEmpty(publicKeyBase64) && 
+                         _settings.TrustedPeerPublicKeys.TryGetValue(peerId, out var storedKey) && 
+                         storedKey == publicKeyBase64;
+
         Peer? newPeer = null;
+        bool isNewUntrustedPeer = false;
 
         lock (_peersLock)
         {
@@ -166,6 +251,8 @@ public class DiscoveryService : IDisposable
                 existingPeer.IpAddress = remoteEndPoint.Address.ToString();
                 existingPeer.Port = transferPort;
                 existingPeer.IsSyncEnabled = isSyncEnabled;
+                existingPeer.PublicKeyBase64 = publicKeyBase64;
+                existingPeer.IsTrusted = isTrusted;
             }
             else
             {
@@ -176,8 +263,11 @@ public class DiscoveryService : IDisposable
                     IpAddress = remoteEndPoint.Address.ToString(),
                     Port = transferPort,
                     LastSeen = DateTime.Now,
-                    IsSyncEnabled = isSyncEnabled
+                    IsSyncEnabled = isSyncEnabled,
+                    PublicKeyBase64 = publicKeyBase64,
+                    IsTrusted = isTrusted
                 };
+                isNewUntrustedPeer = !isTrusted && signatureValid;
             }
         }
 
@@ -188,6 +278,12 @@ public class DiscoveryService : IDisposable
             {
                 Peers.Add(newPeer);
                 PeerDiscovered?.Invoke(newPeer);
+                
+                // Notify about untrusted peer for TOFU prompt
+                if (isNewUntrustedPeer)
+                {
+                    UntrustedPeerDiscovered?.Invoke(newPeer);
+                }
             });
         }
     }

@@ -34,6 +34,12 @@ public class Settings
     public List<Swarm.Models.TrustedPeer> TrustedPeers { get; set; } = [];
 
     /// <summary>
+    /// Maps trusted peer IDs to their public keys (Base64 encoded).
+    /// Used for signature verification.
+    /// </summary>
+    public Dictionary<string, string> TrustedPeerPublicKeys { get; set; } = [];
+
+    /// <summary>
     /// Legacy list of trusted peer IDs (for migration purposes).
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -175,6 +181,11 @@ public class Settings
             clone.TrustedPeers.Add(new Swarm.Models.TrustedPeer { Id = peer.Id, Name = peer.Name });
         }
 
+        foreach (var kvp in TrustedPeerPublicKeys)
+        {
+            clone.TrustedPeerPublicKeys[kvp.Key] = kvp.Value;
+        }
+
         return clone;
     }
 
@@ -197,6 +208,12 @@ public class Settings
         foreach (var peer in source.TrustedPeers)
         {
             TrustedPeers.Add(new Swarm.Models.TrustedPeer { Id = peer.Id, Name = peer.Name });
+        }
+
+        TrustedPeerPublicKeys.Clear();
+        foreach (var kvp in source.TrustedPeerPublicKeys)
+        {
+            TrustedPeerPublicKeys[kvp.Key] = kvp.Value;
         }
     }
 }

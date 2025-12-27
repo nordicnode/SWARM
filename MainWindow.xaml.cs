@@ -21,6 +21,7 @@ namespace Swarm;
 public partial class MainWindow : Window
 {
     private readonly Settings _settings;
+    private readonly CryptoService _cryptoService;
     private readonly DiscoveryService _discoveryService;
     private readonly TransferService _transferService;
     private readonly SyncService _syncService;
@@ -34,8 +35,11 @@ public partial class MainWindow : Window
         // Load settings
         _settings = Settings.Load();
 
-        _discoveryService = new DiscoveryService(_settings.LocalId);
-        _transferService = new TransferService(_settings);
+        // Initialize cryptographic service
+        _cryptoService = new CryptoService();
+
+        _discoveryService = new DiscoveryService(_settings.LocalId, _cryptoService, _settings);
+        _transferService = new TransferService(_settings, _cryptoService);
         _syncService = new SyncService(_settings, _discoveryService, _transferService);
 
         // Bind collections
@@ -45,6 +49,7 @@ public partial class MainWindow : Window
         // Wire up events
         _discoveryService.Peers.CollectionChanged += (s, e) => UpdatePeerUI();
         _discoveryService.BindingFailed += OnDiscoveryBindingFailed;
+        _discoveryService.UntrustedPeerDiscovered += OnUntrustedPeerDiscovered;
         _transferService.IncomingFileRequest += OnIncomingFileRequest;
         _transferService.TransferProgress += OnTransferProgress;
         _transferService.TransferCompleted += OnTransferCompleted;
@@ -135,6 +140,7 @@ public partial class MainWindow : Window
         _syncService.Dispose();
         _discoveryService.Dispose();
         _transferService.Dispose();
+        _cryptoService.Dispose();
     }
 
     protected override void OnStateChanged(EventArgs e)
@@ -309,6 +315,44 @@ public partial class MainWindow : Window
                 "Discovery Warning",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
+        });
+    }
+
+    private void OnUntrustedPeerDiscovered(Peer peer)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            // Show TOFU trust dialog
+            var fingerprint = peer.Fingerprint ?? "Unknown";
+            var localFingerprint = _cryptoService.GetShortFingerprint();
+            
+            var message = $"New device discovered: {peer.Name}\n\n" +
+                         $"Device Fingerprint:\n{fingerprint}\n\n" +
+                         $"Your Fingerprint:\n{localFingerprint}\n\n" +
+                         "To verify this device, compare fingerprints on both devices.\n\n" +
+                         "Do you want to trust this device?";
+            
+            var result = MessageBox.Show(
+                message,
+                "Trust New Device",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            
+            if (result == MessageBoxResult.Yes && !string.IsNullOrEmpty(peer.PublicKeyBase64))
+            {
+                // Add to trusted peers
+                _settings.TrustedPeerPublicKeys[peer.Id] = peer.PublicKeyBase64;
+                
+                if (!_settings.TrustedPeers.Any(p => p.Id == peer.Id))
+                {
+                    _settings.TrustedPeers.Add(new TrustedPeer { Id = peer.Id, Name = peer.Name });
+                }
+                
+                _settings.Save();
+                peer.IsTrusted = true;
+                
+                Debug.WriteLine($"Trusted peer: {peer.Name} ({peer.Id})");
+            }
         });
     }
 

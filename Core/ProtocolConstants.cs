@@ -49,9 +49,52 @@ public static class ProtocolConstants
     // --- Protocol Headers ---
 
     /// <summary>
-    /// Header for peer discovery messages.
+    /// Header for peer discovery messages (legacy format).
     /// </summary>
     public const string DISCOVERY_HEADER = "SWARM:1.0";
+
+    /// <summary>
+    /// Current discovery protocol version for JSON messages.
+    /// </summary>
+    public const string DISCOVERY_PROTOCOL_VERSION = "1.1";
+
+    /// <summary>
+    /// Protocol identifier for discovery messages.
+    /// </summary>
+    public const string DISCOVERY_PROTOCOL_ID = "SWARM";
+
+
+    // --- TCP Connection Robustness ---
+
+    /// <summary>
+    /// Timeout for establishing TCP connections in milliseconds.
+    /// </summary>
+    public const int CONNECTION_TIMEOUT_MS = 5000;
+
+    /// <summary>
+    /// Maximum number of retry attempts for failed connections.
+    /// </summary>
+    public const int MAX_RETRY_ATTEMPTS = 3;
+
+    /// <summary>
+    /// Base delay between retry attempts in milliseconds (exponential backoff applied).
+    /// </summary>
+    public const int RETRY_BASE_DELAY_MS = 1000;
+
+    /// <summary>
+    /// Interval for TCP keepalive probes in milliseconds.
+    /// </summary>
+    public const int TCP_KEEPALIVE_INTERVAL_MS = 30000;
+
+    /// <summary>
+    /// Time to wait before sending the first keepalive probe in milliseconds.
+    /// </summary>
+    public const int TCP_KEEPALIVE_TIME_MS = 60000;
+
+    /// <summary>
+    /// Number of keepalive retries before considering connection dead.
+    /// </summary>
+    public const int TCP_KEEPALIVE_RETRIES = 3;
 
     /// <summary>
     /// Header for file transfer messages.
@@ -118,4 +161,37 @@ public static class ProtocolConstants
     /// Message type: File was renamed.
     /// </summary>
     public const byte MSG_FILE_RENAMED = 0x08;
+
+
+    // --- Security ---
+
+    /// <summary>
+    /// Discovery protocol header version 2 (with signatures).
+    /// </summary>
+    public const string DISCOVERY_HEADER_V2 = "SWARM:2.0";
+
+    /// <summary>
+    /// Header for secure handshake messages.
+    /// </summary>
+    public const string SECURE_HANDSHAKE_HEADER = "SWARM_SECURE:1.0";
+
+    /// <summary>
+    /// AES-GCM nonce size in bytes.
+    /// </summary>
+    public const int NONCE_SIZE = 12;
+
+    /// <summary>
+    /// AES-GCM authentication tag size in bytes.
+    /// </summary>
+    public const int TAG_SIZE = 16;
+
+    /// <summary>
+    /// AES-256 session key size in bytes.
+    /// </summary>
+    public const int SESSION_KEY_SIZE = 32;
+
+    /// <summary>
+    /// Maximum size of an encrypted chunk (buffer + overhead).
+    /// </summary>
+    public const int MAX_ENCRYPTED_CHUNK_SIZE = DEFAULT_BUFFER_SIZE + TAG_SIZE + NONCE_SIZE + 1024;
 }

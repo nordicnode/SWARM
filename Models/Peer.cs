@@ -22,6 +22,23 @@ public class Peer
     /// </summary>
     public string? SyncFolderHash { get; set; }
 
+    /// <summary>
+    /// The peer's public key (Base64 encoded) for signature verification.
+    /// </summary>
+    public string? PublicKeyBase64 { get; set; }
+
+    /// <summary>
+    /// Whether this peer's identity has been verified/trusted.
+    /// </summary>
+    public bool IsTrusted { get; set; }
+
+    /// <summary>
+    /// Gets the peer's fingerprint (short form) for display.
+    /// </summary>
+    public string? Fingerprint => string.IsNullOrEmpty(PublicKeyBase64) 
+        ? null 
+        : Swarm.Core.CryptoService.ComputeShortFingerprint(Convert.FromBase64String(PublicKeyBase64));
+
 
     public override bool Equals(object? obj)
     {
