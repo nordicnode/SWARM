@@ -155,6 +155,49 @@
                                   VerticalAlignment="Center"/>
                     </Grid>
                     
+                    <!-- ===== BANDWIDTH SECTION ===== -->
+                    <TextBlock Text="BANDWIDTH" Style="{StaticResource SettingsSectionStyle}"/>
+                    
+                    <!-- Max Download Speed -->
+                    <StackPanel Margin="0,0,0,12">
+                        <Grid>
+                            <StackPanel>
+                                <TextBlock Text="Max Download Speed" Style="{StaticResource SettingsLabelStyle}"/>
+                                <TextBlock Text="Limit incoming file transfer speed (0 = unlimited)" 
+                                           Style="{StaticResource SettingsDescriptionStyle}"/>
+                            </StackPanel>
+                            <TextBlock x:Name="MaxDownloadSpeedValueText" 
+                                       Text="Unlimited" 
+                                       Style="{StaticResource SettingsLabelStyle}"
+                                       HorizontalAlignment="Right" VerticalAlignment="Top"/>
+                        </Grid>
+                        <Slider x:Name="MaxDownloadSpeedSlider" 
+                                Minimum="0" Maximum="102400" Value="0" 
+                                TickFrequency="256" IsSnapToTickEnabled="True"
+                                Margin="0,8,0,0"
+                                ValueChanged="MaxDownloadSpeedSlider_ValueChanged"/>
+                    </StackPanel>
+                    
+                    <!-- Max Upload Speed -->
+                    <StackPanel Margin="0,0,0,16">
+                        <Grid>
+                            <StackPanel>
+                                <TextBlock Text="Max Upload Speed" Style="{StaticResource SettingsLabelStyle}"/>
+                                <TextBlock Text="Limit outgoing file transfer speed (0 = unlimited)" 
+                                           Style="{StaticResource SettingsDescriptionStyle}"/>
+                            </StackPanel>
+                            <TextBlock x:Name="MaxUploadSpeedValueText" 
+                                       Text="Unlimited" 
+                                       Style="{StaticResource SettingsLabelStyle}"
+                                       HorizontalAlignment="Right" VerticalAlignment="Top"/>
+                        </Grid>
+                        <Slider x:Name="MaxUploadSpeedSlider" 
+                                Minimum="0" Maximum="102400" Value="0" 
+                                TickFrequency="256" IsSnapToTickEnabled="True"
+                                Margin="0,8,0,0"
+                                ValueChanged="MaxUploadSpeedSlider_ValueChanged"/>
+                    </StackPanel>
+                    
                     <!-- ===== SYNC SECTION ===== -->
                     <TextBlock Text="SYNC" Style="{StaticResource SettingsSectionStyle}"/>
                     
@@ -256,6 +299,21 @@
                                 Margin="0,8,0,0"
                                 ValueChanged="MaxAgeSlider_ValueChanged"/>
                     </StackPanel>
+                    
+                    <!-- ===== MAINTENANCE SECTION ===== -->
+                    <TextBlock Text="MAINTENANCE" Style="{StaticResource SettingsSectionStyle}"/>
+                    
+                    <!-- Verify Integrity -->
+                    <StackPanel Margin="0,0,0,16">
+                        <TextBlock Text="File Integrity Check" Style="{StaticResource SettingsLabelStyle}"/>
+                        <TextBlock Text="Detect bit rot or disk errors by verifying file checksums" 
+                                   Style="{StaticResource SettingsDescriptionStyle}"/>
+                        <Button x:Name="VerifyIntegrityButton" Content="Verify Integrity" 
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="16,10" Margin="0,8,0,0" HorizontalAlignment="Left"
+                                Click="VerifyIntegrity_Click"/>
+                    </StackPanel>
+
                     
                     <!-- ===== TRUSTED PEERS SECTION ===== -->
                     <TextBlock Text="TRUSTED PEERS" Style="{StaticResource SettingsSectionStyle}"/>

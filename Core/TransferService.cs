@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Threading;
 using System.IO;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -149,6 +150,219 @@ public class TransferService : IDisposable
     }
 
     /// <summary>
+    /// Manages a pool of TCP connections to a single peer for parallel transfers.
+    /// </summary>
+    private class ConnectionPool : IDisposable
+    {
+        private readonly List<PeerConnection> _connections = new();
+        private readonly SemaphoreSlim _poolLock = new(1, 1);
+        private readonly Peer _peer;
+        private readonly TransferService _owner;
+        private bool _disposed;
+
+        public string PeerKey { get; }
+        public int MaxConnections { get; set; } = ProtocolConstants.MAX_PARALLEL_CONNECTIONS;
+
+        public ConnectionPool(Peer peer, TransferService owner)
+        {
+            _peer = peer;
+            _owner = owner;
+            PeerKey = $"{peer.IpAddress}:{peer.Port}";
+        }
+
+        /// <summary>
+        /// Acquires an available connection from the pool, creating new ones if needed.
+        /// </summary>
+        public async Task<PeerConnection> AcquireAsync(CancellationToken ct)
+        {
+            await _poolLock.WaitAsync(ct);
+            try
+            {
+                // First, try to find an available healthy connection
+                foreach (var conn in _connections.ToList())
+                {
+                    if (!conn.IsHealthy())
+                    {
+                        conn.Dispose();
+                        _connections.Remove(conn);
+                        continue;
+                    }
+
+                    // Try to acquire the connection's lock without waiting
+                    if (await conn.Lock.WaitAsync(0, ct))
+                    {
+                        conn.LastActivity = DateTime.UtcNow;
+                        return conn;
+                    }
+                }
+
+                // No available connections - can we create a new one?
+                if (_connections.Count < MaxConnections)
+                {
+                    var newConn = await CreateNewConnectionAsync(ct);
+                    if (newConn != null)
+                    {
+                        _connections.Add(newConn);
+                        await newConn.Lock.WaitAsync(ct); // Acquire lock before returning
+                        return newConn;
+                    }
+                }
+
+                // All connections busy and at max capacity - wait for first available
+                // Release pool lock while waiting to allow other operations
+            }
+            finally
+            {
+                _poolLock.Release();
+            }
+
+            // Wait for any connection to become available
+            while (!ct.IsCancellationRequested)
+            {
+                await _poolLock.WaitAsync(ct);
+                try
+                {
+                    foreach (var conn in _connections)
+                    {
+                        if (conn.IsHealthy() && await conn.Lock.WaitAsync(0, ct))
+                        {
+                            conn.LastActivity = DateTime.UtcNow;
+                            return conn;
+                        }
+                    }
+                }
+                finally
+                {
+                    _poolLock.Release();
+                }
+
+                // Small delay before retrying
+                await Task.Delay(10, ct);
+            }
+
+            throw new OperationCanceledException(ct);
+        }
+
+        /// <summary>
+        /// Gets the primary connection (first in pool) for operations that need a consistent connection.
+        /// Creates one if pool is empty.
+        /// </summary>
+        public async Task<PeerConnection> GetPrimaryConnectionAsync(CancellationToken ct)
+        {
+            await _poolLock.WaitAsync(ct);
+            try
+            {
+                // Clean up unhealthy connections
+                for (int i = _connections.Count - 1; i >= 0; i--)
+                {
+                    if (!_connections[i].IsHealthy())
+                    {
+                        _connections[i].Dispose();
+                        _connections.RemoveAt(i);
+                    }
+                }
+
+                // Return first healthy connection or create new one
+                if (_connections.Count > 0)
+                {
+                    var conn = _connections[0];
+                    await conn.Lock.WaitAsync(ct);
+                    conn.LastActivity = DateTime.UtcNow;
+                    return conn;
+                }
+
+                // Create first connection
+                var newConn = await CreateNewConnectionAsync(ct);
+                if (newConn != null)
+                {
+                    _connections.Add(newConn);
+                    await newConn.Lock.WaitAsync(ct);
+                    return newConn;
+                }
+
+                throw new InvalidOperationException($"Failed to create connection to {PeerKey}");
+            }
+            finally
+            {
+                _poolLock.Release();
+            }
+        }
+
+        private async Task<PeerConnection?> CreateNewConnectionAsync(CancellationToken ct)
+        {
+            Exception? lastException = null;
+            for (int attempt = 1; attempt <= ProtocolConstants.MAX_RETRY_ATTEMPTS; attempt++)
+            {
+                try
+                {
+                    var client = new TcpClient();
+                    ConfigureTcpClient(client);
+
+                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeoutCts.CancelAfter(ProtocolConstants.CONNECTION_TIMEOUT_MS);
+
+                    await client.ConnectAsync(_peer.IpAddress, _peer.Port, timeoutCts.Token);
+
+                    var connection = new PeerConnection(client);
+
+                    // Perform secure handshake
+                    try
+                    {
+                        await _owner.PerformSecureHandshakeAsClient(connection, _peer, ct);
+                        System.Diagnostics.Debug.WriteLine($"Secure handshake completed for pool connection to {_peer.Name}");
+                    }
+                    catch (Exception handshakeEx)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Secure handshake failed for pool connection to {_peer.Name}: {handshakeEx.Message}");
+                    }
+
+                    // Measure RTT
+                    try
+                    {
+                        connection.RttMs = await _owner.MeasureRttAsync(connection, ct);
+                    }
+                    catch { }
+
+                    System.Diagnostics.Debug.WriteLine($"Created pool connection #{_connections.Count + 1} to {_peer.Name}");
+                    return connection;
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    lastException = ex;
+                    if (attempt < ProtocolConstants.MAX_RETRY_ATTEMPTS)
+                    {
+                        var delay = ProtocolConstants.RETRY_BASE_DELAY_MS * (int)Math.Pow(2, attempt - 1);
+                        await Task.Delay(delay, ct);
+                    }
+                }
+            }
+
+            System.Diagnostics.Debug.WriteLine($"Failed to create pool connection to {_peer.Name}: {lastException?.Message}");
+            return null;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+
+            foreach (var conn in _connections)
+            {
+                try { conn.Dispose(); } catch { }
+            }
+            _connections.Clear();
+            _poolLock.Dispose();
+        }
+    }
+
+    private readonly ConcurrentDictionary<string, ConnectionPool> _connectionPools = new();
+
+
+    /// <summary>
     /// Configures TCP socket options for better connection management.
     /// </summary>
     private static void ConfigureTcpClient(TcpClient client)
@@ -213,96 +427,45 @@ public class TransferService : IDisposable
         }
     }
 
-    private async Task<PeerConnection> GetOrCreatePeerConnection(Peer peer, CancellationToken ct)
+    /// <summary>
+    /// Gets or creates a connection pool for the specified peer.
+    /// </summary>
+    private ConnectionPool GetOrCreateConnectionPool(Peer peer)
     {
         var key = $"{peer.IpAddress}:{peer.Port}";
-        
-        // Check for existing healthy connection
-        if (_activeConnections.TryGetValue(key, out var existing))
+        return _connectionPools.GetOrAdd(key, _ => new ConnectionPool(peer, this));
+    }
+
+    /// <summary>
+    /// Gets a connection to a peer (uses primary connection from pool for backward compatibility).
+    /// The caller must release the connection lock when done.
+    /// </summary>
+    private async Task<PeerConnection> GetOrCreatePeerConnection(Peer peer, CancellationToken ct)
+    {
+        var pool = GetOrCreateConnectionPool(peer);
+        return await pool.GetPrimaryConnectionAsync(ct);
+    }
+
+    /// <summary>
+    /// Acquires a connection from the pool for parallel transfers.
+    /// The caller must release the connection lock when done.
+    /// </summary>
+    private async Task<PeerConnection> AcquirePooledConnection(Peer peer, CancellationToken ct)
+    {
+        var pool = GetOrCreateConnectionPool(peer);
+        return await pool.AcquireAsync(ct);
+    }
+
+    /// <summary>
+    /// Removes a connection pool when it's no longer healthy.
+    /// </summary>
+    private void RemoveConnectionPool(Peer peer)
+    {
+        var key = $"{peer.IpAddress}:{peer.Port}";
+        if (_connectionPools.TryRemove(key, out var pool))
         {
-            if (existing.IsHealthy())
-            {
-                existing.LastActivity = DateTime.UtcNow;
-                return existing;
-            }
-            
-            // Connection is stale or half-open, remove it
-            System.Diagnostics.Debug.WriteLine($"Removing unhealthy connection to {peer.Name} ({key})");
-            existing.Dispose();
-            _activeConnections.TryRemove(key, out _);
+            pool.Dispose();
         }
-
-        // Retry logic with exponential backoff
-        Exception? lastException = null;
-        for (int attempt = 1; attempt <= ProtocolConstants.MAX_RETRY_ATTEMPTS; attempt++)
-        {
-            try
-            {
-                var client = new TcpClient();
-                ConfigureTcpClient(client);
-                
-                // Connect with timeout
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeoutCts.CancelAfter(ProtocolConstants.CONNECTION_TIMEOUT_MS);
-                
-                await client.ConnectAsync(peer.IpAddress, peer.Port, timeoutCts.Token);
-                
-                var connection = new PeerConnection(client);
-                
-                // Perform secure handshake for encrypted communication
-                try
-                {
-                    await PerformSecureHandshakeAsClient(connection, peer, ct);
-                    System.Diagnostics.Debug.WriteLine($"Secure handshake completed with {peer.Name}");
-                }
-                catch (Exception handshakeEx)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Secure handshake failed with {peer.Name}: {handshakeEx.Message}");
-                    // Continue with unencrypted connection for backward compatibility
-                    // In the future, this could be made strict
-                }
-
-                // Measure RTT for adaptive buffer sizing
-                try
-                {
-                    connection.RttMs = await MeasureRttAsync(connection, ct);
-                    System.Diagnostics.Debug.WriteLine($"RTT to {peer.Name}: {connection.RttMs}ms, optimal buffer: {FileHelpers.FormatBytes(connection.GetOptimalBufferSize())}");
-                }
-                catch (Exception rttEx)
-                {
-                    System.Diagnostics.Debug.WriteLine($"RTT measurement failed for {peer.Name}: {rttEx.Message}");
-                    // Continue with default buffer size
-                }
-                
-                _activeConnections.AddOrUpdate(key, connection, (k, old) => 
-                {
-                    old.Dispose();
-                    return connection;
-                });
-
-                System.Diagnostics.Debug.WriteLine($"Created new connection to {peer.Name} ({key}) on attempt {attempt}, encrypted: {connection.IsEncrypted}");
-                return connection;
-
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw; // Don't retry if the operation itself was cancelled
-            }
-            catch (Exception ex)
-            {
-                lastException = ex;
-                System.Diagnostics.Debug.WriteLine($"Connection attempt {attempt}/{ProtocolConstants.MAX_RETRY_ATTEMPTS} to {peer.Name} failed: {ex.Message}");
-                
-                if (attempt < ProtocolConstants.MAX_RETRY_ATTEMPTS)
-                {
-                    // Exponential backoff: 1s, 2s, 4s...
-                    var delay = ProtocolConstants.RETRY_BASE_DELAY_MS * (int)Math.Pow(2, attempt - 1);
-                    await Task.Delay(delay, ct);
-                }
-            }
-        }
-
-        throw new InvalidOperationException($"Failed to connect to {peer.Name} after {ProtocolConstants.MAX_RETRY_ATTEMPTS} attempts", lastException);
     }
 
     /// <summary>
@@ -611,6 +774,10 @@ public class TransferService : IDisposable
                 HandleSyncFileRenamed(reader, remotePeer);
                 break;
 
+            case ProtocolConstants.MSG_FILE_CHANGED_COMPRESSED:
+                await HandleSyncFileChangedCompressed(reader, stream, remotePeer, ct);
+                break;
+
             default:
                 System.Diagnostics.Debug.WriteLine($"Unknown sync message type: {messageType}");
                 break;
@@ -709,6 +876,50 @@ public class TransferService : IDisposable
 
         System.Diagnostics.Debug.WriteLine($"Sync rename received: {oldRelativePath} -> {newRelativePath}");
         SyncRenameReceived?.Invoke(syncFile, remotePeer);
+    }
+
+    /// <summary>
+    /// Handles incoming compressed file sync messages. Uses Brotli decompression.
+    /// </summary>
+    private async Task HandleSyncFileChangedCompressed(BinaryReader reader, NetworkStream stream, Peer remotePeer, CancellationToken ct)
+    {
+        var relativePath = reader.ReadString();
+        var contentHash = reader.ReadString();
+        var lastModified = DateTime.FromBinary(reader.ReadInt64());
+        var fileSize = reader.ReadInt64();       // Original (uncompressed) file size
+        var compressedSize = reader.ReadInt64(); // Compressed size on wire
+        var isDirectory = reader.ReadBoolean();
+
+        var syncFile = new SyncedFile
+        {
+            RelativePath = relativePath,
+            ContentHash = contentHash,
+            LastModified = lastModified,
+            FileSize = fileSize,
+            IsDirectory = isDirectory,
+            Action = SyncAction.Update,
+            SourcePeerId = remotePeer.Id
+        };
+
+        System.Diagnostics.Debug.WriteLine($"Sync file received (compressed): {relativePath} ({compressedSize} -> {fileSize} bytes)");
+        
+        // Wrap the network stream in a decompression stream for reading the compressed data
+        // We need to read exactly compressedSize bytes from the network, then decompress
+        var compressedData = new byte[compressedSize];
+        var totalRead = 0;
+        while (totalRead < compressedSize)
+        {
+            var bytesRead = await stream.ReadAsync(compressedData.AsMemory(totalRead, (int)(compressedSize - totalRead)), ct);
+            if (bytesRead == 0) throw new EndOfStreamException("Unexpected end of stream while receiving compressed data");
+            totalRead += bytesRead;
+        }
+
+        // Create a memory stream with the compressed data and wrap in BrotliStream for decompression
+        using var compressedStream = new MemoryStream(compressedData);
+        await using var brotliStream = new BrotliStream(compressedStream, CompressionMode.Decompress, leaveOpen: true);
+        
+        // Raise event for SyncService to handle - pass the decompression stream for reading file data
+        SyncFileReceived?.Invoke(syncFile, brotliStream, remotePeer);
     }
 
     private void HandleSyncManifest(BinaryReader reader, Peer remotePeer)
@@ -844,6 +1055,12 @@ public class TransferService : IDisposable
     {
         var buffer = new byte[BUFFER_SIZE];
         var totalReceived = 0L;
+        var maxDownloadBytesPerSec = _settings.MaxDownloadSpeedKBps * 1024;
+
+        // Wrap stream with ThrottledStream for download rate limiting (leaveOpen: true to keep NetworkStream alive)
+        await using Stream readStream = maxDownloadBytesPerSec > 0
+            ? new ThrottledStream(stream, maxReadBytesPerSecond: maxDownloadBytesPerSec, maxWriteBytesPerSecond: 0, leaveOpen: true)
+            : stream;
 
         // Only retry opening the file stream, not the whole network transfer
         await using var fileStream = await FileHelpers.ExecuteWithRetryAsync(async () =>
@@ -854,7 +1071,7 @@ public class TransferService : IDisposable
         while (totalReceived < transfer.FileSize && !ct.IsCancellationRequested)
         {
             var toRead = (int)Math.Min(BUFFER_SIZE, transfer.FileSize - totalReceived);
-            var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, toRead), ct);
+            var bytesRead = await readStream.ReadAsync(buffer.AsMemory(0, toRead), ct);
             
             if (bytesRead == 0) break;
 
@@ -916,15 +1133,21 @@ public class TransferService : IDisposable
 
             var buffer = new byte[BUFFER_SIZE];
             var totalSent = 0L;
+            var maxUploadBytesPerSec = _settings.MaxUploadSpeedKBps * 1024;
 
             await using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, BUFFER_SIZE, useAsync: true);
+            
+            // Wrap network stream with ThrottledStream for upload rate limiting (leaveOpen: true to keep NetworkStream alive)
+            await using Stream writeStream = maxUploadBytesPerSec > 0
+                ? new ThrottledStream(stream, maxReadBytesPerSecond: 0, maxWriteBytesPerSecond: maxUploadBytesPerSec, leaveOpen: true)
+                : stream;
 
             while (totalSent < fileInfo.Length && !ct.IsCancellationRequested)
             {
                 var bytesRead = await fileStream.ReadAsync(buffer, ct);
                 if (bytesRead == 0) break;
 
-                await stream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
+                await writeStream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
                 totalSent += bytesRead;
                 transfer.BytesTransferred = totalSent;
 
@@ -967,7 +1190,128 @@ public class TransferService : IDisposable
     #region Sync Transfer Methods
 
     /// <summary>
+    /// Sends multiple small files to a peer in parallel using the connection pool.
+    /// This significantly improves performance for folders with many small files.
+    /// </summary>
+    public async Task SendSyncFilesParallel(
+        Peer peer,
+        IEnumerable<(string filePath, SyncedFile syncFile)> files,
+        Action<string, long, long>? progressCallback = null,
+        CancellationToken ct = default)
+    {
+        var fileList = files.ToList();
+        if (fileList.Count == 0) return;
+
+        System.Diagnostics.Debug.WriteLine($"Starting parallel transfer of {fileList.Count} files to {peer.Name}");
+
+        // Use SemaphoreSlim to limit concurrent transfers to pool size
+        var semaphore = new SemaphoreSlim(ProtocolConstants.MAX_PARALLEL_CONNECTIONS);
+        var tasks = new List<Task>();
+        var completedCount = 0;
+
+        foreach (var (filePath, syncFile) in fileList)
+        {
+            await semaphore.WaitAsync(ct);
+            
+            var task = Task.Run(async () =>
+            {
+                try
+                {
+                    await SendSingleFileFromPool(peer, filePath, syncFile, (sent, total) =>
+                    {
+                        progressCallback?.Invoke(syncFile.RelativePath, sent, total);
+                    }, ct);
+                    
+                    Interlocked.Increment(ref completedCount);
+                    System.Diagnostics.Debug.WriteLine($"Parallel transfer [{completedCount}/{fileList.Count}]: {syncFile.RelativePath}");
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            }, ct);
+            
+            tasks.Add(task);
+        }
+
+        await Task.WhenAll(tasks);
+        semaphore.Dispose();
+
+        System.Diagnostics.Debug.WriteLine($"Completed parallel transfer of {fileList.Count} files to {peer.Name}");
+    }
+
+    /// <summary>
+    /// Internal method to send a single file using a pooled connection.
+    /// </summary>
+    private async Task SendSingleFileFromPool(
+        Peer peer,
+        string filePath,
+        SyncedFile syncFile,
+        Action<long, long>? progressCallback = null,
+        CancellationToken ct = default)
+    {
+        var fileInfo = new FileInfo(filePath);
+        if (!fileInfo.Exists) return;
+
+        PeerConnection? connection = null;
+        try
+        {
+            // Acquire a connection from the pool (may wait or create new)
+            connection = await AcquirePooledConnection(peer, ct);
+
+            // Compress file content first
+            await using var compressedBuffer = new MemoryStream();
+            await using var fileStream = await FileHelpers.ExecuteWithRetryAsync(async () =>
+            {
+                return new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, BUFFER_SIZE, useAsync: true);
+            });
+
+            // Compress file to memory buffer
+            {
+                await using var brotliStream = new BrotliStream(compressedBuffer, CompressionLevel.Fastest, leaveOpen: true);
+                await fileStream.CopyToAsync(brotliStream, ct);
+            }
+
+            var compressedData = compressedBuffer.ToArray();
+
+            // Send sync header and metadata with compressed flag
+            connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
+            connection.Writer.Write(ProtocolConstants.MSG_FILE_CHANGED_COMPRESSED);
+            connection.Writer.Write(syncFile.RelativePath);
+            connection.Writer.Write(syncFile.ContentHash);
+            connection.Writer.Write(syncFile.LastModified.ToBinary());
+            connection.Writer.Write(fileInfo.Length);               // Original uncompressed size
+            connection.Writer.Write((long)compressedData.Length);   // Compressed size
+            connection.Writer.Write(syncFile.IsDirectory);
+
+            // Send compressed content
+            await connection.Stream.WriteAsync(compressedData, ct);
+            progressCallback?.Invoke(fileInfo.Length, fileInfo.Length);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Parallel send error for {syncFile.RelativePath}: {ex.Message}");
+            RemoveConnectionPool(peer);
+            throw;
+        }
+        finally
+        {
+            // Release connection back to pool
+            connection?.Lock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Checks if a file size qualifies for parallel transfer.
+    /// </summary>
+    public static bool IsSmallFile(long fileSize)
+    {
+        return fileSize <= ProtocolConstants.SMALL_FILE_THRESHOLD;
+    }
+
+    /// <summary>
     /// Sends a synced file to a peer (auto-accepted, no confirmation).
+    /// Uses Brotli compression for efficient transfer.
     /// </summary>
     public async Task SendSyncFile(Peer peer, string filePath, SyncedFile syncFile, Action<long, long>? progressCallback = null, CancellationToken ct = default)
     {
@@ -980,32 +1324,52 @@ public class TransferService : IDisposable
             await connection.Lock.WaitAsync(ct);
             try
             {
-                // Send sync header and metadata
-                connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
-                connection.Writer.Write(ProtocolConstants.MSG_FILE_CHANGED);
-                connection.Writer.Write(syncFile.RelativePath);
-                connection.Writer.Write(syncFile.ContentHash);
-                connection.Writer.Write(syncFile.LastModified.ToBinary());
-                connection.Writer.Write(fileInfo.Length);
-                connection.Writer.Write(syncFile.IsDirectory);
-
-                // Send file content
-                var buffer = new byte[BUFFER_SIZE];
+                // Compress file content first
+                await using var compressedBuffer = new MemoryStream();
                 await using var fileStream = await FileHelpers.ExecuteWithRetryAsync(async () =>
                 {
                     return new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, BUFFER_SIZE, useAsync: true);
                 });
                 
-                long totalSent = 0;
-                int bytesRead;
-                while ((bytesRead = await fileStream.ReadAsync(buffer, ct)) > 0)
+                // Compress file to memory buffer
                 {
-                    await connection.Stream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
-                    totalSent += bytesRead;
-                    progressCallback?.Invoke(totalSent, fileInfo.Length);
+                    await using var brotliStream = new BrotliStream(compressedBuffer, CompressionLevel.Fastest, leaveOpen: true);
+                    await fileStream.CopyToAsync(brotliStream, ct);
+                    // BrotliStream must be disposed/flushed to finalize the compressed data
+                }
+                
+                var compressedData = compressedBuffer.ToArray();
+                var compressionRatio = fileInfo.Length > 0 ? (1.0 - (double)compressedData.Length / fileInfo.Length) * 100 : 0;
+                
+                System.Diagnostics.Debug.WriteLine($"Compression: {syncFile.RelativePath} - {fileInfo.Length} -> {compressedData.Length} bytes ({compressionRatio:F1}% saved)");
+
+                // Send sync header and metadata with compressed flag
+                connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
+                connection.Writer.Write(ProtocolConstants.MSG_FILE_CHANGED_COMPRESSED);
+                connection.Writer.Write(syncFile.RelativePath);
+                connection.Writer.Write(syncFile.ContentHash);
+                connection.Writer.Write(syncFile.LastModified.ToBinary());
+                connection.Writer.Write(fileInfo.Length);          // Original uncompressed size
+                connection.Writer.Write((long)compressedData.Length); // Compressed size
+                connection.Writer.Write(syncFile.IsDirectory);
+
+                // Send compressed content with optional throttling using ThrottledStream
+                var maxUploadBytesPerSec = _settings.MaxUploadSpeedKBps * 1024;
+                await using Stream writeStream = maxUploadBytesPerSec > 0
+                    ? new ThrottledStream(connection.Stream, maxReadBytesPerSecond: 0, maxWriteBytesPerSecond: maxUploadBytesPerSec, leaveOpen: true)
+                    : connection.Stream;
+
+                // Send in chunks for progress reporting
+                var totalSent = 0;
+                while (totalSent < compressedData.Length && !ct.IsCancellationRequested)
+                {
+                    var chunkSize = Math.Min(BUFFER_SIZE, compressedData.Length - totalSent);
+                    await writeStream.WriteAsync(compressedData.AsMemory(totalSent, chunkSize), ct);
+                    totalSent += chunkSize;
+                    progressCallback?.Invoke(totalSent, compressedData.Length);
                 }
 
-                System.Diagnostics.Debug.WriteLine($"Sync sent: {syncFile.RelativePath} to {peer.Name}");
+                System.Diagnostics.Debug.WriteLine($"Sync sent (compressed): {syncFile.RelativePath} to {peer.Name}");
             }
             finally
             {

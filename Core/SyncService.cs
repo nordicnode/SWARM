@@ -25,6 +25,7 @@ public class SyncService : IDisposable
     private readonly DiscoveryService _discoveryService;
     private readonly TransferService _transferService;
     private readonly VersioningService _versioningService;
+    private readonly SwarmIgnoreService _swarmIgnoreService;
     
     private FileSystemWatcher? _watcher;
     private CancellationTokenSource? _cts;
@@ -83,6 +84,7 @@ public class SyncService : IDisposable
         _discoveryService = discoveryService;
         _transferService = transferService;
         _versioningService = versioningService;
+        _swarmIgnoreService = new SwarmIgnoreService(settings);
 
         // Subscribe to TransferService sync events
         _transferService.SyncFileReceived += OnSyncFileReceived;
@@ -276,6 +278,15 @@ public class SyncService : IDisposable
     {
         return _fileStates.Values.ToList();
     }
+
+    /// <summary>
+    /// Gets the current file states dictionary for integrity verification.
+    /// </summary>
+    public IReadOnlyDictionary<string, SyncedFile> GetFileStates()
+    {
+        return _fileStates;
+    }
+
 
     /// <summary>
     /// Compares incoming manifest with local state and resolves differences.
@@ -489,6 +500,21 @@ public class SyncService : IDisposable
         var fileName = Path.GetFileName(path);
         if (fileName.StartsWith('.') || fileName.StartsWith("~"))
             return true;
+
+        // Check .swarmignore patterns
+        try
+        {
+            var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, path);
+            if (_swarmIgnoreService.IsIgnored(relativePath))
+            {
+                System.Diagnostics.Debug.WriteLine($"[SwarmIgnore] Ignoring: {relativePath}");
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[SwarmIgnore] Error checking path: {ex.Message}");
+        }
 
         return false;
     }

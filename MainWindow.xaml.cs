@@ -7,7 +7,6 @@ using System.Windows.Media.Animation;
 using Swarm.Helpers;
 using Swarm.Models;
 using Swarm.ViewModels;
-using MessageBox = System.Windows.MessageBox;
 using DataFormats = System.Windows.DataFormats;
 using DragDropEffects = System.Windows.DragDropEffects;
 using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
@@ -15,6 +14,8 @@ using Brush = System.Windows.Media.Brush;
 using Swarm.UI;
 using System.Windows.Forms;
 using Drawing = System.Drawing;
+using System.Windows.Controls;
+using System.Windows.Threading;
 
 namespace Swarm;
 
@@ -26,6 +27,10 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
     private NotifyIcon? _trayIcon;
+
+    // State for Modals
+    private Action<bool>? _pendingFileAcceptCallback;
+    private Peer? _pendingTrustPeer;
 
     public MainWindow()
     {
@@ -80,7 +85,7 @@ public partial class MainWindow : Window
         _viewModel.Initialize();
 
         // Start radar animation
-        var radarAnimation = (Storyboard)FindResource("RadarPulseAnimation");
+        var radarAnimation = (Storyboard)FindResource("PulseAnimation");
         radarAnimation.Begin();
 
         // Check if we should start minimized
@@ -119,64 +124,104 @@ public partial class MainWindow : Window
 
     #region View-Specific Event Handlers
 
-    private void PulseSyncIndicator()
+    private void ShowNotification(string title, string message, bool isError = false)
     {
-        SyncIndicator.Fill = (Brush)FindResource("AccentPrimaryBrush");
-        
-        var timer = new System.Windows.Threading.DispatcherTimer
+        Dispatcher.Invoke(() =>
         {
-            Interval = TimeSpan.FromMilliseconds(500)
-        };
-        timer.Tick += (s, e) =>
-        {
-            SyncIndicator.Fill = (Brush)FindResource("StatusOnlineBrush");
-            timer.Stop();
-        };
-        timer.Start();
+            var border = new Border
+            {
+                Background = (Brush)FindResource("BackgroundCardBrush"),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(16),
+                Margin = new Thickness(0, 8, 0, 0),
+                BorderBrush = (Brush)FindResource(isError ? "StatusErrorBrush" : "AccentPrimaryBrush"),
+                BorderThickness = new Thickness(1),
+                Effect = (System.Windows.Media.Effects.Effect)FindResource("SmallShadow"),
+                Opacity = 0,
+                RenderTransform = new TranslateTransform(20, 0)
+            };
+
+            var stack = new StackPanel();
+            stack.Children.Add(new TextBlock 
+            { 
+                Text = title, 
+                FontWeight = FontWeights.SemiBold, 
+                Foreground = (Brush)FindResource("TextPrimaryBrush"),
+                FontSize = 14,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            stack.Children.Add(new TextBlock 
+            { 
+                Text = message, 
+                Foreground = (Brush)FindResource("TextSecondaryBrush"),
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            border.Child = stack;
+            NotificationStack.Children.Add(border);
+
+            // Animate In
+            var fadeIn = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(300));
+            var slideIn = new DoubleAnimation(20, 0, TimeSpan.FromMilliseconds(300)) { EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut } };
+            
+            border.BeginAnimation(OpacityProperty, fadeIn);
+            border.RenderTransform.BeginAnimation(TranslateTransform.XProperty, slideIn);
+
+            // Auto Dismiss
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            timer.Tick += (s, e) =>
+            {
+                timer.Stop();
+                var fadeOut = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(300));
+                fadeOut.Completed += (s2, e2) => NotificationStack.Children.Remove(border);
+                border.BeginAnimation(OpacityProperty, fadeOut);
+            };
+            timer.Start();
+        });
     }
 
     private void OnDiscoveryBindingFailed()
     {
-        MessageBox.Show(
-            "Could not bind to the standard discovery port (37420).\n\n" +
-            "You may not be visible to other peers, but you can still search for them.\n" +
-            "This usually happens if another application is using the port.",
-            "Discovery Warning",
-            MessageBoxButton.OK,
-            MessageBoxImage.Warning);
+        ShowNotification("Discovery Warning", "Could not bind to port 37420. Other peers might not see you.", true);
     }
 
     private void OnUntrustedPeerDiscovered(Peer peer)
     {
-        var fingerprint = peer.Fingerprint ?? "Unknown";
-        var localFingerprint = _viewModel.CryptoService.GetShortFingerprint();
+        _pendingTrustPeer = peer;
         
-        var message = $"New device discovered: {peer.Name}\n\n" +
-                     $"Device Fingerprint:\n{fingerprint}\n\n" +
-                     $"Your Fingerprint:\n{localFingerprint}\n\n" +
-                     "To verify this device, compare fingerprints on both devices.\n\n" +
-                     "Do you want to trust this device?";
+        TrustDeviceName.Text = peer.Name;
+        DeviceFingerprint.Text = peer.Fingerprint ?? "Unknown";
+        MyFingerprint.Text = _viewModel.CryptoService.GetShortFingerprint();
         
-        var result = MessageBox.Show(
-            message,
-            "Trust New Device",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
-        
-        if (result == MessageBoxResult.Yes && !string.IsNullOrEmpty(peer.PublicKeyBase64))
+        ModalOverlay.Visibility = Visibility.Visible;
+        TrustDeviceDialog.Visibility = Visibility.Visible;
+        IncomingFileDialog.Visibility = Visibility.Collapsed;
+    }
+
+    private void AcceptTrust_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pendingTrustPeer != null && !string.IsNullOrEmpty(_pendingTrustPeer.PublicKeyBase64))
         {
-            _viewModel.Settings.TrustedPeerPublicKeys[peer.Id] = peer.PublicKeyBase64;
+             _viewModel.Settings.TrustedPeerPublicKeys[_pendingTrustPeer.Id] = _pendingTrustPeer.PublicKeyBase64;
             
-            if (!_viewModel.Settings.TrustedPeers.Any(p => p.Id == peer.Id))
+            if (!_viewModel.Settings.TrustedPeers.Any(p => p.Id == _pendingTrustPeer.Id))
             {
-                _viewModel.Settings.TrustedPeers.Add(new TrustedPeer { Id = peer.Id, Name = peer.Name });
+                _viewModel.Settings.TrustedPeers.Add(new TrustedPeer { Id = _pendingTrustPeer.Id, Name = _pendingTrustPeer.Name });
             }
             
             _viewModel.Settings.Save();
-            peer.IsTrusted = true;
+            _pendingTrustPeer.IsTrusted = true;
             
-            Debug.WriteLine($"Trusted peer: {peer.Name} ({peer.Id})");
+            ShowNotification("Device Trusted", $"Added {_pendingTrustPeer.Name} to trusted devices.");
         }
+        
+        CloseModal();
+    }
+
+    private void RejectTrust_Click(object sender, RoutedEventArgs e)
+    {
+        CloseModal();
     }
 
     private void OnIncomingFileRequest(string fileName, string senderName, long fileSize, Action<bool> acceptCallback)
@@ -187,14 +232,36 @@ public partial class MainWindow : Window
             return;
         }
 
-        var sizeStr = FileHelpers.FormatBytes(fileSize);
-        var result = MessageBox.Show(
-            $"{senderName} wants to send you:\n\n{fileName} ({sizeStr})\n\nAccept?",
-            "Incoming File",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
+        _pendingFileAcceptCallback = acceptCallback;
+        
+        IncomingSender.Text = $"from {senderName}";
+        IncomingFileName.Text = fileName;
+        IncomingFileSize.Text = FileHelpers.FormatBytes(fileSize);
+        
+        ModalOverlay.Visibility = Visibility.Visible;
+        IncomingFileDialog.Visibility = Visibility.Visible;
+        TrustDeviceDialog.Visibility = Visibility.Collapsed;
+    }
 
-        acceptCallback(result == MessageBoxResult.Yes);
+    private void AcceptFile_Click(object sender, RoutedEventArgs e)
+    {
+        _pendingFileAcceptCallback?.Invoke(true);
+        CloseModal();
+    }
+
+    private void RejectFile_Click(object sender, RoutedEventArgs e)
+    {
+        _pendingFileAcceptCallback?.Invoke(false);
+        CloseModal();
+    }
+
+    private void CloseModal()
+    {
+        ModalOverlay.Visibility = Visibility.Collapsed;
+        TrustDeviceDialog.Visibility = Visibility.Collapsed;
+        IncomingFileDialog.Visibility = Visibility.Collapsed;
+        _pendingTrustPeer = null;
+        _pendingFileAcceptCallback = null;
     }
 
     private void OnTransferCompleted(FileTransfer transfer)
@@ -203,7 +270,7 @@ public partial class MainWindow : Window
             _viewModel.Settings.NotificationsEnabled && 
             _viewModel.Settings.ShowTransferComplete)
         {
-            MessageBox.Show($"File received:\n{transfer.LocalPath}", "Transfer Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            ShowNotification("Transfer Complete", $"Received: {Path.GetFileName(transfer.LocalPath)}");
         }
     }
 
@@ -211,8 +278,10 @@ public partial class MainWindow : Window
     {
         var fileName = Path.GetFileName(filePath);
         var msg = backupPath != null 
-            ? $"Conflict detected in {fileName}. Backup created."
-            : $"Conflict detected in {fileName}. New version created in History.";
+            ? $"Conflict detected. Backup created."
+            : $"Conflict detected. Saved to History.";
+        
+        ShowNotification("Sync Conflict", msg, true);
         
         Debug.WriteLine($"[CONFLICT] {filePath} -> {msg}");
         
@@ -240,19 +309,18 @@ public partial class MainWindow : Window
         if (e.Data.GetDataPresent(DataFormats.FileDrop))
         {
             e.Effects = DragDropEffects.Copy;
-            var animation = (Storyboard)FindResource("DragEnterAnimation");
-            animation.Begin();
             DropZoneTitle.Text = "Release to send";
-            DropZoneIcon.Fill = (Brush)FindResource("AccentGlowBrush");
+            // Visual feedback handled by Style/Triggers if possible or manual here
+            DropZoneBorder.BorderBrush = (Brush)FindResource("AccentGlowBrush");
+            DropZoneBorder.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(40, 45, 212, 191)); // #282dd4bf
         }
     }
 
     private void DropZone_DragLeave(object sender, System.Windows.DragEventArgs e)
     {
-        var animation = (Storyboard)FindResource("DragLeaveAnimation");
-        animation.Begin();
-        DropZoneTitle.Text = "Drop files here to send";
-        DropZoneIcon.Fill = (Brush)FindResource("AccentPrimaryBrush");
+        DropZoneTitle.Text = "Send Files";
+        DropZoneBorder.BorderBrush = (Brush)FindResource("AccentPrimaryBrush"); // Default state
+        DropZoneBorder.Background = (Brush)FindResource("BackgroundGlassBrush");
     }
 
     private async void DropZone_Drop(object sender, System.Windows.DragEventArgs e)
@@ -285,12 +353,12 @@ public partial class MainWindow : Window
 
     private void PeerListBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
-        _viewModel.SelectedPeer = PeerListBox.SelectedItem as Peer;
+        _viewModel.SelectedPeer = (sender as System.Windows.Controls.ListBox)?.SelectedItem as Peer;
     }
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
-        var settingsDialog = new SettingsDialog(_viewModel.Settings, _viewModel.ApplySettings)
+        var settingsDialog = new SettingsDialog(_viewModel.Settings, _viewModel.ApplySettings, _viewModel.IntegrityService)
         {
             Owner = this
         };

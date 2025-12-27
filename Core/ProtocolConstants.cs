@@ -250,5 +250,36 @@ public static class ProtocolConstants
     /// RTT threshold (ms) above which we consider the connection to be slow.
     /// </summary>
     public const int SLOW_LINK_RTT_MS = 50;
+
+
+    // --- Compression ---
+
+    /// <summary>
+    /// Flag byte indicating compressed data follows.
+    /// </summary>
+    public const byte COMPRESSION_FLAG_ENABLED = 0x01;
+
+    /// <summary>
+    /// Flag byte indicating uncompressed data follows.
+    /// </summary>
+    public const byte COMPRESSION_FLAG_DISABLED = 0x00;
+
+    /// <summary>
+    /// Message type: File changed with compression (new protocol).
+    /// </summary>
+    public const byte MSG_FILE_CHANGED_COMPRESSED = 0x20;
+
+
+    // --- Parallel Transfers ---
+
+    /// <summary>
+    /// Maximum number of parallel TCP connections per peer.
+    /// </summary>
+    public const int MAX_PARALLEL_CONNECTIONS = 4;
+
+    /// <summary>
+    /// File size threshold below which files are considered "small" for parallel batching (100KB).
+    /// </summary>
+    public const long SMALL_FILE_THRESHOLD = 100 * 1024;
 }
 

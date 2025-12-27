@@ -162,6 +162,12 @@
                                             </StackPanel>
 
                                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Button Content="Compare" 
+                                                        Style="{StaticResource SecondaryButtonStyle}"
+                                                        Padding="12,6" Margin="0,0,8,0"
+                                                        Tag="{Binding}"
+                                                        Click="CompareVersion_Click"
+                                                        ToolTip="Compare with current file"/>
                                                 <Button Content="Show" 
                                                         Style="{StaticResource SecondaryButtonStyle}"
                                                         Padding="12,6" Margin="0,0,8,0"

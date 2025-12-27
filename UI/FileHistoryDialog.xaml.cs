@@ -95,6 +95,62 @@ public partial class FileHistoryDialog : Window
         }
     }
 
+    private void CompareVersion_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && button.Tag is VersionInfo version)
+        {
+            // Check if it's a text file
+            if (!IsTextFile(version.RelativePath))
+            {
+                MessageBox.Show(
+                    "Visual comparison is only available for text files.\nUse 'Show' to open the version in File Explorer.",
+                    "Binary File", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Get the version file path
+            var versionFilePath = _versioningService.GetVersionFilePath(version);
+            if (versionFilePath == null)
+            {
+                MessageBox.Show("Version file not found.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            // Get current file path
+            var currentFilePath = Path.Combine(_versioningService.Settings.SyncFolderPath, version.RelativePath);
+
+            // Open comparison dialog
+            var diffDialog = new DiffCompareDialog(currentFilePath, versionFilePath, version)
+            {
+                Owner = this
+            };
+            diffDialog.ShowDialog();
+        }
+    }
+
+    private static bool IsTextFile(string path)
+    {
+        var textExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".txt", ".md", ".markdown", ".json", ".xml", ".yaml", ".yml",
+            ".cs", ".csx", ".vb", ".fs", ".fsx",
+            ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+            ".html", ".htm", ".css", ".scss", ".sass", ".less",
+            ".py", ".pyw", ".rb", ".php", ".java", ".kt", ".kts",
+            ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx",
+            ".go", ".rs", ".swift", ".m", ".mm",
+            ".sql", ".sh", ".bash", ".ps1", ".psm1", ".psd1",
+            ".bat", ".cmd", ".ini", ".cfg", ".conf", ".config",
+            ".log", ".csv", ".tsv", ".toml", ".env",
+            ".gitignore", ".gitattributes", ".editorconfig",
+            ".sln", ".csproj", ".vbproj", ".fsproj", ".props", ".targets",
+            ".xaml", ".axaml", ".razor", ".cshtml", ".vbhtml"
+        };
+
+        var extension = Path.GetExtension(path);
+        return textExtensions.Contains(extension);
+    }
+
     private async void RestoreVersion_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button button && button.Tag is VersionInfo version)

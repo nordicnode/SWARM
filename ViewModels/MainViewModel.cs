@@ -25,6 +25,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly TransferService _transferService;
     private readonly VersioningService _versioningService;
     private readonly SyncService _syncService;
+    private readonly IntegrityService _integrityService;
     private readonly Dispatcher _dispatcher;
 
     private Peer? _selectedPeer;
@@ -52,6 +53,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         _transferService = new TransferService(_settings, _cryptoService);
         _versioningService = new VersioningService(_settings);
         _syncService = new SyncService(_settings, _discoveryService, _transferService, _versioningService);
+        _integrityService = new IntegrityService(_settings, _syncService);
 
         // Initialize commands
         SendFilesCommand = new AsyncRelayCommand(SendFilesAsync, CanSendFiles);
@@ -80,6 +82,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public TransferService TransferService => _transferService;
     public SyncService SyncService => _syncService;
     public VersioningService VersioningService => _versioningService;
+    public IntegrityService IntegrityService => _integrityService;
 
     public Peer? SelectedPeer
     {

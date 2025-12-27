@@ -133,6 +133,16 @@ public class Settings
     public int MaxVersionAgeDays { get; set; } = 30;
 
     /// <summary>
+    /// Maximum upload speed in KB/s (0 = unlimited).
+    /// </summary>
+    public long MaxUploadSpeedKBps { get; set; } = 0;
+
+    /// <summary>
+    /// Maximum download speed in KB/s (0 = unlimited).
+    /// </summary>
+    public long MaxDownloadSpeedKBps { get; set; } = 0;
+
+    /// <summary>
     /// Loads settings from disk, or returns default settings if file doesn't exist.
     /// </summary>
     public static Settings Load()
@@ -225,7 +235,9 @@ public class Settings
             ShowTransferComplete = ShowTransferComplete,
             VersioningEnabled = VersioningEnabled,
             MaxVersionsPerFile = MaxVersionsPerFile,
-            MaxVersionAgeDays = MaxVersionAgeDays
+            MaxVersionAgeDays = MaxVersionAgeDays,
+            MaxUploadSpeedKBps = MaxUploadSpeedKBps,
+            MaxDownloadSpeedKBps = MaxDownloadSpeedKBps
         };
 
         foreach (var peer in TrustedPeers)
@@ -258,6 +270,8 @@ public class Settings
         VersioningEnabled = source.VersioningEnabled;
         MaxVersionsPerFile = source.MaxVersionsPerFile;
         MaxVersionAgeDays = source.MaxVersionAgeDays;
+        MaxUploadSpeedKBps = source.MaxUploadSpeedKBps;
+        MaxDownloadSpeedKBps = source.MaxDownloadSpeedKBps;
         
         TrustedPeers.Clear();
         foreach (var peer in source.TrustedPeers)

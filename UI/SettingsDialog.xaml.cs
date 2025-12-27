@@ -14,14 +14,16 @@ public partial class SettingsDialog : Window
     private readonly Settings _originalSettings;
     private readonly Settings _workingSettings;
     private readonly Action<Settings>? _onSettingsChanged;
+    private readonly IntegrityService? _integrityService;
 
-    public SettingsDialog(Settings settings, Action<Settings>? onSettingsChanged = null)
+    public SettingsDialog(Settings settings, Action<Settings>? onSettingsChanged = null, IntegrityService? integrityService = null)
     {
         InitializeComponent();
         
         _originalSettings = settings;
         _workingSettings = settings.Clone();
         _onSettingsChanged = onSettingsChanged;
+        _integrityService = integrityService;
         
         LoadSettings();
     }
@@ -51,7 +53,11 @@ public partial class SettingsDialog : Window
         MaxAgeSlider.Value = _workingSettings.MaxVersionAgeDays;
         MaxAgeValueText.Text = _workingSettings.MaxVersionAgeDays == 0 ? "Forever" : $"{_workingSettings.MaxVersionAgeDays} days";
 
-
+        // Bandwidth Settings
+        MaxDownloadSpeedSlider.Value = _workingSettings.MaxDownloadSpeedKBps;
+        MaxDownloadSpeedValueText.Text = FormatSpeed(_workingSettings.MaxDownloadSpeedKBps);
+        MaxUploadSpeedSlider.Value = _workingSettings.MaxUploadSpeedKBps;
+        MaxUploadSpeedValueText.Text = FormatSpeed(_workingSettings.MaxUploadSpeedKBps);
         
         // Trusted Peers
         UpdateTrustedPeersList();
@@ -154,6 +160,71 @@ public partial class SettingsDialog : Window
         }
     }
 
+    private void MaxDownloadSpeedSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (MaxDownloadSpeedValueText != null)
+        {
+            MaxDownloadSpeedValueText.Text = FormatSpeed((long)e.NewValue);
+        }
+    }
+
+    private void MaxUploadSpeedSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (MaxUploadSpeedValueText != null)
+        {
+            MaxUploadSpeedValueText.Text = FormatSpeed((long)e.NewValue);
+        }
+    }
+
+    private static string FormatSpeed(long kbps)
+    {
+        if (kbps == 0) return "Unlimited";
+        if (kbps >= 1024) return $"{kbps / 1024} MB/s";
+        return $"{kbps} KB/s";
+    }
+
+    private async void VerifyIntegrity_Click(object sender, RoutedEventArgs e)
+    {
+        if (_integrityService == null)
+        {
+            System.Windows.MessageBox.Show(
+                "Integrity service is not available. Please ensure sync is enabled.",
+                "Service Not Available",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        // Disable button during check
+        VerifyIntegrityButton.IsEnabled = false;
+        VerifyIntegrityButton.Content = "Checking...";
+
+        try
+        {
+            var result = await _integrityService.VerifyLocalIntegrityAsync();
+            
+            // Show result dialog
+            var resultDialog = new IntegrityResultDialog(result)
+            {
+                Owner = this
+            };
+            resultDialog.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(
+                $"Failed to verify integrity: {ex.Message}",
+                "Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        finally
+        {
+            VerifyIntegrityButton.IsEnabled = true;
+            VerifyIntegrityButton.Content = "Verify Integrity";
+        }
+    }
+
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
         // Apply remaining settings from UI to working copy
@@ -168,6 +239,8 @@ public partial class SettingsDialog : Window
         _workingSettings.VersioningEnabled = VersioningEnabledToggle.IsChecked ?? true;
         _workingSettings.MaxVersionsPerFile = (int)MaxVersionsSlider.Value;
         _workingSettings.MaxVersionAgeDays = (int)MaxAgeSlider.Value;
+        _workingSettings.MaxDownloadSpeedKBps = (long)MaxDownloadSpeedSlider.Value;
+        _workingSettings.MaxUploadSpeedKBps = (long)MaxUploadSpeedSlider.Value;
         
         // Update original settings from working copy
         _originalSettings.UpdateFrom(_workingSettings);

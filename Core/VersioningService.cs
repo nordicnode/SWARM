@@ -29,6 +29,11 @@ public class VersioningService : IDisposable
     }
 
     /// <summary>
+    /// Gets the settings used by this service.
+    /// </summary>
+    public Settings Settings => _settings;
+
+    /// <summary>
     /// Initializes the versioning service and loads existing versions.
     /// </summary>
     public void Initialize()
@@ -373,6 +378,21 @@ public class VersioningService : IDisposable
         {
             System.Diagnostics.Debug.WriteLine($"Failed to open versions folder: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Gets the full file path of a stored version.
+    /// </summary>
+    /// <param name="version">The version to get the file path for.</param>
+    /// <returns>The file path if it exists, null otherwise.</returns>
+    public string? GetVersionFilePath(VersionInfo version)
+    {
+        var sanitizedPath = SanitizePathForStorage(version.RelativePath);
+        var extension = Path.GetExtension(version.RelativePath);
+        var versionFileName = $"{version.VersionId}{extension}";
+        var versionFilePath = Path.Combine(_versionsBasePath, sanitizedPath, versionFileName);
+
+        return File.Exists(versionFilePath) ? versionFilePath : null;
     }
 
     /// <summary>
