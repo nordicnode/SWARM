@@ -396,11 +396,59 @@ public class SyncService : IDisposable
 
     private void OnWatcherError(object sender, ErrorEventArgs e)
     {
-        System.Diagnostics.Debug.WriteLine($"FileSystemWatcher error: {e.GetException().Message}");
+        var exception = e.GetException();
+        System.Diagnostics.Debug.WriteLine($"FileSystemWatcher error: {exception.Message}");
         
-        // Attempt to restart
+        // Detect buffer overflow (common when many files change at once)
+        // The internal buffer can overflow if there's heavy file system activity
+        bool isPotentialBufferOverflow = false;
+        if (exception is System.ComponentModel.Win32Exception win32Ex)
+        {
+            // Error code 122 (ERROR_INSUFFICIENT_BUFFER) or general internal buffer overflow
+            if (win32Ex.NativeErrorCode == 122)
+            {
+                System.Diagnostics.Debug.WriteLine("[CRITICAL] FileSystemWatcher internal buffer overflow detected!");
+                isPotentialBufferOverflow = true;
+            }
+        }
+        
+        // Also treat "too many changes" type errors as potential overflow
+        if (exception.Message.Contains("buffer") || exception.Message.Contains("overflow"))
+        {
+            isPotentialBufferOverflow = true;
+        }
+        
+        SyncStatusChanged?.Invoke("Sync error - recovering...");
+        
+        // Attempt to restart the watcher
         Stop();
         Start();
+        
+        // Always trigger a full sync after watcher error to catch any missed changes
+        // This is especially important for buffer overflow scenarios where events were lost
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // Give the watcher time to stabilize after restart
+                await Task.Delay(2000);
+                
+                if (isPotentialBufferOverflow)
+                {
+                    System.Diagnostics.Debug.WriteLine("Triggering full sync to recover from buffer overflow");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("Triggering full sync to recover from watcher error");
+                }
+                
+                await ForceSyncAsync();
+            }
+            catch (Exception syncEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to sync after watcher error: {syncEx.Message}");
+            }
+        });
     }
 
     private bool ShouldIgnore(string path)

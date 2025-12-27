@@ -22,6 +22,7 @@ public class DiscoveryService : IDisposable
     private readonly object _peersLock = new();
     private readonly CryptoService _cryptoService;
     private readonly Settings _settings;
+    private MdnsDiscoveryService? _mdnsService;
     
     public ObservableCollection<Peer> Peers { get; } = [];
     public string LocalId { get; }
@@ -47,6 +48,20 @@ public class DiscoveryService : IDisposable
         LocalId = localId;
         _cryptoService = cryptoService;
         _settings = settings;
+        
+        // Initialize mDNS companion service for VLAN/corporate networks
+        // Wrapped in try-catch since mDNS is optional and may fail on some systems
+        try
+        {
+            _mdnsService = new MdnsDiscoveryService(localId, cryptoService, settings);
+            _mdnsService.PeerDiscovered += OnMdnsPeerDiscovered;
+            _mdnsService.PeerLost += OnMdnsPeerLost;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"mDNS initialization failed (non-fatal): {ex.Message}");
+            _mdnsService = null;
+        }
     }
 
     public void Start(int transferPort)
@@ -79,6 +94,14 @@ public class DiscoveryService : IDisposable
         
         // Start cleanup
         Task.Run(() => CleanupLoop(_cts.Token));
+        
+        // Start mDNS discovery (for VLAN/corporate networks)
+        if (_mdnsService != null)
+        {
+            _mdnsService.Start(transferPort);
+            _mdnsService.LocalName = LocalName;
+            _mdnsService.IsSyncEnabled = IsSyncEnabled;
+        }
     }
 
     private async Task BroadcastLoop(CancellationToken ct)
@@ -337,5 +360,56 @@ public class DiscoveryService : IDisposable
         _udpClient?.Close();
         _udpClient?.Dispose();
         _cts?.Dispose();
+        _mdnsService?.Dispose();
     }
+
+    #region mDNS Event Handlers
+
+    private void OnMdnsPeerDiscovered(Peer peer)
+    {
+        lock (_peersLock)
+        {
+            // Check if we already have this peer from UDP broadcast
+            var existingPeer = Peers.FirstOrDefault(p => p.Id == peer.Id);
+            if (existingPeer != null)
+            {
+                // Update with mDNS info if newer
+                existingPeer.LastSeen = peer.LastSeen;
+                return;
+            }
+        }
+
+        // Add new peer discovered via mDNS
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+        {
+            Peers.Add(peer);
+            PeerDiscovered?.Invoke(peer);
+            
+            if (!peer.IsTrusted)
+            {
+                UntrustedPeerDiscovered?.Invoke(peer);
+            }
+        });
+    }
+
+    private void OnMdnsPeerLost(Peer peer)
+    {
+        Peer? peerToRemove = null;
+        
+        lock (_peersLock)
+        {
+            peerToRemove = Peers.FirstOrDefault(p => p.Id == peer.Id);
+        }
+        
+        if (peerToRemove != null)
+        {
+            System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+            {
+                Peers.Remove(peerToRemove);
+                PeerLost?.Invoke(peerToRemove);
+            });
+        }
+    }
+
+    #endregion
 }

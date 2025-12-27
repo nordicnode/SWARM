@@ -4,8 +4,9 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using Swarm.Core;
+using Swarm.Helpers;
 using Swarm.Models;
+using Swarm.ViewModels;
 using MessageBox = System.Windows.MessageBox;
 using DataFormats = System.Windows.DataFormats;
 using DragDropEffects = System.Windows.DragDropEffects;
@@ -14,52 +15,32 @@ using Brush = System.Windows.Media.Brush;
 using Swarm.UI;
 using System.Windows.Forms;
 using Drawing = System.Drawing;
-using Swarm.Helpers;
 
 namespace Swarm;
 
+/// <summary>
+/// MainWindow now acts purely as a View with minimal code-behind.
+/// All business logic is delegated to MainViewModel.
+/// </summary>
 public partial class MainWindow : Window
 {
-    private readonly Settings _settings;
-    private readonly CryptoService _cryptoService;
-    private readonly DiscoveryService _discoveryService;
-    private readonly TransferService _transferService;
-    private readonly SyncService _syncService;
+    private readonly MainViewModel _viewModel;
     private NotifyIcon? _trayIcon;
-    private Peer? _selectedPeer;
 
     public MainWindow()
     {
         InitializeComponent();
 
-        // Load settings
-        _settings = Settings.Load();
+        // Create and bind ViewModel
+        _viewModel = new MainViewModel(Dispatcher);
+        DataContext = _viewModel;
 
-        // Initialize cryptographic service
-        _cryptoService = new CryptoService();
-
-        _discoveryService = new DiscoveryService(_settings.LocalId, _cryptoService, _settings);
-        _transferService = new TransferService(_settings, _cryptoService);
-        _syncService = new SyncService(_settings, _discoveryService, _transferService);
-
-        // Bind collections
-        PeerListBox.ItemsSource = _discoveryService.Peers;
-        TransfersListBox.ItemsSource = _transferService.Transfers;
-
-        // Wire up events
-        _discoveryService.Peers.CollectionChanged += (s, e) => UpdatePeerUI();
-        _discoveryService.BindingFailed += OnDiscoveryBindingFailed;
-        _discoveryService.UntrustedPeerDiscovered += OnUntrustedPeerDiscovered;
-        _transferService.IncomingFileRequest += OnIncomingFileRequest;
-        _transferService.TransferProgress += OnTransferProgress;
-        _transferService.TransferCompleted += OnTransferCompleted;
-
-        // Wire up sync events
-        _syncService.SyncStatusChanged += OnSyncStatusChanged;
-        _syncService.FileChanged += OnSyncFileChanged;
-        _syncService.IncomingSyncFile += OnIncomingSyncFile;
-        _syncService.SyncProgressChanged += OnSyncProgressChanged;
-        _syncService.FileConflictDetected += OnFileConflictDetected;
+        // Subscribe to ViewModel events that require View interaction
+        _viewModel.DiscoveryBindingFailed += OnDiscoveryBindingFailed;
+        _viewModel.UntrustedPeerDiscoveredEvent += OnUntrustedPeerDiscovered;
+        _viewModel.IncomingFileRequestEvent += OnIncomingFileRequest;
+        _viewModel.TransferCompletedEvent += OnTransferCompleted;
+        _viewModel.FileConflictDetectedEvent += OnFileConflictDetected;
 
         InitializeTrayIcon();
 
@@ -94,29 +75,15 @@ public partial class MainWindow : Window
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        // Start services
-        _transferService.Start();
-        _discoveryService.Start(_transferService.ListenPort);
-
-        // Update discovery service's settings
-        _discoveryService.LocalName = _settings.DeviceName;
-        _discoveryService.IsSyncEnabled = _settings.IsSyncEnabled;
-
-        // Start sync service
-        if (_settings.IsSyncEnabled)
-        {
-            _syncService.Start();
-        }
+        // Initialize ViewModel services
+        _viewModel.Initialize();
 
         // Start radar animation
         var radarAnimation = (Storyboard)FindResource("RadarPulseAnimation");
         radarAnimation.Begin();
 
-        UpdatePeerUI();
-        UpdateSyncUI();
-
         // Check if we should start minimized
-        if (_settings.StartMinimized)
+        if (_viewModel.Settings.StartMinimized)
         {
             HideToTray();
         }
@@ -137,10 +104,7 @@ public partial class MainWindow : Window
             _trayIcon.Dispose();
         }
 
-        _syncService.Dispose();
-        _discoveryService.Dispose();
-        _transferService.Dispose();
-        _cryptoService.Dispose();
+        _viewModel.Dispose();
     }
 
     protected override void OnStateChanged(EventArgs e)
@@ -152,123 +116,72 @@ public partial class MainWindow : Window
         base.OnStateChanged(e);
     }
 
-    private void UpdatePeerUI()
-    {
-        var count = _discoveryService.Peers.Count;
-        PeerCountText.Text = count == 1 ? "1 device found" : $"{count} devices found";
-        EmptyPeersPanel.Visibility = count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        StatusText.Text = count == 0 ? "Scanning for peers..." : $"Connected to {count} device(s)";
-    }
+    #region View-Specific Event Handlers
 
-    private void UpdateSyncUI()
+    private void PulseSyncIndicator()
     {
-        var isEnabled = _syncService.IsEnabled;
+        SyncIndicator.Fill = (Brush)FindResource("AccentPrimaryBrush");
         
-        // Update status text
-        SyncStatusText.Text = isEnabled ? "Sync enabled" : "Sync disabled";
-        
-        // Update indicator color
-        SyncIndicator.Fill = isEnabled 
-            ? (Brush)FindResource("StatusOnlineBrush")
-            : (Brush)FindResource("TextMutedBrush");
-        
-        // Update toggle button text
-        SyncToggleButton.Content = isEnabled ? "Disable Sync" : "Enable Sync";
-        
-        // Update folder path display
-        var docPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        var displayPath = _settings.SyncFolderPath.StartsWith(docPath)
-            ? _settings.SyncFolderPath.Replace(docPath, "Documents")
-            : _settings.SyncFolderPath;
-        SyncFolderPathText.Text = displayPath;
-    }
-
-    private void OnSyncStatusChanged(string status)
-    {
-        Dispatcher.Invoke(() =>
+        var timer = new System.Windows.Threading.DispatcherTimer
         {
-            // Only update if we aren't showing progress, or if it's a "complete" status
-            if (SyncProgressBar.Visibility == Visibility.Collapsed || status.Contains("complete") || status.Contains("disabled"))
-            {
-                SyncStatusText.Text = status;
-                if (status.Contains("complete") || status.Contains("disabled"))
-                {
-                    SyncProgressBar.Visibility = Visibility.Collapsed;
-                }
-            }
-        });
+            Interval = TimeSpan.FromMilliseconds(500)
+        };
+        timer.Tick += (s, e) =>
+        {
+            SyncIndicator.Fill = (Brush)FindResource("StatusOnlineBrush");
+            timer.Stop();
+        };
+        timer.Start();
     }
 
-    private void OnSyncProgressChanged(SyncProgress progress)
+    private void OnDiscoveryBindingFailed()
     {
-        Dispatcher.Invoke(() =>
-        {
-            if (progress.TotalFiles > 0 && progress.CompletedFiles < progress.TotalFiles)
-            {
-                SyncProgressBar.Visibility = Visibility.Visible;
-                SyncProgressBar.Value = progress.CurrentFilePercent;
-                
-                SyncStatusText.Text = $"Syncing {progress.CompletedFiles + 1}/{progress.TotalFiles}: {Path.GetFileName(progress.CurrentFileName)}";
-            }
-            else
-            {
-                SyncProgressBar.Visibility = Visibility.Collapsed;
-                SyncStatusText.Text = "Sync complete";
-            }
-        });
+        MessageBox.Show(
+            "Could not bind to the standard discovery port (37420).\n\n" +
+            "You may not be visible to other peers, but you can still search for them.\n" +
+            "This usually happens if another application is using the port.",
+            "Discovery Warning",
+            MessageBoxButton.OK,
+            MessageBoxImage.Warning);
     }
 
-    private void OnSyncFileChanged(SyncedFile file)
+    private void OnUntrustedPeerDiscovered(Peer peer)
     {
-        Dispatcher.Invoke(() =>
+        var fingerprint = peer.Fingerprint ?? "Unknown";
+        var localFingerprint = _viewModel.CryptoService.GetShortFingerprint();
+        
+        var message = $"New device discovered: {peer.Name}\n\n" +
+                     $"Device Fingerprint:\n{fingerprint}\n\n" +
+                     $"Your Fingerprint:\n{localFingerprint}\n\n" +
+                     "To verify this device, compare fingerprints on both devices.\n\n" +
+                     "Do you want to trust this device?";
+        
+        var result = MessageBox.Show(
+            message,
+            "Trust New Device",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        
+        if (result == MessageBoxResult.Yes && !string.IsNullOrEmpty(peer.PublicKeyBase64))
         {
-            // Brief visual feedback that sync is active
-            SyncIndicator.Fill = (Brush)FindResource("AccentPrimaryBrush");
+            _viewModel.Settings.TrustedPeerPublicKeys[peer.Id] = peer.PublicKeyBase64;
             
-            // Reset after a short delay
-            var timer = new System.Windows.Threading.DispatcherTimer
+            if (!_viewModel.Settings.TrustedPeers.Any(p => p.Id == peer.Id))
             {
-                Interval = TimeSpan.FromMilliseconds(500)
-            };
-            timer.Tick += (s, e) =>
-            {
-                SyncIndicator.Fill = (Brush)FindResource("StatusOnlineBrush");
-                timer.Stop();
-            };
-            timer.Start();
-        });
-    }
-
-    private void OnIncomingSyncFile(SyncedFile file)
-    {
-        Dispatcher.Invoke(() =>
-        {
-            System.Diagnostics.Debug.WriteLine($"Synced: {file.RelativePath}");
-        });
-    }
-
-    private void OnFileConflictDetected(string filePath, string backupPath)
-    {
-        Dispatcher.Invoke(() =>
-        {
-            var fileName = Path.GetFileName(filePath);
-            var msg = $"Conflict detected in {fileName}. Backup created.";
-            
-            System.Diagnostics.Debug.WriteLine($"[CONFLICT] {filePath} backed up to {backupPath}");
-            
-            // Show tray notification if available
-            if (_trayIcon != null && _trayIcon.Visible && _settings.NotificationsEnabled)
-            {
-                _trayIcon.ShowBalloonTip(3000, "Sync Conflict", msg, ToolTipIcon.Info);
+                _viewModel.Settings.TrustedPeers.Add(new TrustedPeer { Id = peer.Id, Name = peer.Name });
             }
-        });
+            
+            _viewModel.Settings.Save();
+            peer.IsTrusted = true;
+            
+            Debug.WriteLine($"Trusted peer: {peer.Name} ({peer.Id})");
+        }
     }
 
     private void OnIncomingFileRequest(string fileName, string senderName, long fileSize, Action<bool> acceptCallback)
     {
-        if (!_settings.NotificationsEnabled)
+        if (!_viewModel.Settings.NotificationsEnabled)
         {
-            // Auto-deny if notifications are disabled (unless it's auto-accepted by other logic)
             acceptCallback(false);
             return;
         }
@@ -283,78 +196,30 @@ public partial class MainWindow : Window
         acceptCallback(result == MessageBoxResult.Yes);
     }
 
-    private void OnTransferProgress(FileTransfer transfer)
-    {
-        Dispatcher.Invoke(() =>
-        {
-            EmptyTransfersText.Visibility = Visibility.Collapsed;
-            // Force refresh
-            TransfersListBox.Items.Refresh();
-        });
-    }
-
     private void OnTransferCompleted(FileTransfer transfer)
     {
-        Dispatcher.Invoke(() =>
+        if (transfer.Direction == TransferDirection.Incoming && 
+            _viewModel.Settings.NotificationsEnabled && 
+            _viewModel.Settings.ShowTransferComplete)
         {
-            if (transfer.Direction == TransferDirection.Incoming && _settings.NotificationsEnabled && _settings.ShowTransferComplete)
-            {
-                MessageBox.Show($"File received:\n{transfer.LocalPath}", "Transfer Complete", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-        });
+            MessageBox.Show($"File received:\n{transfer.LocalPath}", "Transfer Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
     }
 
-    private void OnDiscoveryBindingFailed()
+    private void OnFileConflictDetected(string filePath, string backupPath)
     {
-        Dispatcher.Invoke(() =>
+        var fileName = Path.GetFileName(filePath);
+        var msg = $"Conflict detected in {fileName}. Backup created.";
+        
+        Debug.WriteLine($"[CONFLICT] {filePath} backed up to {backupPath}");
+        
+        if (_trayIcon != null && _trayIcon.Visible && _viewModel.Settings.NotificationsEnabled)
         {
-            MessageBox.Show(
-                "Could not bind to the standard discovery port (37420).\n\n" +
-                "You may not be visible to other peers, but you can still search for them.\n" +
-                "This usually happens if another application is using the port.",
-                "Discovery Warning",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-        });
+            _trayIcon.ShowBalloonTip(3000, "Sync Conflict", msg, ToolTipIcon.Info);
+        }
     }
 
-    private void OnUntrustedPeerDiscovered(Peer peer)
-    {
-        Dispatcher.Invoke(() =>
-        {
-            // Show TOFU trust dialog
-            var fingerprint = peer.Fingerprint ?? "Unknown";
-            var localFingerprint = _cryptoService.GetShortFingerprint();
-            
-            var message = $"New device discovered: {peer.Name}\n\n" +
-                         $"Device Fingerprint:\n{fingerprint}\n\n" +
-                         $"Your Fingerprint:\n{localFingerprint}\n\n" +
-                         "To verify this device, compare fingerprints on both devices.\n\n" +
-                         "Do you want to trust this device?";
-            
-            var result = MessageBox.Show(
-                message,
-                "Trust New Device",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-            
-            if (result == MessageBoxResult.Yes && !string.IsNullOrEmpty(peer.PublicKeyBase64))
-            {
-                // Add to trusted peers
-                _settings.TrustedPeerPublicKeys[peer.Id] = peer.PublicKeyBase64;
-                
-                if (!_settings.TrustedPeers.Any(p => p.Id == peer.Id))
-                {
-                    _settings.TrustedPeers.Add(new TrustedPeer { Id = peer.Id, Name = peer.Name });
-                }
-                
-                _settings.Save();
-                peer.IsTrusted = true;
-                
-                Debug.WriteLine($"Trusted peer: {peer.Name} ({peer.Id})");
-            }
-        });
-    }
+    #endregion
 
     #region Drag & Drop
 
@@ -366,7 +231,6 @@ public partial class MainWindow : Window
             var animation = (Storyboard)FindResource("DragEnterAnimation");
             animation.Begin();
             DropZoneTitle.Text = "Release to send";
-            // Change icon color on drag
             DropZoneIcon.Fill = (Brush)FindResource("AccentGlowBrush");
         }
     }
@@ -376,7 +240,6 @@ public partial class MainWindow : Window
         var animation = (Storyboard)FindResource("DragLeaveAnimation");
         animation.Begin();
         DropZoneTitle.Text = "Drop files here to send";
-        // Reset icon color
         DropZoneIcon.Fill = (Brush)FindResource("AccentPrimaryBrush");
     }
 
@@ -387,7 +250,7 @@ public partial class MainWindow : Window
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
 
         var files = (string[])e.Data.GetData(DataFormats.FileDrop)!;
-        await SendFiles(files);
+        await _viewModel.SendFilesAsync(files);
     }
 
     #endregion
@@ -404,148 +267,27 @@ public partial class MainWindow : Window
 
         if (dialog.ShowDialog() == true)
         {
-            await SendFiles(dialog.FileNames);
+            await _viewModel.SendFilesAsync(dialog.FileNames);
         }
     }
 
     private void PeerListBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
-        _selectedPeer = PeerListBox.SelectedItem as Peer;
-        if (_selectedPeer != null)
-        {
-            SelectedPeerText.Text = $"Sending to: {_selectedPeer.Name}";
-        }
-        else
-        {
-            SelectedPeerText.Text = "";
-        }
+        _viewModel.SelectedPeer = PeerListBox.SelectedItem as Peer;
     }
-
-    #endregion
-
-    #region Sync Folder Handlers
-
-    private void SyncToggle_Click(object sender, RoutedEventArgs e)
-    {
-        var newState = !_syncService.IsEnabled;
-        _syncService.SetEnabled(newState);
-        _discoveryService.IsSyncEnabled = newState;
-        UpdateSyncUI();
-    }
-
-    private void ChangeSyncFolder_Click(object sender, RoutedEventArgs e)
-    {
-        // Use folder browser dialog
-        var dialog = new System.Windows.Forms.FolderBrowserDialog
-        {
-            Description = "Select Sync Folder",
-            InitialDirectory = _settings.SyncFolderPath,
-            UseDescriptionForTitle = true
-        };
-
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-        {
-            _syncService.SetSyncFolderPath(dialog.SelectedPath);
-            UpdateSyncUI();
-        }
-    }
-
-    private void OpenSyncFolder_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            _settings.EnsureSyncFolderExists();
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = _settings.SyncFolderPath,
-                UseShellExecute = true
-            });
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"Could not open folder:\n{ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    #endregion
-
-    #region File Sending
-
-    private async Task SendFiles(string[] filePaths)
-    {
-        if (_selectedPeer == null)
-        {
-            if (_discoveryService.Peers.Count == 0)
-            {
-                MessageBox.Show("No devices found. Make sure another device is running Swarm on the same network.",
-                    "No Devices", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            // Auto-select first peer if only one
-            if (_discoveryService.Peers.Count == 1)
-            {
-                _selectedPeer = _discoveryService.Peers[0];
-            }
-            else
-            {
-                MessageBox.Show("Please select a device to send to.", "Select Device", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-        }
-
-        EmptyTransfersText.Visibility = Visibility.Collapsed;
-
-        foreach (var filePath in filePaths)
-        {
-            if (File.Exists(filePath))
-            {
-                try
-                {
-                    await _transferService.SendFile(_selectedPeer, filePath);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Failed to send {Path.GetFileName(filePath)}:\n{ex.Message}",
-                        "Transfer Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
-        }
-    }
-
-    #endregion
-
-    #region Window Controls
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
-        var settingsDialog = new SettingsDialog(_settings, OnSettingsChanged)
+        var settingsDialog = new SettingsDialog(_viewModel.Settings, _viewModel.ApplySettings)
         {
             Owner = this
         };
         settingsDialog.ShowDialog();
     }
 
-    private void OnSettingsChanged(Settings settings)
-    {
-        // Apply changes that affect running services
-        _discoveryService.LocalName = settings.DeviceName;
-        _discoveryService.IsSyncEnabled = settings.IsSyncEnabled;
-        _transferService.SetDownloadPath(settings.DownloadPath);
-        
-        // Update sync service state
-        if (settings.IsSyncEnabled && !_syncService.IsRunning)
-        {
-            _syncService.Start();
-        }
-        else if (!settings.IsSyncEnabled && _syncService.IsRunning)
-        {
-            _syncService.Stop();
-        }
-        
-        // Update UI
-        UpdateSyncUI();
-    }
+    #endregion
+
+    #region Window Chrome
 
     private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -575,6 +317,4 @@ public partial class MainWindow : Window
     }
 
     #endregion
-
-
 }
