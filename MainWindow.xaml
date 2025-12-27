@@ -94,7 +94,7 @@
             <!-- ========== MAIN CONTENT ========== -->
             <Grid Grid.Row="1" Margin="24">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="300"/>
+                    <ColumnDefinition Width="380"/>
                     <ColumnDefinition Width="24"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
@@ -247,7 +247,7 @@
                                                Foreground="{StaticResource TextSecondaryBrush}"
                                                VerticalAlignment="Center" Margin="8,0,0,0"
                                                TextTrimming="CharacterEllipsis"
-                                               MaxWidth="160"/>
+                                               MaxWidth="240"/>
                                 </StackPanel>
                                 
                                 <!-- Change folder button -->
@@ -268,6 +268,10 @@
                                     Style="{StaticResource SecondaryButtonStyle}"
                                     Padding="12,6" FontSize="12" Margin="8,0,0,0"
                                     Command="{Binding OpenSyncFolderCommand}"/>
+                            <Button Content="History" 
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Padding="12,6" FontSize="12" Margin="8,0,0,0"
+                                    Command="{Binding OpenVersionHistoryCommand}"/>
                         </StackPanel>
                     </Grid>
                 </Border>

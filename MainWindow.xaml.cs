@@ -41,6 +41,7 @@ public partial class MainWindow : Window
         _viewModel.IncomingFileRequestEvent += OnIncomingFileRequest;
         _viewModel.TransferCompletedEvent += OnTransferCompleted;
         _viewModel.FileConflictDetectedEvent += OnFileConflictDetected;
+        _viewModel.OpenVersionHistoryRequested += OnOpenVersionHistoryRequested;
 
         InitializeTrayIcon();
 
@@ -206,17 +207,28 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnFileConflictDetected(string filePath, string backupPath)
+    private void OnFileConflictDetected(string filePath, string? backupPath)
     {
         var fileName = Path.GetFileName(filePath);
-        var msg = $"Conflict detected in {fileName}. Backup created.";
+        var msg = backupPath != null 
+            ? $"Conflict detected in {fileName}. Backup created."
+            : $"Conflict detected in {fileName}. New version created in History.";
         
-        Debug.WriteLine($"[CONFLICT] {filePath} backed up to {backupPath}");
+        Debug.WriteLine($"[CONFLICT] {filePath} -> {msg}");
         
         if (_trayIcon != null && _trayIcon.Visible && _viewModel.Settings.NotificationsEnabled)
         {
             _trayIcon.ShowBalloonTip(3000, "Sync Conflict", msg, ToolTipIcon.Info);
         }
+    }
+
+    private void OnOpenVersionHistoryRequested()
+    {
+        var dialog = new FileHistoryDialog(_viewModel.VersioningService)
+        {
+            Owner = this
+        };
+        dialog.ShowDialog();
     }
 
     #endregion

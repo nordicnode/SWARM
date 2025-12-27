@@ -198,6 +198,65 @@
                         </Grid>
                     </StackPanel>
                     
+                    <!-- ===== VERSIONING SECTION ===== -->
+                    <TextBlock Text="VERSIONING" Style="{StaticResource SettingsSectionStyle}"/>
+                    
+                    <!-- Versioning Enabled -->
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Enable File Versioning" Style="{StaticResource SettingsLabelStyle}"/>
+                            <TextBlock Text="Keep history of overwritten files" 
+                                       Style="{StaticResource SettingsDescriptionStyle}"/>
+                        </StackPanel>
+                        <CheckBox x:Name="VersioningEnabledToggle" Grid.Column="1" 
+                                  Style="{StaticResource ToggleSwitchStyle}"
+                                  VerticalAlignment="Center"/>
+                    </Grid>
+                    
+                    <!-- Max Versions -->
+                    <StackPanel Margin="0,0,0,12">
+                        <Grid>
+                            <StackPanel>
+                                <TextBlock Text="Max Versions Per File" Style="{StaticResource SettingsLabelStyle}"/>
+                                <TextBlock Text="Maximum number of versions to keep per file" 
+                                           Style="{StaticResource SettingsDescriptionStyle}"/>
+                            </StackPanel>
+                            <TextBlock x:Name="MaxVersionsValueText" 
+                                       Text="10" 
+                                       Style="{StaticResource SettingsLabelStyle}"
+                                       HorizontalAlignment="Right" VerticalAlignment="Top"/>
+                        </Grid>
+                        <Slider x:Name="MaxVersionsSlider" 
+                                Minimum="1" Maximum="50" Value="10" 
+                                TickFrequency="1" IsSnapToTickEnabled="True"
+                                Margin="0,8,0,0"
+                                ValueChanged="MaxVersionsSlider_ValueChanged"/>
+                    </StackPanel>
+
+                    <!-- Max Age -->
+                    <StackPanel Margin="0,0,0,16">
+                        <Grid>
+                            <StackPanel>
+                                <TextBlock Text="Retention Period (Days)" Style="{StaticResource SettingsLabelStyle}"/>
+                                <TextBlock Text="How long to keep versions (0 = forever)" 
+                                           Style="{StaticResource SettingsDescriptionStyle}"/>
+                            </StackPanel>
+                            <TextBlock x:Name="MaxAgeValueText" 
+                                       Text="30 days" 
+                                       Style="{StaticResource SettingsLabelStyle}"
+                                       HorizontalAlignment="Right" VerticalAlignment="Top"/>
+                        </Grid>
+                        <Slider x:Name="MaxAgeSlider" 
+                                Minimum="0" Maximum="365" Value="30" 
+                                TickFrequency="5" IsSnapToTickEnabled="True"
+                                Margin="0,8,0,0"
+                                ValueChanged="MaxAgeSlider_ValueChanged"/>
+                    </StackPanel>
+                    
                     <!-- ===== TRUSTED PEERS SECTION ===== -->
                     <TextBlock Text="TRUSTED PEERS" Style="{StaticResource SettingsSectionStyle}"/>
                     

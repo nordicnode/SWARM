@@ -44,6 +44,15 @@ public partial class SettingsDialog : Window
         SyncFolderPathText.Text = ShortenPath(_workingSettings.SyncFolderPath);
         SyncFolderPathText.ToolTip = _workingSettings.SyncFolderPath;
         
+        // Versioning Settings
+        VersioningEnabledToggle.IsChecked = _workingSettings.VersioningEnabled;
+        MaxVersionsSlider.Value = _workingSettings.MaxVersionsPerFile;
+        MaxVersionsValueText.Text = _workingSettings.MaxVersionsPerFile.ToString();
+        MaxAgeSlider.Value = _workingSettings.MaxVersionAgeDays;
+        MaxAgeValueText.Text = _workingSettings.MaxVersionAgeDays == 0 ? "Forever" : $"{_workingSettings.MaxVersionAgeDays} days";
+
+
+        
         // Trusted Peers
         UpdateTrustedPeersList();
         
@@ -123,6 +132,28 @@ public partial class SettingsDialog : Window
         }
     }
 
+    private void StartMinimizedToggle_Click(object sender, RoutedEventArgs e)
+    {
+        // Handled by binding/toggle logic
+    }
+
+    private void MaxVersionsSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (MaxVersionsValueText != null)
+        {
+            MaxVersionsValueText.Text = ((int)e.NewValue).ToString();
+        }
+    }
+
+    private void MaxAgeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (MaxAgeValueText != null)
+        {
+            int days = (int)e.NewValue;
+            MaxAgeValueText.Text = days == 0 ? "Forever" : $"{days} days";
+        }
+    }
+
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
         // Apply remaining settings from UI to working copy
@@ -134,6 +165,9 @@ public partial class SettingsDialog : Window
         _workingSettings.AutoAcceptFromTrusted = AutoAcceptToggle.IsChecked ?? false;
         _workingSettings.ShowTransferComplete = ShowCompleteToggle.IsChecked ?? true;
         _workingSettings.IsSyncEnabled = SyncEnabledToggle.IsChecked ?? true;
+        _workingSettings.VersioningEnabled = VersioningEnabledToggle.IsChecked ?? true;
+        _workingSettings.MaxVersionsPerFile = (int)MaxVersionsSlider.Value;
+        _workingSettings.MaxVersionAgeDays = (int)MaxAgeSlider.Value;
         
         // Update original settings from working copy
         _originalSettings.UpdateFrom(_workingSettings);

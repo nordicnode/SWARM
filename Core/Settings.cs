@@ -118,6 +118,21 @@ public class Settings
     public string LocalId { get; set; } = string.Empty;
 
     /// <summary>
+    /// Whether file versioning is enabled.
+    /// </summary>
+    public bool VersioningEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Maximum number of versions to keep per file.
+    /// </summary>
+    public int MaxVersionsPerFile { get; set; } = 10;
+
+    /// <summary>
+    /// Maximum age of versions in days before auto-pruning.
+    /// </summary>
+    public int MaxVersionAgeDays { get; set; } = 30;
+
+    /// <summary>
     /// Loads settings from disk, or returns default settings if file doesn't exist.
     /// </summary>
     public static Settings Load()
@@ -207,7 +222,10 @@ public class Settings
             AutoAcceptFromTrusted = AutoAcceptFromTrusted,
             NotificationsEnabled = NotificationsEnabled,
             StartMinimized = StartMinimized,
-            ShowTransferComplete = ShowTransferComplete
+            ShowTransferComplete = ShowTransferComplete,
+            VersioningEnabled = VersioningEnabled,
+            MaxVersionsPerFile = MaxVersionsPerFile,
+            MaxVersionAgeDays = MaxVersionAgeDays
         };
 
         foreach (var peer in TrustedPeers)
@@ -237,6 +255,9 @@ public class Settings
         NotificationsEnabled = source.NotificationsEnabled;
         StartMinimized = source.StartMinimized;
         ShowTransferComplete = source.ShowTransferComplete;
+        VersioningEnabled = source.VersioningEnabled;
+        MaxVersionsPerFile = source.MaxVersionsPerFile;
+        MaxVersionAgeDays = source.MaxVersionAgeDays;
         
         TrustedPeers.Clear();
         foreach (var peer in source.TrustedPeers)

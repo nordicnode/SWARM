@@ -24,6 +24,7 @@ public class SyncService : IDisposable
     private readonly Settings _settings;
     private readonly DiscoveryService _discoveryService;
     private readonly TransferService _transferService;
+    private readonly VersioningService _versioningService;
     
     private FileSystemWatcher? _watcher;
     private CancellationTokenSource? _cts;
@@ -40,6 +41,23 @@ public class SyncService : IDisposable
     private readonly ConcurrentDictionary<string, DateTime> _ignoreList = new();
     private const int IGNORE_DURATION_MS = ProtocolConstants.SYNC_IGNORE_DURATION_MS;
 
+    // Directory rename coalescence: track potential directory renames detected from file rename patterns
+    // Key: oldParentPath, Value: (newParentPath, set of affected file paths, first seen time)
+    private readonly ConcurrentDictionary<string, (string NewParentPath, HashSet<string> AffectedFiles, DateTime FirstSeen)> 
+        _directoryRenameCandidates = new();
+    
+    // Track recently renamed directories to suppress redundant child file rename broadcasts
+    private readonly ConcurrentDictionary<string, DateTime> _recentDirectoryRenames = new();
+    
+    // Extended debounce for directory rename detection (longer than file debounce to collect all events)
+    private const int DIRECTORY_RENAME_DEBOUNCE_MS = 500;
+    
+    // Threshold: if this many files share a parent path change, treat as directory rename
+    private const int DIRECTORY_RENAME_THRESHOLD = 3;
+    
+    // How long to remember a directory rename for child suppression
+    private const int DIRECTORY_RENAME_MEMORY_MS = 2000;
+
     public string SyncFolderPath => _settings.SyncFolderPath;
     public bool IsEnabled => _settings.IsSyncEnabled;
     public bool IsRunning => _watcher != null;
@@ -47,7 +65,7 @@ public class SyncService : IDisposable
     public event Action<SyncedFile>? FileChanged;
     public event Action<string>? SyncStatusChanged;
     public event Action<SyncedFile>? IncomingSyncFile;
-    public event Action<string, string>? FileConflictDetected;
+    public event Action<string, string?>? FileConflictDetected;
     public event Action<SyncProgress>? SyncProgressChanged;
 
     // Progress tracking fields (totalFilesCount is set by bulk sync operations)
@@ -59,11 +77,12 @@ public class SyncService : IDisposable
     // Track pending delta sync operations (relativePath -> peer awaiting delta)
     private readonly ConcurrentDictionary<string, (Peer peer, SyncedFile syncFile)> _pendingDeltaSyncs = new();
 
-    public SyncService(Settings settings, DiscoveryService discoveryService, TransferService transferService)
+    public SyncService(Settings settings, DiscoveryService discoveryService, TransferService transferService, VersioningService versioningService)
     {
         _settings = settings;
         _discoveryService = discoveryService;
         _transferService = transferService;
+        _versioningService = versioningService;
 
         // Subscribe to TransferService sync events
         _transferService.SyncFileReceived += OnSyncFileReceived;
@@ -122,7 +141,7 @@ public class SyncService : IDisposable
                 _watcher.Error += OnWatcherError;
 
                 // Start debounce processor
-                Task.Run(() => ProcessPendingChanges(_cts.Token));
+                _ = Task.Run(() => ProcessPendingChanges(_cts.Token));
 
                 SyncStatusChanged?.Invoke("Sync enabled - Watching for changes");
                 System.Diagnostics.Debug.WriteLine($"SyncService started, watching: {_settings.SyncFolderPath}");
@@ -483,7 +502,72 @@ public class SyncService : IDisposable
     private void QueueRename(string oldFullPath, string newFullPath)
     {
         _pendingRenames[newFullPath] = (oldFullPath, DateTime.Now);
+        
+        // Check if this could be part of a directory rename:
+        // Same filename but different parent directory = files moved with their parent
+        var oldDir = Path.GetDirectoryName(oldFullPath) ?? "";
+        var newDir = Path.GetDirectoryName(newFullPath) ?? "";
+        
+        if (oldDir != newDir && 
+            Path.GetFileName(oldFullPath) == Path.GetFileName(newFullPath))
+        {
+            // Same filename, different parent = potential directory rename
+            TrackDirectoryRenameCandidate(oldDir, newDir, newFullPath);
+        }
+        
         System.Diagnostics.Debug.WriteLine($"Queued rename: {oldFullPath} -> {newFullPath}");
+    }
+
+    /// <summary>
+    /// Tracks a file rename as a potential directory rename candidate.
+    /// Multiple files with the same parent path change indicate a directory was renamed.
+    /// </summary>
+    private void TrackDirectoryRenameCandidate(string oldParent, string newParent, string newFilePath)
+    {
+        _directoryRenameCandidates.AddOrUpdate(
+            oldParent,
+            _ => (newParent, new HashSet<string> { newFilePath }, DateTime.Now),
+            (_, existing) =>
+            {
+                existing.AffectedFiles.Add(newFilePath);
+                return existing;
+            });
+    }
+
+    /// <summary>
+    /// Marks a directory as recently renamed to suppress child file rename broadcasts.
+    /// </summary>
+    private void MarkDirectoryAsRenamed(string oldPath)
+    {
+        _recentDirectoryRenames[oldPath.ToLowerInvariant()] = DateTime.Now;
+    }
+
+    /// <summary>
+    /// Checks if a path is a subpath of a recently renamed directory.
+    /// Used to suppress individual file renames that are part of a directory rename.
+    /// </summary>
+    private bool IsSubpathOfRenamedDirectory(string path)
+    {
+        var normalizedPath = path.ToLowerInvariant();
+        var now = DateTime.Now;
+        
+        foreach (var (dirPath, timestamp) in _recentDirectoryRenames.ToList())
+        {
+            // Clean up old entries
+            if ((now - timestamp).TotalMilliseconds > DIRECTORY_RENAME_MEMORY_MS)
+            {
+                _recentDirectoryRenames.TryRemove(dirPath, out _);
+                continue;
+            }
+            
+            // Check if this path starts with the renamed directory path
+            if (normalizedPath.StartsWith(dirPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                normalizedPath.Equals(dirPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private async Task ProcessPendingChanges(CancellationToken ct)
@@ -496,9 +580,67 @@ public class SyncService : IDisposable
                 
                 var now = DateTime.Now;
 
-                // Process pending renames first
+                // === STEP 1: Process confirmed directory renames first ===
+                // These are explicit directory rename events from FileSystemWatcher
+                var directoryRenames = _pendingRenames
+                    .Where(kvp => (now - kvp.Value.Time).TotalMilliseconds >= DEBOUNCE_MS
+                                  && Directory.Exists(kvp.Key))
+                    .ToList();
+
+                foreach (var kvp in directoryRenames)
+                {
+                    var newPath = kvp.Key;
+                    var oldPath = kvp.Value.OldPath;
+                    
+                    if (_pendingRenames.TryRemove(newPath, out _))
+                    {
+                        // Mark this directory's old path so we can suppress child file renames
+                        MarkDirectoryAsRenamed(oldPath);
+                        await ProcessFileRename(oldPath, newPath);
+                    }
+                }
+
+                // === STEP 2: Coalesce file renames into directory renames ===
+                // If multiple files share the same parent path change, treat as directory rename
+                var candidatesToProcess = _directoryRenameCandidates
+                    .Where(kvp => (now - kvp.Value.FirstSeen).TotalMilliseconds >= DIRECTORY_RENAME_DEBOUNCE_MS)
+                    .ToList();
+
+                foreach (var candidate in candidatesToProcess)
+                {
+                    if (_directoryRenameCandidates.TryRemove(candidate.Key, out var info))
+                    {
+                        if (info.AffectedFiles.Count >= DIRECTORY_RENAME_THRESHOLD)
+                        {
+                            // Enough files share this parent change - treat as directory rename
+                            System.Diagnostics.Debug.WriteLine(
+                                $"[DirectoryRenameCoalescence] Coalescing {info.AffectedFiles.Count} file renames into directory rename: " +
+                                $"{candidate.Key} -> {info.NewParentPath}");
+                            
+                            // Remove individual file renames from pending queue
+                            foreach (var filePath in info.AffectedFiles)
+                            {
+                                _pendingRenames.TryRemove(filePath, out _);
+                            }
+                            
+                            // Mark as renamed to suppress any stragglers
+                            MarkDirectoryAsRenamed(candidate.Key);
+                            
+                            // Process as single directory rename (only if directory still exists)
+                            if (Directory.Exists(info.NewParentPath))
+                            {
+                                await ProcessFileRename(candidate.Key, info.NewParentPath);
+                            }
+                        }
+                        // Else: not enough files, individual renames will be processed below
+                    }
+                }
+
+                // === STEP 3: Process remaining individual file renames ===
+                // Skip files whose parent was already renamed (subsumed by directory rename)
                 var renamesToProcess = _pendingRenames
                     .Where(kvp => (now - kvp.Value.Time).TotalMilliseconds >= DEBOUNCE_MS)
+                    .Where(kvp => !IsSubpathOfRenamedDirectory(kvp.Value.OldPath))
                     .Select(kvp => (NewPath: kvp.Key, OldPath: kvp.Value.OldPath))
                     .ToList();
 
@@ -510,7 +652,7 @@ public class SyncService : IDisposable
                     }
                 }
 
-                // Process other changes
+                // === STEP 4: Process other changes (create, update, delete) ===
                 var toProcess = _pendingChanges
                     .Where(kvp => (now - kvp.Value).TotalMilliseconds >= DEBOUNCE_MS)
                     .Select(kvp => kvp.Key)
@@ -607,10 +749,37 @@ public class SyncService : IDisposable
         }
 
         // Update our local file state
-        if (_fileStates.TryRemove(oldRelativePath, out var existingState))
+        if (isDirectory)
         {
-            existingState.RelativePath = newRelativePath;
-            _fileStates[newRelativePath] = existingState;
+            // For directory renames, update all child file states
+            var oldPrefix = oldRelativePath + Path.DirectorySeparatorChar;
+            var filesToUpdate = _fileStates
+                .Where(kvp => kvp.Key.StartsWith(oldPrefix, StringComparison.OrdinalIgnoreCase) ||
+                              kvp.Key.Equals(oldRelativePath, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            
+            foreach (var kvp in filesToUpdate)
+            {
+                if (_fileStates.TryRemove(kvp.Key, out var state))
+                {
+                    // Update the relative path to reflect the new directory name
+                    var newPath = newRelativePath + kvp.Key.Substring(oldRelativePath.Length);
+                    state.RelativePath = newPath;
+                    _fileStates[newPath] = state;
+                }
+            }
+            
+            System.Diagnostics.Debug.WriteLine(
+                $"[DirectoryRename] Updated {filesToUpdate.Count} child file states for {oldRelativePath} -> {newRelativePath}");
+        }
+        else
+        {
+            // Single file rename
+            if (_fileStates.TryRemove(oldRelativePath, out var existingState))
+            {
+                existingState.RelativePath = newRelativePath;
+                _fileStates[newRelativePath] = existingState;
+            }
         }
 
         var syncFile = new SyncedFile
@@ -720,7 +889,7 @@ public class SyncService : IDisposable
         }
         else
         {
-            // Conflict detection: If file exists and content differs, backup local version
+            // Version control: Create version before overwriting if content differs
             if (File.Exists(localPath))
             {
                 try
@@ -728,12 +897,31 @@ public class SyncService : IDisposable
                     var currentHash = await ComputeFileHash(localPath);
                     if (currentHash != syncFile.ContentHash)
                     {
-                        var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-                        var backupPath = $"{localPath}.conflict-{timestamp}.bak";
-                        
-                        File.Copy(localPath, backupPath, overwrite: true);
-                        FileConflictDetected?.Invoke(localPath, backupPath);
-                        System.Diagnostics.Debug.WriteLine($"Conflict detected! Backed up to {backupPath}");
+                        // Use versioning service if enabled, otherwise fallback to legacy backup
+                        if (_settings.VersioningEnabled)
+                        {
+                            var version = await _versioningService.CreateVersionAsync(
+                                syncFile.RelativePath,
+                                localPath,
+                                "Conflict",
+                                syncFile.SourcePeerId);
+                            
+                            if (version != null)
+                            {
+                                FileConflictDetected?.Invoke(localPath, null); // null = stored in versions folder
+                                System.Diagnostics.Debug.WriteLine($"Conflict detected! Version {version.VersionId} created for {syncFile.RelativePath}");
+                            }
+                        }
+                        else
+                        {
+                            // Legacy backup behavior
+                            var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                            var backupPath = $"{localPath}.conflict-{timestamp}.bak";
+                            
+                            File.Copy(localPath, backupPath, overwrite: true);
+                            FileConflictDetected?.Invoke(localPath, backupPath);
+                            System.Diagnostics.Debug.WriteLine($"Conflict detected! Backed up to {backupPath}");
+                        }
                     }
                 }
                 catch (Exception ex)

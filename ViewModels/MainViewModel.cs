@@ -23,6 +23,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly CryptoService _cryptoService;
     private readonly DiscoveryService _discoveryService;
     private readonly TransferService _transferService;
+    private readonly VersioningService _versioningService;
     private readonly SyncService _syncService;
     private readonly Dispatcher _dispatcher;
 
@@ -49,7 +50,8 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         _cryptoService = new CryptoService();
         _discoveryService = new DiscoveryService(_settings.LocalId, _cryptoService, _settings);
         _transferService = new TransferService(_settings, _cryptoService);
-        _syncService = new SyncService(_settings, _discoveryService, _transferService);
+        _versioningService = new VersioningService(_settings);
+        _syncService = new SyncService(_settings, _discoveryService, _transferService, _versioningService);
 
         // Initialize commands
         SendFilesCommand = new AsyncRelayCommand(SendFilesAsync, CanSendFiles);
@@ -57,6 +59,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         ChangeSyncFolderCommand = new RelayCommand(ChangeSyncFolder);
         OpenSyncFolderCommand = new RelayCommand(OpenSyncFolder);
         ForceSyncCommand = new AsyncRelayCommand(ForceSync);
+        OpenVersionHistoryCommand = new RelayCommand(OpenVersionHistory);
 
         // Wire up service events
         SubscribeToEvents();
@@ -76,6 +79,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public DiscoveryService DiscoveryService => _discoveryService;
     public TransferService TransferService => _transferService;
     public SyncService SyncService => _syncService;
+    public VersioningService VersioningService => _versioningService;
 
     public Peer? SelectedPeer
     {
@@ -161,6 +165,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand ChangeSyncFolderCommand { get; }
     public ICommand OpenSyncFolderCommand { get; }
     public ICommand ForceSyncCommand { get; }
+    public ICommand OpenVersionHistoryCommand { get; }
 
     #endregion
 
@@ -310,6 +315,15 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         await _syncService.ForceSyncAsync();
     }
 
+    private void OpenVersionHistory(object? parameter)
+    {
+        // Open version history dialog
+        OpenVersionHistoryRequested?.Invoke();
+    }
+
+    // Event for view to handle opening version history dialog
+    public event Action? OpenVersionHistoryRequested;
+
     #endregion
 
     #region Event Handlers
@@ -400,7 +414,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public event Action<Peer>? UntrustedPeerDiscoveredEvent;
     public event Action<string, string, long, Action<bool>>? IncomingFileRequestEvent;
     public event Action<FileTransfer>? TransferCompletedEvent;
-    public event Action<string, string>? FileConflictDetectedEvent;
+    public event Action<string, string?>? FileConflictDetectedEvent;
 
     private void OnDiscoveryBindingFailed()
     {
@@ -430,7 +444,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         _dispatcher.Invoke(() => TransferCompletedEvent?.Invoke(transfer));
     }
 
-    private void OnFileConflictDetected(string filePath, string backupPath)
+    private void OnFileConflictDetected(string filePath, string? backupPath)
     {
         _dispatcher.Invoke(() => FileConflictDetectedEvent?.Invoke(filePath, backupPath));
     }
@@ -461,6 +475,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public void Dispose()
     {
         _syncService.Dispose();
+        _versioningService.Dispose();
         _discoveryService.Dispose();
         _transferService.Dispose();
         _cryptoService.Dispose();
