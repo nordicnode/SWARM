@@ -10,6 +10,7 @@ namespace Swarm.Helpers;
 public class SwarmIgnoreService
 {
     private readonly Settings _settings;
+    private readonly string _syncFolderPath;
     private readonly List<IgnorePattern> _patterns = new();
     private DateTime _lastLoadTime = DateTime.MinValue;
     private string? _lastIgnoreFilePath;
@@ -19,24 +20,49 @@ public class SwarmIgnoreService
     public SwarmIgnoreService(Settings settings)
     {
         _settings = settings;
+        _syncFolderPath = settings.SyncFolderPath;
+        ReloadPatterns();
+    }
+
+    // Constructor for testing
+    public SwarmIgnoreService(string syncFolderPath)
+    {
+        _settings = null!; // Settings not available in this mode
+        _syncFolderPath = syncFolderPath;
         ReloadPatterns();
     }
 
     /// <summary>
-    /// Check if a relative path should be ignored based on .swarmignore patterns.
+    /// Check if a relative path should be ignored based on .swarmignore patterns
+    /// and user-selected excluded folders.
     /// </summary>
     /// <param name="relativePath">Path relative to sync folder root</param>
     /// <returns>True if the path should be ignored</returns>
     public bool IsIgnored(string relativePath)
     {
+        // Normalize path separators to forward slashes for matching
+        var normalizedPath = relativePath.Replace('\\', '/');
+
+        // Check user-selected excluded folders first (Selective Sync)
+        if (_settings != null && _settings.ExcludedFolders.Count > 0)
+        {
+            foreach (var excludedFolder in _settings.ExcludedFolders)
+            {
+                var normalizedExcluded = excludedFolder.Replace('\\', '/').TrimEnd('/');
+                // Check if path starts with excluded folder or is the excluded folder itself
+                if (normalizedPath.Equals(normalizedExcluded, StringComparison.OrdinalIgnoreCase) ||
+                    normalizedPath.StartsWith(normalizedExcluded + "/", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+        }
+
         // Reload patterns if file changed
         ReloadPatternsIfNeeded();
 
         if (_patterns.Count == 0)
             return false;
-
-        // Normalize path separators to forward slashes for matching
-        var normalizedPath = relativePath.Replace('\\', '/');
         
         bool isIgnored = false;
 
@@ -59,7 +85,7 @@ public class SwarmIgnoreService
     {
         _patterns.Clear();
         
-        var ignoreFilePath = Path.Combine(_settings.SyncFolderPath, SWARMIGNORE_FILENAME);
+        var ignoreFilePath = Path.Combine(_syncFolderPath, SWARMIGNORE_FILENAME);
         _lastIgnoreFilePath = ignoreFilePath;
 
         if (!File.Exists(ignoreFilePath))

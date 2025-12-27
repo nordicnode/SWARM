@@ -1,6 +1,8 @@
 ﻿using System.Configuration;
 using System.Data;
+using System.IO;
 using System.Windows;
+using Serilog;
 
 namespace Swarm;
 
@@ -13,14 +15,31 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
+        // Configure Serilog
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .WriteTo.Debug()
+            .WriteTo.File(Path.Combine("logs", "swarm-.txt"), rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
+            .CreateLogger();
+
+        Log.Information("Swarm application started.");
+
         // Global exception handling
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
         DispatcherUnhandledException += App_DispatcherUnhandledException;
         TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
     }
 
+    protected override void OnExit(ExitEventArgs e)
+    {
+        Log.Information("Swarm application exiting.");
+        Log.CloseAndFlush();
+        base.OnExit(e);
+    }
+
     private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
+        Log.Fatal(e.Exception, "UI Thread Error");
         ShowErrorAndExit(e.Exception, "UI Thread Error");
         e.Handled = true; // Prevent default crash behavior if possible, though we might still exit
     }
@@ -29,12 +48,14 @@ public partial class App : System.Windows.Application
     {
         if (e.ExceptionObject is Exception ex)
         {
+            Log.Fatal(ex, "Fatal System Error");
             ShowErrorAndExit(ex, "Fatal System Error");
         }
     }
 
     private void TaskScheduler_UnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
+        Log.Error(e.Exception, "Background Task Error");
         ShowErrorAndExit(e.Exception, "Background Task Error");
         e.SetObserved();
     }

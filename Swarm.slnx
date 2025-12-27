@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Swarm.csproj" />
+  <Project Path="Swarm.Tests/Swarm.Tests.csproj" />
+</Solution>

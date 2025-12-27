@@ -62,6 +62,9 @@ public partial class SettingsDialog : Window
         // Trusted Peers
         UpdateTrustedPeersList();
         
+        // Excluded Folders (Selective Sync)
+        UpdateExcludedFoldersList();
+        
         // Version
         var version = Assembly.GetExecutingAssembly().GetName().Version;
         VersionText.Text = $" v{version?.Major ?? 1}.{version?.Minor ?? 0}.{version?.Build ?? 0}";
@@ -72,6 +75,15 @@ public partial class SettingsDialog : Window
         TrustedPeersListBox.ItemsSource = null;
         TrustedPeersListBox.ItemsSource = _workingSettings.TrustedPeers;
         NoTrustedPeersText.Visibility = _workingSettings.TrustedPeers.Count == 0 
+            ? Visibility.Visible 
+            : Visibility.Collapsed;
+    }
+
+    private void UpdateExcludedFoldersList()
+    {
+        ExcludedFoldersListBox.ItemsSource = null;
+        ExcludedFoldersListBox.ItemsSource = _workingSettings.ExcludedFolders;
+        NoExcludedFoldersText.Visibility = _workingSettings.ExcludedFolders.Count == 0 
             ? Visibility.Visible 
             : Visibility.Collapsed;
     }
@@ -141,6 +153,49 @@ public partial class SettingsDialog : Window
     private void StartMinimizedToggle_Click(object sender, RoutedEventArgs e)
     {
         // Handled by binding/toggle logic
+    }
+
+    private void AddExcludedFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = "Select folder to exclude from sync",
+            SelectedPath = _workingSettings.SyncFolderPath,
+            ShowNewFolderButton = false
+        };
+
+        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            // Make path relative to sync folder
+            var syncFolderPath = _workingSettings.SyncFolderPath.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (dialog.SelectedPath.StartsWith(syncFolderPath, StringComparison.OrdinalIgnoreCase))
+            {
+                var relativePath = dialog.SelectedPath.Substring(syncFolderPath.Length);
+                if (!string.IsNullOrEmpty(relativePath) && !_workingSettings.ExcludedFolders.Contains(relativePath))
+                {
+                    _workingSettings.ExcludedFolders.Add(relativePath);
+                    UpdateExcludedFoldersList();
+                }
+            }
+            else
+            {
+                System.Windows.MessageBox.Show(
+                    "Please select a folder inside your sync folder.",
+                    "Invalid Selection",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+        }
+    }
+
+    private void RemoveExcludedFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Button button && 
+            button.DataContext is string folder)
+        {
+            _workingSettings.ExcludedFolders.Remove(folder);
+            UpdateExcludedFoldersList();
+        }
     }
 
     private void MaxVersionsSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)

@@ -19,7 +19,7 @@ if (Test-Path $OutputDir) {
 # Build self-contained single-file executable
 Write-Host "Publishing Swarm..." -ForegroundColor Cyan
 
-dotnet publish `
+dotnet publish Swarm.csproj `
     -c $Configuration `
     -r $Runtime `
     --self-contained true `
@@ -39,7 +39,8 @@ if ($LASTEXITCODE -eq 0) {
         Write-Host "Output: $($FileInfo.FullName)" -ForegroundColor White
         Write-Host "Size:   $SizeMB MB" -ForegroundColor White
     }
-} else {
+}
+else {
     Write-Host "Build failed!" -ForegroundColor Red
     exit 1
 }

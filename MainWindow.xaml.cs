@@ -58,14 +58,106 @@ public partial class MainWindow : Window
     {
         try
         {
+            // Load icon from embedded resource
+            Drawing.Icon? appIcon = null;
+            try
+            {
+                var iconUri = new Uri("pack://application:,,,/Assets/swarm.ico", UriKind.Absolute);
+                var iconStream = System.Windows.Application.GetResourceStream(iconUri)?.Stream;
+                if (iconStream != null)
+                {
+                    appIcon = new Drawing.Icon(iconStream);
+                }
+            }
+            catch
+            {
+                // Fallback to process icon
+                appIcon = Drawing.Icon.ExtractAssociatedIcon(Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty);
+            }
+
             _trayIcon = new NotifyIcon
             {
-                Icon = Drawing.Icon.ExtractAssociatedIcon(Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty),
-                Text = "Swarm",
+                Icon = appIcon,
+                Text = "Swarm - LAN File Sync",
                 Visible = true
             };
 
-            _trayIcon.Click += (s, e) =>
+            // Create context menu
+            var contextMenu = new ContextMenuStrip();
+            
+            // Show/Hide option
+            var showItem = new ToolStripMenuItem("Show Swarm");
+            showItem.Click += (s, e) =>
+            {
+                Show();
+                WindowState = WindowState.Normal;
+                ShowInTaskbar = true;
+                Activate();
+            };
+            showItem.Font = new Drawing.Font(showItem.Font, Drawing.FontStyle.Bold);
+            contextMenu.Items.Add(showItem);
+            
+            contextMenu.Items.Add(new ToolStripSeparator());
+            
+            // Open Sync Folder
+            var openFolderItem = new ToolStripMenuItem("Open Sync Folder");
+            openFolderItem.Click += (s, e) =>
+            {
+                try
+                {
+                    var syncPath = _viewModel.Settings.SyncFolderPath;
+                    if (Directory.Exists(syncPath))
+                    {
+                        Process.Start("explorer.exe", syncPath);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Failed to open sync folder: {ex.Message}");
+                }
+            };
+            contextMenu.Items.Add(openFolderItem);
+            
+            // Toggle Sync
+            var toggleSyncItem = new ToolStripMenuItem("Pause Sync");
+            toggleSyncItem.Click += (s, e) =>
+            {
+                _viewModel.Settings.IsSyncEnabled = !_viewModel.Settings.IsSyncEnabled;
+                _viewModel.Settings.Save();
+                toggleSyncItem.Text = _viewModel.Settings.IsSyncEnabled ? "Pause Sync" : "Resume Sync";
+                _viewModel.ApplySettings(_viewModel.Settings);
+            };
+            contextMenu.Items.Add(toggleSyncItem);
+            
+            contextMenu.Items.Add(new ToolStripSeparator());
+            
+            // Settings
+            var settingsItem = new ToolStripMenuItem("Settings...");
+            settingsItem.Click += (s, e) =>
+            {
+                Show();
+                WindowState = WindowState.Normal;
+                ShowInTaskbar = true;
+                Activate();
+                SettingsButton_Click(this, new RoutedEventArgs());
+            };
+            contextMenu.Items.Add(settingsItem);
+            
+            contextMenu.Items.Add(new ToolStripSeparator());
+            
+            // Exit
+            var exitItem = new ToolStripMenuItem("Exit");
+            exitItem.Click += (s, e) =>
+            {
+                _trayIcon!.Visible = false;
+                System.Windows.Application.Current.Shutdown();
+            };
+            contextMenu.Items.Add(exitItem);
+            
+            _trayIcon.ContextMenuStrip = contextMenu;
+
+            // Double-click to show
+            _trayIcon.DoubleClick += (s, e) =>
             {
                 Show();
                 WindowState = WindowState.Normal;

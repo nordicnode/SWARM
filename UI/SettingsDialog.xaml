@@ -241,8 +241,61 @@
                         </Grid>
                     </StackPanel>
                     
+                    <!-- Selective Sync -->
+                    <StackPanel Margin="0,0,0,16">
+                        <TextBlock Text="Selective Sync" Style="{StaticResource SettingsLabelStyle}"/>
+                        <TextBlock Text="Exclude specific folders from syncing" 
+                                   Style="{StaticResource SettingsDescriptionStyle}"/>
+                        <Border Background="#10FFFFFF" CornerRadius="8" Padding="12" MinHeight="80" Margin="0,8,0,0">
+                            <Grid>
+                                <ListBox x:Name="ExcludedFoldersListBox" 
+                                         Background="Transparent" 
+                                         BorderThickness="0"
+                                         MaxHeight="120"
+                                         ItemContainerStyle="{StaticResource PeerListBoxItemStyle}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Path Data="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
+                                                      Width="14" Height="14" Stretch="Uniform" 
+                                                      Fill="{StaticResource TextSecondaryBrush}" 
+                                                      VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding}" 
+                                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <Button Grid.Column="2" Content="✕" 
+                                                        Foreground="#F85149"
+                                                        Background="Transparent" 
+                                                        BorderThickness="0"
+                                                        Padding="8,4" Cursor="Hand"
+                                                        Click="RemoveExcludedFolder_Click"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                
+                                <TextBlock x:Name="NoExcludedFoldersText" 
+                                           Text="No folders excluded" 
+                                           Foreground="{StaticResource TextMutedBrush}"
+                                           FontSize="13"
+                                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <Button Content="Add Folder to Exclude" 
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Padding="16,10" Margin="0,8,0,0" HorizontalAlignment="Left"
+                                Click="AddExcludedFolder_Click"/>
+                    </StackPanel>
+                    
                     <!-- ===== VERSIONING SECTION ===== -->
                     <TextBlock Text="VERSIONING" Style="{StaticResource SettingsSectionStyle}"/>
+
                     
                     <!-- Versioning Enabled -->
                     <Grid Margin="0,0,0,12">

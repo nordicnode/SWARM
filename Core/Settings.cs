@@ -143,6 +143,12 @@ public class Settings
     public long MaxDownloadSpeedKBps { get; set; } = 0;
 
     /// <summary>
+    /// List of folder paths (relative to sync folder) that are excluded from syncing.
+    /// Used for Selective Sync feature.
+    /// </summary>
+    public List<string> ExcludedFolders { get; set; } = [];
+
+    /// <summary>
     /// Loads settings from disk, or returns default settings if file doesn't exist.
     /// </summary>
     public static Settings Load()
@@ -250,6 +256,11 @@ public class Settings
             clone.TrustedPeerPublicKeys[kvp.Key] = kvp.Value;
         }
 
+        foreach (var folder in ExcludedFolders)
+        {
+            clone.ExcludedFolders.Add(folder);
+        }
+
         return clone;
     }
 
@@ -283,6 +294,12 @@ public class Settings
         foreach (var kvp in source.TrustedPeerPublicKeys)
         {
             TrustedPeerPublicKeys[kvp.Key] = kvp.Value;
+        }
+
+        ExcludedFolders.Clear();
+        foreach (var folder in source.ExcludedFolders)
+        {
+            ExcludedFolders.Add(folder);
         }
     }
 }

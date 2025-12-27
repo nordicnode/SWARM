@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
         Title="Swarm" 
+        Icon="Assets/swarm.ico"
         Height="720" Width="1180"
         MinHeight="600" MinWidth="900"
         WindowStyle="None"
