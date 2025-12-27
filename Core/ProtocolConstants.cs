@@ -194,4 +194,61 @@ public static class ProtocolConstants
     /// Maximum size of an encrypted chunk (buffer + overhead).
     /// </summary>
     public const int MAX_ENCRYPTED_CHUNK_SIZE = DEFAULT_BUFFER_SIZE + TAG_SIZE + NONCE_SIZE + 1024;
+
+
+    // --- Delta Sync ---
+
+    /// <summary>
+    /// Block size for delta sync operations (64KB).
+    /// </summary>
+    public const int DELTA_BLOCK_SIZE = 64 * 1024;
+
+    /// <summary>
+    /// Minimum file size (in bytes) to trigger delta sync. Smaller files are re-transferred entirely.
+    /// </summary>
+    public const long DELTA_THRESHOLD = 1024 * 1024; // 1MB
+
+    /// <summary>
+    /// Message type: Request block signatures from peer.
+    /// </summary>
+    public const byte MSG_REQUEST_SIGNATURES = 0x10;
+
+    /// <summary>
+    /// Message type: Block signatures response.
+    /// </summary>
+    public const byte MSG_BLOCK_SIGNATURES = 0x11;
+
+    /// <summary>
+    /// Message type: Delta data (instructions to reconstruct file).
+    /// </summary>
+    public const byte MSG_DELTA_DATA = 0x12;
+
+
+    // --- Adaptive Buffers ---
+
+    /// <summary>
+    /// Minimum buffer size for slow connections (8KB).
+    /// </summary>
+    public const int MIN_BUFFER_SIZE = 8 * 1024;
+
+    /// <summary>
+    /// Maximum buffer size for fast LAN connections (4MB).
+    /// </summary>
+    public const int MAX_BUFFER_SIZE = 4 * 1024 * 1024;
+
+    /// <summary>
+    /// Size of probe packet for measuring network latency (1KB).
+    /// </summary>
+    public const int PROBE_PACKET_SIZE = 1024;
+
+    /// <summary>
+    /// RTT threshold (ms) below which we consider the connection to be fast LAN.
+    /// </summary>
+    public const int FAST_LAN_RTT_MS = 5;
+
+    /// <summary>
+    /// RTT threshold (ms) above which we consider the connection to be slow.
+    /// </summary>
+    public const int SLOW_LINK_RTT_MS = 50;
 }
+

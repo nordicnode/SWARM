@@ -49,9 +49,14 @@ public class SyncService : IDisposable
     public event Action<string, string>? FileConflictDetected;
     public event Action<SyncProgress>? SyncProgressChanged;
 
-    private int _totalFilesCount;
-    private int _completedFilesCount;
-    private object _progressLock = new();
+    // Progress tracking fields (totalFilesCount is set by bulk sync operations)
+    private int _totalFilesCount = 0;
+    private int _completedFilesCount = 0;
+    private readonly object _progressLock = new();
+
+
+    // Track pending delta sync operations (relativePath -> peer awaiting delta)
+    private readonly ConcurrentDictionary<string, (Peer peer, SyncedFile syncFile)> _pendingDeltaSyncs = new();
 
     public SyncService(Settings settings, DiscoveryService discoveryService, TransferService transferService)
     {
@@ -64,7 +69,13 @@ public class SyncService : IDisposable
         _transferService.SyncDeleteReceived += OnSyncDeleteReceived;
         _transferService.SyncManifestReceived += OnSyncManifestReceived;
         _transferService.SyncFileRequested += OnSyncFileRequested;
+
+        // Subscribe to delta sync events
+        _transferService.SignaturesRequested += OnSignaturesRequested;
+        _transferService.BlockSignaturesReceived += OnBlockSignaturesReceived;
+        _transferService.DeltaDataReceived += OnDeltaDataReceived;
     }
+
 
     /// <summary>
     /// Starts monitoring the sync folder for changes.
@@ -535,15 +546,31 @@ public class SyncService : IDisposable
             var fullPath = Path.Combine(_settings.SyncFolderPath, syncFile.RelativePath);
             if (File.Exists(fullPath))
             {
-                await _transferService.SendSyncFile(peer, fullPath, syncFile, (sent, total) => 
+                var fileInfo = new FileInfo(fullPath);
+
+                // Use delta sync for files larger than threshold
+                if (fileInfo.Length >= ProtocolConstants.DELTA_THRESHOLD)
                 {
-                    ReportProgress(syncFile.RelativePath, (double)sent / total * 100);
-                });
-                
-                lock(_progressLock)
+                    System.Diagnostics.Debug.WriteLine($"Using delta sync for large file: {syncFile.RelativePath} ({fileInfo.Length} bytes)");
+                    
+                    // Store pending delta sync info and request signatures from peer
+                    _pendingDeltaSyncs[syncFile.RelativePath] = (peer, syncFile);
+                    await _transferService.RequestBlockSignatures(peer, syncFile.RelativePath);
+                    // Delta will be sent when we receive their signatures via OnBlockSignaturesReceived
+                }
+                else
                 {
-                    _completedFilesCount++;
-                    ReportProgress(null, 0);
+                    // Small file - send full content
+                    await _transferService.SendSyncFile(peer, fullPath, syncFile, (sent, total) => 
+                    {
+                        ReportProgress(syncFile.RelativePath, (double)sent / total * 100);
+                    });
+                    
+                    lock(_progressLock)
+                    {
+                        _completedFilesCount++;
+                        ReportProgress(null, 0);
+                    }
                 }
             }
         }
@@ -552,6 +579,7 @@ public class SyncService : IDisposable
             await _transferService.SendSyncDirectory(peer, syncFile);
         }
     }
+
 
     private async Task SendManifestToPeer(Peer peer)
     {
@@ -710,6 +738,153 @@ public class SyncService : IDisposable
         }
     }
 
+    #region Delta Sync Event Handlers
+
+    private async void OnSignaturesRequested(string relativePath, Peer peer)
+    {
+        // Peer wants our block signatures for a file so they can compute a delta
+        var fullPath = Path.Combine(SyncFolderPath, relativePath);
+        if (File.Exists(fullPath))
+        {
+            try
+            {
+                var signatures = await DeltaSyncService.ComputeBlockSignaturesAsync(fullPath);
+                await _transferService.SendBlockSignatures(peer, relativePath, signatures);
+                System.Diagnostics.Debug.WriteLine($"Sent {signatures.Count} block signatures for {relativePath}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to compute/send signatures for {relativePath}: {ex.Message}");
+            }
+        }
+        else
+        {
+            // File doesn't exist locally - send empty signatures (peer will send full file)
+            await _transferService.SendBlockSignatures(peer, relativePath, []);
+        }
+    }
+
+    private async void OnBlockSignaturesReceived(string relativePath, List<BlockSignature> signatures, Peer peer)
+    {
+        // We received signatures from peer, now compute delta and send it
+        if (!_pendingDeltaSyncs.TryRemove(relativePath, out var pendingInfo))
+        {
+            System.Diagnostics.Debug.WriteLine($"Received unexpected signatures for {relativePath}");
+            return;
+        }
+
+        var fullPath = Path.Combine(SyncFolderPath, relativePath);
+        if (!File.Exists(fullPath))
+        {
+            System.Diagnostics.Debug.WriteLine($"File no longer exists for delta sync: {relativePath}");
+            return;
+        }
+
+        try
+        {
+            if (signatures.Count == 0)
+            {
+                // Peer doesn't have the file - send full content
+                System.Diagnostics.Debug.WriteLine($"Peer has no signatures for {relativePath}, sending full file");
+                await _transferService.SendSyncFile(peer, fullPath, pendingInfo.syncFile, (sent, total) =>
+                {
+                    ReportProgress(relativePath, (double)sent / total * 100);
+                });
+            }
+            else
+            {
+                // Compute delta against peer's signatures
+                var instructions = await DeltaSyncService.ComputeDeltaAsync(fullPath, signatures);
+                
+                // Update syncFile with current info
+                var fileInfo = new FileInfo(fullPath);
+                pendingInfo.syncFile.FileSize = fileInfo.Length;
+
+                await _transferService.SendDeltaData(peer, pendingInfo.syncFile, instructions);
+
+                var deltaSize = DeltaSyncService.EstimateDeltaSize(instructions);
+                var savings = fileInfo.Length > 0 ? (1.0 - (double)deltaSize / fileInfo.Length) * 100 : 0;
+                System.Diagnostics.Debug.WriteLine($"Delta sync for {relativePath}: saved {savings:F1}% bandwidth");
+            }
+
+            lock (_progressLock)
+            {
+                _completedFilesCount++;
+                ReportProgress(null, 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to send delta for {relativePath}: {ex.Message}");
+        }
+    }
+
+    private async void OnDeltaDataReceived(SyncedFile syncFile, List<DeltaInstruction> instructions, Peer peer)
+    {
+        // Apply delta to reconstruct the file
+        var localPath = Path.Combine(SyncFolderPath, syncFile.RelativePath);
+        var normalizedPath = FileHelpers.NormalizePath(localPath);
+
+        // Add to ignore list to prevent echo
+        _ignoreList[normalizedPath] = DateTime.Now;
+
+        try
+        {
+            // Ensure directory exists
+            var directory = Path.GetDirectoryName(localPath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            if (File.Exists(localPath))
+            {
+                // Apply delta to existing file
+                var tempPath = localPath + ".delta-temp";
+
+                await DeltaSyncService.ApplyDeltaAsync(localPath, tempPath, instructions);
+
+                // Replace original with reconstructed file
+                File.Delete(localPath);
+                File.Move(tempPath, localPath);
+
+                System.Diagnostics.Debug.WriteLine($"Applied delta for {syncFile.RelativePath}");
+            }
+            else
+            {
+                // No base file - this shouldn't happen with delta sync
+                // The sender should have sent a full file instead
+                System.Diagnostics.Debug.WriteLine($"Warning: Received delta for non-existent file {syncFile.RelativePath}");
+            }
+
+            // Preserve modification time
+            try
+            {
+                File.SetLastWriteTimeUtc(localPath, syncFile.LastModified);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to set timestamp for {localPath}: {ex.Message}");
+            }
+
+            // Update our state
+            _fileStates[syncFile.RelativePath] = syncFile;
+            IncomingSyncFile?.Invoke(syncFile);
+
+            lock (_progressLock)
+            {
+                _completedFilesCount++;
+                ReportProgress(null, 0);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to apply delta for {syncFile.RelativePath}: {ex.Message}");
+        }
+    }
+
+    #endregion
+
     private void ReportProgress(string? currentFile, double percent)
     {
         if (currentFile == null) currentFile = "Syncing...";
@@ -736,6 +911,12 @@ public class SyncService : IDisposable
             _transferService.SyncDeleteReceived -= OnSyncDeleteReceived;
             _transferService.SyncManifestReceived -= OnSyncManifestReceived;
             _transferService.SyncFileRequested -= OnSyncFileRequested;
+
+            // Unsubscribe from delta sync events
+            _transferService.SignaturesRequested -= OnSignaturesRequested;
+            _transferService.BlockSignaturesReceived -= OnBlockSignaturesReceived;
+            _transferService.DeltaDataReceived -= OnDeltaDataReceived;
         }
     }
+
 }

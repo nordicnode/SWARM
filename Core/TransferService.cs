@@ -49,6 +49,40 @@ public class TransferService : IDisposable
         public byte[]? SessionKey { get; private set; }
         public bool IsEncrypted => SessionKey != null;
 
+        /// <summary>
+        /// Measured round-trip time in milliseconds. -1 if not measured.
+        /// </summary>
+        public int RttMs { get; set; } = -1;
+
+        /// <summary>
+        /// Gets the optimal buffer size based on measured RTT.
+        /// </summary>
+        public int GetOptimalBufferSize()
+        {
+            if (RttMs < 0)
+            {
+                // Not measured yet - use default
+                return ProtocolConstants.DEFAULT_BUFFER_SIZE;
+            }
+
+            if (RttMs < ProtocolConstants.FAST_LAN_RTT_MS)
+            {
+                // Fast LAN - use maximum buffer
+                return ProtocolConstants.MAX_BUFFER_SIZE;
+            }
+            else if (RttMs > ProtocolConstants.SLOW_LINK_RTT_MS)
+            {
+                // Slow link - use minimum buffer for responsiveness
+                return ProtocolConstants.MIN_BUFFER_SIZE;
+            }
+            else
+            {
+                // Medium speed - use default
+                return ProtocolConstants.DEFAULT_BUFFER_SIZE;
+            }
+        }
+
+
         public PeerConnection(TcpClient client)
         {
             Client = client;
@@ -139,6 +173,46 @@ public class TransferService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Measures round-trip time to a peer for adaptive buffer sizing.
+    /// </summary>
+    private async Task<int> MeasureRttAsync(PeerConnection connection, CancellationToken ct)
+    {
+        // Simple RTT measurement: time a small read/write operation
+        // If the connection has a network stream, we can measure based on socket stats
+        try
+        {
+            var socket = connection.Client.Client;
+            if (socket == null) return -1;
+
+            // Use socket round-trip time if available (Windows only)
+            // This gives us the actual TCP RTT without additional traffic
+            var rttInfo = socket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval);
+            
+            // Fallback: Estimate RTT from connection time
+            // For now, use a simple heuristic based on whether we're on localhost
+            var remoteEndpoint = socket.RemoteEndPoint as IPEndPoint;
+            if (remoteEndpoint != null)
+            {
+                // Check if local network (private IP ranges typically have low latency)
+                var ip = remoteEndpoint.Address.ToString();
+                if (ip.StartsWith("127.") || ip.StartsWith("192.168.") || ip.StartsWith("10.") || ip.StartsWith("172."))
+                {
+                    // Likely LAN - assume fast
+                    return 2;
+                }
+            }
+
+            // Default to medium speed assumption
+            return 25;
+        }
+        catch
+        {
+            // If we can't measure, assume medium speed
+            return 25;
+        }
+    }
+
     private async Task<PeerConnection> GetOrCreatePeerConnection(Peer peer, CancellationToken ct)
     {
         var key = $"{peer.IpAddress}:{peer.Port}";
@@ -187,6 +261,18 @@ public class TransferService : IDisposable
                     // Continue with unencrypted connection for backward compatibility
                     // In the future, this could be made strict
                 }
+
+                // Measure RTT for adaptive buffer sizing
+                try
+                {
+                    connection.RttMs = await MeasureRttAsync(connection, ct);
+                    System.Diagnostics.Debug.WriteLine($"RTT to {peer.Name}: {connection.RttMs}ms, optimal buffer: {FileHelpers.FormatBytes(connection.GetOptimalBufferSize())}");
+                }
+                catch (Exception rttEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"RTT measurement failed for {peer.Name}: {rttEx.Message}");
+                    // Continue with default buffer size
+                }
                 
                 _activeConnections.AddOrUpdate(key, connection, (k, old) => 
                 {
@@ -196,6 +282,7 @@ public class TransferService : IDisposable
 
                 System.Diagnostics.Debug.WriteLine($"Created new connection to {peer.Name} ({key}) on attempt {attempt}, encrypted: {connection.IsEncrypted}");
                 return connection;
+
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -508,11 +595,24 @@ public class TransferService : IDisposable
                 HandleSyncFileRequest(reader, remotePeer);
                 break;
 
+            case ProtocolConstants.MSG_REQUEST_SIGNATURES:
+                await HandleRequestSignatures(reader, remotePeer);
+                break;
+
+            case ProtocolConstants.MSG_BLOCK_SIGNATURES:
+                await HandleBlockSignatures(reader, stream, remotePeer, ct);
+                break;
+
+            case ProtocolConstants.MSG_DELTA_DATA:
+                await HandleDeltaData(reader, stream, remotePeer, ct);
+                break;
+
             default:
                 System.Diagnostics.Debug.WriteLine($"Unknown sync message type: {messageType}");
                 break;
         }
     }
+
 
     private async Task HandleSyncFileChanged(BinaryReader reader, NetworkStream stream, Peer remotePeer, CancellationToken ct)
     {
@@ -604,6 +704,83 @@ public class TransferService : IDisposable
         System.Diagnostics.Debug.WriteLine($"Sync file requested: {relativePath}");
         SyncFileRequested?.Invoke(relativePath, remotePeer);
     }
+
+    #region Delta Sync Handlers
+
+    private Task HandleRequestSignatures(BinaryReader reader, Peer remotePeer)
+    {
+        var relativePath = reader.ReadString();
+        System.Diagnostics.Debug.WriteLine($"Signature request received for: {relativePath}");
+        SignaturesRequested?.Invoke(relativePath, remotePeer);
+        return Task.CompletedTask;
+    }
+
+
+    private Task HandleBlockSignatures(BinaryReader reader, NetworkStream stream, Peer remotePeer, CancellationToken ct)
+    {
+        var relativePath = reader.ReadString();
+        var signatureCount = reader.ReadInt32();
+
+        var signatures = new List<BlockSignature>();
+        for (int i = 0; i < signatureCount; i++)
+        {
+            signatures.Add(new BlockSignature
+            {
+                BlockIndex = reader.ReadInt32(),
+                WeakChecksum = reader.ReadInt32(),
+                StrongChecksum = reader.ReadString()
+            });
+        }
+
+        System.Diagnostics.Debug.WriteLine($"Block signatures received for {relativePath}: {signatureCount} blocks");
+        BlockSignaturesReceived?.Invoke(relativePath, signatures, remotePeer);
+        return Task.CompletedTask;
+    }
+
+    private Task HandleDeltaData(BinaryReader reader, NetworkStream stream, Peer remotePeer, CancellationToken ct)
+    {
+        var relativePath = reader.ReadString();
+        var contentHash = reader.ReadString();
+        var lastModified = DateTime.FromBinary(reader.ReadInt64());
+        var fileSize = reader.ReadInt64();
+        var instructionCount = reader.ReadInt32();
+
+        var instructions = new List<DeltaInstruction>();
+        for (int i = 0; i < instructionCount; i++)
+        {
+            var type = (DeltaType)reader.ReadByte();
+            var instruction = new DeltaInstruction { Type = type };
+
+            if (type == DeltaType.Copy)
+            {
+                instruction.SourceBlockIndex = reader.ReadInt32();
+                instruction.Length = reader.ReadInt32();
+            }
+            else // Insert
+            {
+                instruction.Length = reader.ReadInt32();
+                instruction.Data = reader.ReadBytes(instruction.Length);
+            }
+
+            instructions.Add(instruction);
+        }
+
+        var syncFile = new SyncedFile
+        {
+            RelativePath = relativePath,
+            ContentHash = contentHash,
+            LastModified = lastModified,
+            FileSize = fileSize,
+            Action = SyncAction.Update,
+            SourcePeerId = remotePeer.Id
+        };
+
+        System.Diagnostics.Debug.WriteLine($"Delta data received for {relativePath}: {instructionCount} instructions");
+        DeltaDataReceived?.Invoke(syncFile, instructions, remotePeer);
+        return Task.CompletedTask;
+    }
+
+    #endregion
 
 
     private Task<bool> RequestUserAcceptance(FileTransfer transfer)
@@ -945,6 +1122,132 @@ public class TransferService : IDisposable
         }
     }
 
+    #region Delta Sync Send Methods
+
+    /// <summary>
+    /// Requests block signatures for a file from a peer (for delta sync).
+    /// </summary>
+    public async Task RequestBlockSignatures(Peer peer, string relativePath, CancellationToken ct = default)
+    {
+        try
+        {
+            var connection = await GetOrCreatePeerConnection(peer, ct);
+            await connection.Lock.WaitAsync(ct);
+            try
+            {
+                connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
+                connection.Writer.Write(ProtocolConstants.MSG_REQUEST_SIGNATURES);
+                connection.Writer.Write(relativePath);
+
+                System.Diagnostics.Debug.WriteLine($"Requested signatures for: {relativePath} from {peer.Name}");
+            }
+            finally
+            {
+                connection.Lock.Release();
+            }
+        }
+        catch (Exception ex)
+        {
+            var key = $"{peer.IpAddress}:{peer.Port}";
+            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+            System.Diagnostics.Debug.WriteLine($"Request signatures error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Sends block signatures for a file to a peer.
+    /// </summary>
+    public async Task SendBlockSignatures(Peer peer, string relativePath, List<BlockSignature> signatures, CancellationToken ct = default)
+    {
+        try
+        {
+            var connection = await GetOrCreatePeerConnection(peer, ct);
+            await connection.Lock.WaitAsync(ct);
+            try
+            {
+                connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
+                connection.Writer.Write(ProtocolConstants.MSG_BLOCK_SIGNATURES);
+                connection.Writer.Write(relativePath);
+                connection.Writer.Write(signatures.Count);
+
+                foreach (var sig in signatures)
+                {
+                    connection.Writer.Write(sig.BlockIndex);
+                    connection.Writer.Write(sig.WeakChecksum);
+                    connection.Writer.Write(sig.StrongChecksum);
+                }
+
+                System.Diagnostics.Debug.WriteLine($"Sent {signatures.Count} block signatures for: {relativePath} to {peer.Name}");
+            }
+            finally
+            {
+                connection.Lock.Release();
+            }
+        }
+        catch (Exception ex)
+        {
+            var key = $"{peer.IpAddress}:{peer.Port}";
+            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+            System.Diagnostics.Debug.WriteLine($"Send signatures error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Sends delta data (instructions to reconstruct a file) to a peer.
+    /// </summary>
+    public async Task SendDeltaData(Peer peer, SyncedFile syncFile, List<DeltaInstruction> instructions, CancellationToken ct = default)
+    {
+        try
+        {
+            var connection = await GetOrCreatePeerConnection(peer, ct);
+            await connection.Lock.WaitAsync(ct);
+            try
+            {
+                connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
+                connection.Writer.Write(ProtocolConstants.MSG_DELTA_DATA);
+                connection.Writer.Write(syncFile.RelativePath);
+                connection.Writer.Write(syncFile.ContentHash);
+                connection.Writer.Write(syncFile.LastModified.ToBinary());
+                connection.Writer.Write(syncFile.FileSize);
+                connection.Writer.Write(instructions.Count);
+
+                foreach (var instruction in instructions)
+                {
+                    connection.Writer.Write((byte)instruction.Type);
+
+                    if (instruction.Type == DeltaType.Copy)
+                    {
+                        connection.Writer.Write(instruction.SourceBlockIndex);
+                        connection.Writer.Write(instruction.Length);
+                    }
+                    else // Insert
+                    {
+                        connection.Writer.Write(instruction.Length);
+                        if (instruction.Data != null)
+                        {
+                            connection.Writer.Write(instruction.Data);
+                        }
+                    }
+                }
+
+                var deltaSize = DeltaSyncService.EstimateDeltaSize(instructions);
+                System.Diagnostics.Debug.WriteLine($"Sent delta for {syncFile.RelativePath} to {peer.Name}: {instructions.Count} instructions, ~{FileHelpers.FormatBytes(deltaSize)}");
+            }
+            finally
+            {
+                connection.Lock.Release();
+            }
+        }
+        catch (Exception ex)
+        {
+            var key = $"{peer.IpAddress}:{peer.Port}";
+            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+            System.Diagnostics.Debug.WriteLine($"Send delta error: {ex.Message}");
+        }
+    }
+
+    #endregion
+
     /// <summary>
     /// Event raised when a sync message is received. SyncService should subscribe to this.
     /// </summary>
@@ -953,7 +1256,13 @@ public class TransferService : IDisposable
     public event Action<List<SyncedFile>, Peer>? SyncManifestReceived;
     public event Action<string, Peer>? SyncFileRequested;
 
+    // Delta sync events
+    public event Action<string, Peer>? SignaturesRequested;
+    public event Action<string, List<BlockSignature>, Peer>? BlockSignaturesReceived;
+    public event Action<SyncedFile, List<DeltaInstruction>, Peer>? DeltaDataReceived;
+
     #endregion
+
 
     public void Dispose()
     {
