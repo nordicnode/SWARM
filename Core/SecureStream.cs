@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO;
 using System.Net.Sockets;
 
@@ -6,6 +7,7 @@ namespace Swarm.Core;
 /// <summary>
 /// A stream wrapper that encrypts all writes and decrypts all reads using AES-256-GCM.
 /// Each chunk is prefixed with its length for proper framing.
+/// Uses ArrayPool for zero-allocation encryption/decryption buffers.
 /// </summary>
 public class SecureStream : Stream
 {
@@ -74,29 +76,39 @@ public class SecureStream : Stream
             throw new InvalidDataException($"Invalid encrypted chunk size: {encryptedLength}");
         }
 
-        var encryptedData = new byte[encryptedLength];
-        var totalRead = 0;
-        while (totalRead < encryptedLength)
+        // Use ArrayPool for encrypted data buffer
+        var encryptedData = ArrayPool<byte>.Shared.Rent(encryptedLength);
+        try
         {
-            var bytesRead = _inner.Read(encryptedData, totalRead, encryptedLength - totalRead);
-            if (bytesRead == 0)
-                throw new EndOfStreamException("Unexpected end of encrypted stream");
-            totalRead += bytesRead;
+            var totalRead = 0;
+            while (totalRead < encryptedLength)
+            {
+                var bytesRead = _inner.Read(encryptedData, totalRead, encryptedLength - totalRead);
+                if (bytesRead == 0)
+                    throw new EndOfStreamException("Unexpected end of encrypted stream");
+                totalRead += bytesRead;
+            }
+
+            // Decrypt - extract exact bytes to pass to CryptoService
+            var exactEncrypted = new byte[encryptedLength];
+            Buffer.BlockCopy(encryptedData, 0, exactEncrypted, 0, encryptedLength);
+            var decrypted = CryptoService.Decrypt(exactEncrypted, _sessionKey);
+
+            // Buffer the decrypted data
+            _readBuffer = decrypted;
+            _readBufferOffset = 0;
+            _readBufferLength = decrypted.Length;
+
+            // Return as much as requested
+            var toReturn = Math.Min(_readBufferLength, count);
+            Buffer.BlockCopy(_readBuffer, 0, buffer, offset, toReturn);
+            _readBufferOffset = toReturn;
+            return toReturn;
         }
-
-        // Decrypt
-        var decrypted = CryptoService.Decrypt(encryptedData, _sessionKey);
-
-        // Buffer the decrypted data
-        _readBuffer = decrypted;
-        _readBufferOffset = 0;
-        _readBufferLength = decrypted.Length;
-
-        // Return as much as requested
-        var toReturn = Math.Min(_readBufferLength, count);
-        Buffer.BlockCopy(_readBuffer, 0, buffer, offset, toReturn);
-        _readBufferOffset = toReturn;
-        return toReturn;
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(encryptedData);
+        }
     }
 
     /// <summary>
@@ -108,7 +120,7 @@ public class SecureStream : Stream
 
         if (count == 0) return;
 
-        // Extract the chunk to encrypt
+        // Extract the chunk to encrypt (need exact size array for CryptoService)
         var plaintext = new byte[count];
         Buffer.BlockCopy(buffer, offset, plaintext, 0, count);
 
@@ -173,26 +185,37 @@ public class SecureStream : Stream
             throw new InvalidDataException($"Invalid encrypted chunk size: {encryptedLength}");
         }
 
-        var encryptedData = new byte[encryptedLength];
-        var totalRead = 0;
-        while (totalRead < encryptedLength)
+        // Use ArrayPool for encrypted data
+        var encryptedData = ArrayPool<byte>.Shared.Rent(encryptedLength);
+        try
         {
-            var bytesRead = await _inner.ReadAsync(encryptedData.AsMemory(totalRead, encryptedLength - totalRead), cancellationToken);
-            if (bytesRead == 0)
-                throw new EndOfStreamException("Unexpected end of encrypted stream");
-            totalRead += bytesRead;
+            var totalRead = 0;
+            while (totalRead < encryptedLength)
+            {
+                var bytesRead = await _inner.ReadAsync(encryptedData.AsMemory(totalRead, encryptedLength - totalRead), cancellationToken);
+                if (bytesRead == 0)
+                    throw new EndOfStreamException("Unexpected end of encrypted stream");
+                totalRead += bytesRead;
+            }
+
+            // Extract exact bytes for CryptoService
+            var exactEncrypted = new byte[encryptedLength];
+            Buffer.BlockCopy(encryptedData, 0, exactEncrypted, 0, encryptedLength);
+            var decrypted = CryptoService.Decrypt(exactEncrypted, _sessionKey);
+
+            _readBuffer = decrypted;
+            _readBufferOffset = 0;
+            _readBufferLength = decrypted.Length;
+
+            var toReturn = Math.Min(_readBufferLength, count);
+            Buffer.BlockCopy(_readBuffer, 0, buffer, offset, toReturn);
+            _readBufferOffset = toReturn;
+            return toReturn;
         }
-
-        var decrypted = CryptoService.Decrypt(encryptedData, _sessionKey);
-
-        _readBuffer = decrypted;
-        _readBufferOffset = 0;
-        _readBufferLength = decrypted.Length;
-
-        var toReturn = Math.Min(_readBufferLength, count);
-        Buffer.BlockCopy(_readBuffer, 0, buffer, offset, toReturn);
-        _readBufferOffset = toReturn;
-        return toReturn;
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(encryptedData);
+        }
     }
 
     public override void Flush()

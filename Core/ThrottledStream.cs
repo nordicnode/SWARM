@@ -95,6 +95,13 @@ public class ThrottledStream : Stream
     {
         if (_maxReadBytesPerSecond <= 0 || bytesRead <= 0) return;
         
+        // Fix burst behavior: if stopwatch has been idle too long, reset before calculating
+        if (_readStopwatch.IsRunning && _readStopwatch.ElapsedMilliseconds > 10000)
+        {
+            _readStopwatch.Restart();
+            _totalBytesRead = 0;
+        }
+        
         if (!_readStopwatch.IsRunning)
             _readStopwatch.Start();
 
@@ -106,13 +113,6 @@ public class ThrottledStream : Stream
         if (expectedMs > elapsedMs)
         {
             Thread.Sleep((int)(expectedMs - elapsedMs));
-        }
-
-        // Reset counters periodically to prevent overflow and maintain accuracy
-        if (elapsedMs > 10000)
-        {
-            _readStopwatch.Restart();
-            _totalBytesRead = 0;
         }
     }
 
@@ -120,6 +120,13 @@ public class ThrottledStream : Stream
     {
         if (_maxReadBytesPerSecond <= 0 || bytesRead <= 0) return;
         
+        // Fix burst behavior: if stopwatch has been idle too long, reset before calculating
+        if (_readStopwatch.IsRunning && _readStopwatch.ElapsedMilliseconds > 10000)
+        {
+            _readStopwatch.Restart();
+            _totalBytesRead = 0;
+        }
+        
         if (!_readStopwatch.IsRunning)
             _readStopwatch.Start();
 
@@ -132,18 +139,18 @@ public class ThrottledStream : Stream
         {
             await Task.Delay((int)(expectedMs - elapsedMs), cancellationToken);
         }
-
-        // Reset counters periodically
-        if (elapsedMs > 10000)
-        {
-            _readStopwatch.Restart();
-            _totalBytesRead = 0;
-        }
     }
 
     private void ThrottleWrite(int bytesWritten)
     {
         if (_maxWriteBytesPerSecond <= 0 || bytesWritten <= 0) return;
+        
+        // Fix burst behavior: if stopwatch has been idle too long, reset before calculating
+        if (_writeStopwatch.IsRunning && _writeStopwatch.ElapsedMilliseconds > 10000)
+        {
+            _writeStopwatch.Restart();
+            _totalBytesWritten = 0;
+        }
         
         if (!_writeStopwatch.IsRunning)
             _writeStopwatch.Start();
@@ -157,18 +164,18 @@ public class ThrottledStream : Stream
         {
             Thread.Sleep((int)(expectedMs - elapsedMs));
         }
-
-        // Reset counters periodically
-        if (elapsedMs > 10000)
-        {
-            _writeStopwatch.Restart();
-            _totalBytesWritten = 0;
-        }
     }
 
     private async Task ThrottleWriteAsync(int bytesWritten, CancellationToken cancellationToken)
     {
         if (_maxWriteBytesPerSecond <= 0 || bytesWritten <= 0) return;
+        
+        // Fix burst behavior: if stopwatch has been idle too long, reset before calculating
+        if (_writeStopwatch.IsRunning && _writeStopwatch.ElapsedMilliseconds > 10000)
+        {
+            _writeStopwatch.Restart();
+            _totalBytesWritten = 0;
+        }
         
         if (!_writeStopwatch.IsRunning)
             _writeStopwatch.Start();
@@ -181,13 +188,6 @@ public class ThrottledStream : Stream
         if (expectedMs > elapsedMs)
         {
             await Task.Delay((int)(expectedMs - elapsedMs), cancellationToken);
-        }
-
-        // Reset counters periodically
-        if (elapsedMs > 10000)
-        {
-            _writeStopwatch.Restart();
-            _totalBytesWritten = 0;
         }
     }
 

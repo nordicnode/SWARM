@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Threading;
@@ -20,9 +21,11 @@ public class TransferService : IDisposable
 {
     private const int BUFFER_SIZE = ProtocolConstants.DEFAULT_BUFFER_SIZE;
     private const string PROTOCOL_HEADER = ProtocolConstants.TRANSFER_HEADER;
+    private const int MAX_CONCURRENT_CONNECTIONS = 50;
 
     private readonly Settings _settings;
     private readonly CryptoService _cryptoService;
+    private readonly SemaphoreSlim _connectionLimiter = new(MAX_CONCURRENT_CONNECTIONS, MAX_CONCURRENT_CONNECTIONS);
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
     private string _downloadPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Swarm");
@@ -612,13 +615,37 @@ public class TransferService : IDisposable
                 if (_listener == null) break;
                 
                 var client = await _listener.AcceptTcpClientAsync(ct);
-                _ = HandleIncomingConnection(client, ct);
+                
+                // DoS prevention: limit concurrent incoming connections
+                if (!await _connectionLimiter.WaitAsync(0, ct))
+                {
+                    System.Diagnostics.Debug.WriteLine($"Connection limit reached ({MAX_CONCURRENT_CONNECTIONS}), rejecting new connection");
+                    client.Dispose();
+                    continue;
+                }
+                
+                _ = HandleIncomingConnectionWithLimit(client, ct);
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Accept error: {ex.Message}");
             }
+        }
+    }
+
+    /// <summary>
+    /// Wrapper that ensures the connection semaphore is released when the connection closes.
+    /// </summary>
+    private async Task HandleIncomingConnectionWithLimit(TcpClient client, CancellationToken ct)
+    {
+        try
+        {
+            await HandleIncomingConnection(client, ct);
+        }
+        finally
+        {
+            _connectionLimiter.Release();
         }
     }
 
@@ -1053,33 +1080,40 @@ public class TransferService : IDisposable
 
     private async Task ReceiveFile(NetworkStream stream, FileTransfer transfer, CancellationToken ct)
     {
-        var buffer = new byte[BUFFER_SIZE];
-        var totalReceived = 0L;
-        var maxDownloadBytesPerSec = _settings.MaxDownloadSpeedKBps * 1024;
-
-        // Wrap stream with ThrottledStream for download rate limiting (leaveOpen: true to keep NetworkStream alive)
-        await using Stream readStream = maxDownloadBytesPerSec > 0
-            ? new ThrottledStream(stream, maxReadBytesPerSecond: maxDownloadBytesPerSec, maxWriteBytesPerSecond: 0, leaveOpen: true)
-            : stream;
-
-        // Only retry opening the file stream, not the whole network transfer
-        await using var fileStream = await FileHelpers.ExecuteWithRetryAsync(async () =>
+        var buffer = ArrayPool<byte>.Shared.Rent(BUFFER_SIZE);
+        try
         {
-            return new FileStream(transfer.LocalPath!, FileMode.Create, FileAccess.Write, FileShare.None, BUFFER_SIZE, useAsync: true);
-        });
+            var totalReceived = 0L;
+            var maxDownloadBytesPerSec = _settings.MaxDownloadSpeedKBps * 1024;
 
-        while (totalReceived < transfer.FileSize && !ct.IsCancellationRequested)
+            // Wrap stream with ThrottledStream for download rate limiting (leaveOpen: true to keep NetworkStream alive)
+            await using Stream readStream = maxDownloadBytesPerSec > 0
+                ? new ThrottledStream(stream, maxReadBytesPerSecond: maxDownloadBytesPerSec, maxWriteBytesPerSecond: 0, leaveOpen: true)
+                : stream;
+
+            // Only retry opening the file stream, not the whole network transfer
+            await using var fileStream = await FileHelpers.ExecuteWithRetryAsync(async () =>
+            {
+                return new FileStream(transfer.LocalPath!, FileMode.Create, FileAccess.Write, FileShare.None, BUFFER_SIZE, useAsync: true);
+            });
+
+            while (totalReceived < transfer.FileSize && !ct.IsCancellationRequested)
+            {
+                var toRead = (int)Math.Min(BUFFER_SIZE, transfer.FileSize - totalReceived);
+                var bytesRead = await readStream.ReadAsync(buffer.AsMemory(0, toRead), ct);
+                
+                if (bytesRead == 0) break;
+
+                await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
+                totalReceived += bytesRead;
+                transfer.BytesTransferred = totalReceived;
+
+                TransferProgress?.Invoke(transfer);
+            }
+        }
+        finally
         {
-            var toRead = (int)Math.Min(BUFFER_SIZE, transfer.FileSize - totalReceived);
-            var bytesRead = await readStream.ReadAsync(buffer.AsMemory(0, toRead), ct);
-            
-            if (bytesRead == 0) break;
-
-            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
-            totalReceived += bytesRead;
-            transfer.BytesTransferred = totalReceived;
-
-            TransferProgress?.Invoke(transfer);
+            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
@@ -1131,7 +1165,7 @@ public class TransferService : IDisposable
             transfer.Status = TransferStatus.InProgress;
             TransferStarted?.Invoke(transfer);
 
-            var buffer = new byte[BUFFER_SIZE];
+            var buffer = ArrayPool<byte>.Shared.Rent(BUFFER_SIZE);
             var totalSent = 0L;
             var maxUploadBytesPerSec = _settings.MaxUploadSpeedKBps * 1024;
 
@@ -1172,19 +1206,52 @@ public class TransferService : IDisposable
         var invalid = Path.GetInvalidFileNameChars();
         var safe = new string(fileName.Where(c => !invalid.Contains(c)).ToArray());
         
-        // If file exists, add number
         var baseName = Path.GetFileNameWithoutExtension(safe);
         var ext = Path.GetExtension(safe);
-        var counter = 1;
-        var result = safe;
-
-        while (File.Exists(Path.Combine(_downloadPath, result)))
+        var targetPath = Path.Combine(_downloadPath, safe);
+        
+        // Fast path: if base name doesn't exist, use it directly
+        if (!File.Exists(targetPath))
         {
-            result = $"{baseName} ({counter}){ext}";
-            counter++;
+            return safe;
         }
-
-        return result;
+        
+        // Optimized: scan directory once to find highest counter (O(1) instead of O(N) disk checks)
+        var maxCounter = 0;
+        var pattern = $"{baseName} (";
+        
+        try
+        {
+            foreach (var existingFile in Directory.EnumerateFiles(_downloadPath, $"{baseName}*{ext}"))
+            {
+                var existingName = Path.GetFileNameWithoutExtension(existingFile);
+                
+                // Check for pattern "baseName (N)"
+                if (existingName.StartsWith(pattern) && existingName.EndsWith(")"))
+                {
+                    var numPart = existingName.Substring(pattern.Length, existingName.Length - pattern.Length - 1);
+                    if (int.TryParse(numPart, out var num) && num > maxCounter)
+                    {
+                        maxCounter = num;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error scanning for existing files: {ex.Message}");
+            // Fallback to old behavior on error
+            var counter = 1;
+            var result = safe;
+            while (File.Exists(Path.Combine(_downloadPath, result)))
+            {
+                result = $"{baseName} ({counter}){ext}";
+                counter++;
+            }
+            return result;
+        }
+        
+        return $"{baseName} ({maxCounter + 1}){ext}";
     }
 
     #region Sync Transfer Methods

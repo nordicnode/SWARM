@@ -281,5 +281,28 @@ public static class ProtocolConstants
     /// File size threshold below which files are considered "small" for parallel batching (100KB).
     /// </summary>
     public const long SMALL_FILE_THRESHOLD = 100 * 1024;
+
+
+    // --- Transfer Response Messages ---
+
+    /// <summary>
+    /// Response indicating successful handshake.
+    /// </summary>
+    public const string HANDSHAKE_OK = "HANDSHAKE_OK";
+
+    /// <summary>
+    /// Response prefix indicating failed handshake.
+    /// </summary>
+    public const string HANDSHAKE_FAILED_PREFIX = "HANDSHAKE_FAILED:";
+
+    /// <summary>
+    /// Response indicating file transfer was accepted.
+    /// </summary>
+    public const string TRANSFER_ACCEPTED = "ACCEPTED";
+
+    /// <summary>
+    /// Response indicating file transfer was rejected.
+    /// </summary>
+    public const string TRANSFER_REJECTED = "REJECTED";
 }
 
