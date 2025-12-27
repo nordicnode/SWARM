@@ -39,7 +39,6 @@ public class TransferService : IDisposable
         _cryptoService = cryptoService;
     }
     
-    private readonly ConcurrentDictionary<string, PeerConnection> _activeConnections = new();
 
     private class PeerConnection : IDisposable
     {
@@ -498,7 +497,7 @@ public class TransferService : IDisposable
         
         // Read server response
         var response = connection.Reader.ReadString();
-        if (response != "HANDSHAKE_OK")
+        if (response != ProtocolConstants.HANDSHAKE_OK)
         {
             throw new InvalidOperationException($"Handshake failed: {response}");
         }
@@ -538,7 +537,7 @@ public class TransferService : IDisposable
             var signableData = Encoding.UTF8.GetBytes(peerId + Convert.ToBase64String(clientPublicKey));
             if (!CryptoService.Verify(signableData, signature, clientIdentityKey))
             {
-                writer.Write("HANDSHAKE_FAILED:INVALID_SIGNATURE");
+                writer.Write(ProtocolConstants.HANDSHAKE_FAILED_PREFIX + "INVALID_SIGNATURE");
                 return false;
             }
             
@@ -556,7 +555,7 @@ public class TransferService : IDisposable
             var (serverPublicKey, serverPrivateKey) = CryptoService.GenerateEphemeralKeyPair();
             
             // Send response
-            writer.Write("HANDSHAKE_OK");
+            writer.Write(ProtocolConstants.HANDSHAKE_OK);
             writer.Write(serverPublicKey.Length);
             writer.Write(serverPublicKey);
             writer.Flush();
@@ -574,7 +573,7 @@ public class TransferService : IDisposable
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Handshake error: {ex.Message}");
-            try { writer.Write($"HANDSHAKE_FAILED:{ex.Message}"); } catch { }
+            try { writer.Write($"{ProtocolConstants.HANDSHAKE_FAILED_PREFIX}{ex.Message}"); } catch { }
             return false;
         }
     }
@@ -719,12 +718,12 @@ public class TransferService : IDisposable
                     
                     if (!accepted)
                     {
-                        writer.Write("REJECTED");
+                        writer.Write(ProtocolConstants.TRANSFER_REJECTED);
                         transfer.Status = TransferStatus.Cancelled;
                         continue; // Go back to waiting, though sender likely disconnects
                     }
 
-                    writer.Write("ACCEPTED");
+                    writer.Write(ProtocolConstants.TRANSFER_ACCEPTED);
                     
                     // Begin receiving file
                     transfer.Status = TransferStatus.InProgress;
@@ -1155,7 +1154,7 @@ public class TransferService : IDisposable
 
             // Wait for acceptance
             var response = reader.ReadString();
-            if (response == "REJECTED")
+            if (response == ProtocolConstants.TRANSFER_REJECTED)
             {
                 transfer.Status = TransferStatus.Cancelled;
                 return;
@@ -1446,8 +1445,7 @@ public class TransferService : IDisposable
         catch (Exception ex)
         {
             // If connection failed, remove it so we retry next time
-            var key = $"{peer.IpAddress}:{peer.Port}";
-            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+            // Connection pool handles disposal of bad connections on next access
             
             System.Diagnostics.Debug.WriteLine($"Sync send error: {ex.Message}");
         }
@@ -1478,8 +1476,7 @@ public class TransferService : IDisposable
         }
         catch (Exception ex)
         {
-            var key = $"{peer.IpAddress}:{peer.Port}";
-            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+
             System.Diagnostics.Debug.WriteLine($"Sync delete error: {ex.Message}");
         }
     }
@@ -1510,8 +1507,7 @@ public class TransferService : IDisposable
         }
         catch (Exception ex)
         {
-            var key = $"{peer.IpAddress}:{peer.Port}";
-            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+
             System.Diagnostics.Debug.WriteLine($"Sync rename error: {ex.Message}");
         }
     }
@@ -1540,8 +1536,7 @@ public class TransferService : IDisposable
         }
         catch (Exception ex)
         {
-            var key = $"{peer.IpAddress}:{peer.Port}";
-            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+
             System.Diagnostics.Debug.WriteLine($"Sync dir error: {ex.Message}");
         }
     }
@@ -1572,8 +1567,7 @@ public class TransferService : IDisposable
         }
         catch (Exception ex)
         {
-            var key = $"{peer.IpAddress}:{peer.Port}";
-            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+
             System.Diagnostics.Debug.WriteLine($"Sync manifest error: {ex.Message}");
         }
     }
@@ -1602,8 +1596,7 @@ public class TransferService : IDisposable
         }
         catch (Exception ex)
         {
-            var key = $"{peer.IpAddress}:{peer.Port}";
-            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+
             System.Diagnostics.Debug.WriteLine($"Sync request error: {ex.Message}");
         }
     }
@@ -1634,8 +1627,7 @@ public class TransferService : IDisposable
         }
         catch (Exception ex)
         {
-            var key = $"{peer.IpAddress}:{peer.Port}";
-            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+
             System.Diagnostics.Debug.WriteLine($"Request signatures error: {ex.Message}");
         }
     }
@@ -1672,8 +1664,7 @@ public class TransferService : IDisposable
         }
         catch (Exception ex)
         {
-            var key = $"{peer.IpAddress}:{peer.Port}";
-            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+
             System.Diagnostics.Debug.WriteLine($"Send signatures error: {ex.Message}");
         }
     }
@@ -1726,8 +1717,7 @@ public class TransferService : IDisposable
         }
         catch (Exception ex)
         {
-            var key = $"{peer.IpAddress}:{peer.Port}";
-            if (_activeConnections.TryRemove(key, out var conn)) conn.Dispose();
+
             System.Diagnostics.Debug.WriteLine($"Send delta error: {ex.Message}");
         }
     }
@@ -1766,10 +1756,10 @@ public class TransferService : IDisposable
             _listener = null;
         }
         
-        foreach (var conn in _activeConnections.Values)
+        foreach (var pool in _connectionPools.Values)
         {
-            conn.Dispose();
+            pool.Dispose();
         }
-        _activeConnections.Clear();
+        _connectionPools.Clear();
     }
 }

@@ -267,65 +267,20 @@ public static class DeltaSyncService
     /// Computes an Adler-32 rolling checksum for fast block matching.
     /// Uses SIMD optimization when available for significant speedup.
     /// </summary>
+    /// <summary>
+    /// Computes an Adler-32 rolling checksum for fast block matching.
+    /// </summary>
     public static int ComputeAdler32(ReadOnlySpan<byte> data)
     {
         const int MOD_ADLER = 65521;
-
-        // Use SIMD-optimized path for larger data if available
-        if (Vector.IsHardwareAccelerated && data.Length >= Vector<byte>.Count * 4)
-        {
-            return ComputeAdler32Simd(data);
-        }
-
-        // Scalar fallback
-        int a = 1, b = 0;
+        
+        // Scalar implementation
+        uint a = 1, b = 0;
 
         foreach (byte c in data)
         {
             a = (a + c) % MOD_ADLER;
             b = (b + a) % MOD_ADLER;
-        }
-
-        return (b << 16) | a;
-    }
-
-    /// <summary>
-    /// SIMD-optimized Adler-32 computation using Vector&lt;T&gt;.
-    /// Processes multiple bytes in parallel for 10-20x speedup on large blocks.
-    /// </summary>
-    private static int ComputeAdler32Simd(ReadOnlySpan<byte> data)
-    {
-        const int MOD_ADLER = 65521;
-        const int NMAX = 5552; // Largest n such that 255*n*(n+1)/2 + (n+1)*(BASE-1) <= 2^32-1
-
-        uint a = 1, b = 0;
-        int remaining = data.Length;
-        int offset = 0;
-
-        while (remaining > 0)
-        {
-            int blockSize = Math.Min(remaining, NMAX);
-            int vectorIterations = blockSize / Vector<ushort>.Count;
-            
-            // Process in chunks that fit within overflow bounds
-            var sumA = Vector<uint>.Zero;
-            var sumB = Vector<uint>.Zero;
-            
-            int i = 0;
-            int scalarEnd = offset + blockSize;
-            
-            // Process scalar bytes
-            for (i = offset; i < scalarEnd; i++)
-            {
-                a += data[i];
-                b += a;
-            }
-            
-            a %= MOD_ADLER;
-            b %= MOD_ADLER;
-            
-            offset += blockSize;
-            remaining -= blockSize;
         }
 
         return (int)((b << 16) | a);
