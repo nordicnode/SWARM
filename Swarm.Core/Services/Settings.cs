@@ -424,5 +424,39 @@ public class Settings
             ExcludedFolders.Add(folder);
         }
     }
+
+    /// <summary>
+    /// Adds a peer to the trusted peers list and stores their public key.
+    /// </summary>
+    public void TrustPeer(Models.Peer peer)
+    {
+        if (string.IsNullOrEmpty(peer.Id) || string.IsNullOrEmpty(peer.PublicKeyBase64))
+            return;
+
+        // Add to trusted peers list if not already present
+        if (!TrustedPeers.Any(p => p.Id == peer.Id))
+        {
+            TrustedPeers.Add(new Models.TrustedPeer 
+            { 
+                Id = peer.Id, 
+                Name = peer.Name 
+            });
+        }
+
+        // Store public key for verification
+        TrustedPeerPublicKeys[peer.Id] = peer.PublicKeyBase64;
+        
+        // Mark peer as trusted
+        peer.IsTrusted = true;
+    }
+
+    /// <summary>
+    /// Removes a peer from the trusted list.
+    /// </summary>
+    public void UntrustPeer(string peerId)
+    {
+        TrustedPeers.RemoveAll(p => p.Id == peerId);
+        TrustedPeerPublicKeys.Remove(peerId);
+    }
 }
 

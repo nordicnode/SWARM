@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Swarm.Avalonia.ViewModels;
+using Swarm.Core.ViewModels;
 using Serilog;
 
 namespace Swarm.Avalonia;

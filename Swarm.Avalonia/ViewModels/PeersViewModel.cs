@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using Avalonia.Threading;
+using Serilog;
 using Swarm.Core.Models;
 using Swarm.Core.Services;
 
@@ -49,6 +50,7 @@ public class PeersViewModel : ViewModelBase
             });
 
             Peers = new ObservableCollection<PeerItemViewModel>(viewModels);
+            OnPropertyChanged(nameof(IsEmpty));
         });
     }
 
@@ -58,10 +60,33 @@ public class PeersViewModel : ViewModelBase
         set => SetProperty(ref _peers, value);
     }
 
+    public bool IsEmpty => _peers.Count == 0;
+
     public PeerItemViewModel? SelectedPeer
     {
         get => _selectedPeer;
         set => SetProperty(ref _selectedPeer, value);
+    }
+
+    public void SendFiles(PeerItemViewModel peerItem, System.Collections.Generic.IEnumerable<string> files)
+    {
+        var peer = _discoveryService.Peers.FirstOrDefault(p => p.Id == peerItem.Id);
+        if (peer == null) return;
+
+        Task.Run(async () =>
+        {
+            foreach (var file in files)
+            {
+                try 
+                {
+                    await _transferService.SendFile(peer, file);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Failed to send file {File} to peer {Peer}", file, peer.Name);
+                }
+            }
+        });
     }
 }
 

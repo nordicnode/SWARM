@@ -5,6 +5,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
 using Swarm.Core.Models;
 using Swarm.Core.Services;
+using Swarm.Core.ViewModels;
 
 namespace Swarm.Avalonia.ViewModels;
 
@@ -50,6 +51,10 @@ public class SettingsViewModel : ViewModelBase
     private ObservableCollection<TrustedPeer> _trustedPeers = new();
     private TrustedPeer? _selectedPeer;
 
+    // Selective Sync - Excluded Folders
+    private ObservableCollection<string> _excludedFolders = new();
+    private string? _selectedExcludedFolder;
+
     public SettingsViewModel() {
         // Design-time
     }
@@ -78,6 +83,8 @@ public class SettingsViewModel : ViewModelBase
         BrowseDownloadPathCommand = new RelayCommand(BrowseDownloadPath);
         SaveSettingsCommand = new RelayCommand(SaveSettings);
         RemoveTrustedPeerCommand = new RelayCommand(RemoveSelectedPeer, CanRemoveSelectedPeer);
+        AddExcludedFolderCommand = new RelayCommand(AddExcludedFolder);
+        RemoveExcludedFolderCommand = new RelayCommand(RemoveExcludedFolder, CanRemoveExcludedFolder);
     }
 
     private void LoadSettings()
@@ -107,6 +114,9 @@ public class SettingsViewModel : ViewModelBase
 
         // Trusted Peers
         TrustedPeers = new ObservableCollection<TrustedPeer>(_settings.TrustedPeers);
+
+        // Excluded Folders
+        ExcludedFolders = new ObservableCollection<string>(_settings.ExcludedFolders);
     }
 
     #region General Properties
@@ -244,12 +254,36 @@ public class SettingsViewModel : ViewModelBase
 
     #endregion
 
+    #region Excluded Folders Properties
+
+    public ObservableCollection<string> ExcludedFolders
+    {
+        get => _excludedFolders;
+        set => SetProperty(ref _excludedFolders, value);
+    }
+
+    public string? SelectedExcludedFolder
+    {
+        get => _selectedExcludedFolder;
+        set
+        {
+            if (SetProperty(ref _selectedExcludedFolder, value))
+            {
+                RelayCommand.RaiseGlobalCanExecuteChanged();
+            }
+        }
+    }
+
+    #endregion
+
     #region Commands
 
     public ICommand BrowseSyncFolderCommand { get; } = null!;
     public ICommand BrowseDownloadPathCommand { get; } = null!;
     public ICommand SaveSettingsCommand { get; } = null!;
     public ICommand RemoveTrustedPeerCommand { get; } = null!;
+    public ICommand AddExcludedFolderCommand { get; } = null!;
+    public ICommand RemoveExcludedFolderCommand { get; } = null!;
 
     #endregion
 
@@ -335,9 +369,55 @@ public class SettingsViewModel : ViewModelBase
             _settings.TrustedPeers.Add(new TrustedPeer { Id = peer.Id, Name = peer.Name });
         }
 
+        // Excluded Folders
+        _settings.ExcludedFolders.Clear();
+        foreach (var folder in ExcludedFolders)
+        {
+            _settings.ExcludedFolders.Add(folder);
+        }
+
         _settings.Save();
 
         SettingsChanged?.Invoke(_settings);
+    }
+
+    private async void AddExcludedFolder()
+    {
+        var topLevel = GetTopLevel();
+        if (topLevel == null) return;
+
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Select Folder to Exclude",
+            AllowMultiple = false
+        });
+
+        if (folders.Count > 0)
+        {
+            var path = folders[0].Path.LocalPath;
+            // Store relative path from sync folder if possible
+            if (path.StartsWith(_settings.SyncFolderPath, StringComparison.OrdinalIgnoreCase))
+            {
+                var relativePath = path.Substring(_settings.SyncFolderPath.Length)
+                    .TrimStart(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+                    
+                if (!string.IsNullOrEmpty(relativePath) && !ExcludedFolders.Contains(relativePath))
+                {
+                    ExcludedFolders.Add(relativePath);
+                }
+            }
+        }
+    }
+
+    private bool CanRemoveExcludedFolder() => !string.IsNullOrEmpty(SelectedExcludedFolder);
+
+    private void RemoveExcludedFolder()
+    {
+        if (SelectedExcludedFolder != null)
+        {
+            ExcludedFolders.Remove(SelectedExcludedFolder);
+            SelectedExcludedFolder = null;
+        }
     }
 
     private global::Avalonia.Controls.TopLevel? GetTopLevel()

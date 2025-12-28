@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
+using Serilog;
 using Swarm.Core.Models;
 using Swarm.Core.Services;
 using Swarm.Core.Helpers;
@@ -116,8 +117,9 @@ public class OverviewViewModel : ViewModelBase, IDisposable
                 UpdateUI(count, sizeStr);
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Warning(ex, "Failed to calculate sync folder stats for {Path}", _settings.SyncFolderPath);
             if (!ct.IsCancellationRequested)
             {
                 UpdateUI(0, "Error");

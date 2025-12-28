@@ -111,6 +111,7 @@ public class SyncService : IDisposable
     public event Action<string>? SyncStatusChanged;
     public event Action<SyncedFile>? IncomingSyncFile;
     public event Action<string, string?>? FileConflictDetected;
+    public event Action<string, DateTime>? TimeTravelDetected; // fileName, futureTime
     public event Action<SyncProgress>? SyncProgressChanged;
     
     /// <summary>
@@ -207,7 +208,8 @@ public class SyncService : IDisposable
                                  | NotifyFilters.Size
                                  | NotifyFilters.CreationTime,
                     IncludeSubdirectories = true,
-                    EnableRaisingEvents = true
+                    EnableRaisingEvents = true,
+                    InternalBufferSize = 65536 // 64KB buffer to prevent overflow
                 };
 
                 _watcher.Created += OnFileCreated;
@@ -382,6 +384,7 @@ public class SyncService : IDisposable
                     if (remoteFile.LastModified > DateTime.UtcNow.AddMinutes(10))
                     {
                         System.Diagnostics.Debug.WriteLine($"[Warning] Peer {sourcePeer.Name} has file {remoteFile.RelativePath} from the future ({remoteFile.LastModified}). Ignoring to prevent corruption.");
+                        TimeTravelDetected?.Invoke(remoteFile.RelativePath, remoteFile.LastModified);
                         continue;
                     }
 
@@ -419,6 +422,7 @@ public class SyncService : IDisposable
                     if (remoteFile.LastModified > DateTime.UtcNow.AddMinutes(10))
                     {
                         System.Diagnostics.Debug.WriteLine($"[Warning] Peer {sourcePeer.Name} offering new file {remoteFile.RelativePath} from the future. Ignoring.");
+                        TimeTravelDetected?.Invoke(remoteFile.RelativePath, remoteFile.LastModified);
                         continue;
                     }
                     

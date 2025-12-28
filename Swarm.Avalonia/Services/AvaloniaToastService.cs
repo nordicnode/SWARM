@@ -38,4 +38,17 @@ public class AvaloniaToastService : IToastService
             _notificationManager.Show(new Notification(title, message, notificationType));
         });
     }
+
+    /// <summary>
+    /// Convenience method that directly accepts Avalonia's NotificationType.
+    /// </summary>
+    public void Show(string title, string message, NotificationType type)
+    {
+        if (_notificationManager == null) return;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            _notificationManager.Show(new Notification(title, message, type));
+        });
+    }
 }

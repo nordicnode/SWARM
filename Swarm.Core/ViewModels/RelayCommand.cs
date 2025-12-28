@@ -35,14 +35,14 @@ public class RelayCommand : ICommand
     /// <summary>
     /// Global event that can be hooked by platforms (e.g., WPF CommandManager)
     /// </summary>
-    public static event EventHandler? StaticCanExecuteChanged;
+    public static event EventHandler? GlobalCanExecuteChanged;
 
     /// <summary>
     /// Raises a global CanExecuteChanged event.
     /// </summary>
     public static void RaiseGlobalCanExecuteChanged()
     {
-        StaticCanExecuteChanged?.Invoke(null, EventArgs.Empty);
+        GlobalCanExecuteChanged?.Invoke(null, EventArgs.Empty);
     }
 }
 

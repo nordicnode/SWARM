@@ -3,202 +3,340 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Swarm.Avalonia.ViewModels"
-             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="800"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="900"
              x:Class="Swarm.Avalonia.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
     <ScrollViewer>
-        <StackPanel Margin="30" Spacing="24" MaxWidth="800" HorizontalAlignment="Left">
-            <TextBlock Text="Settings" 
-                       FontSize="28" 
-                       FontWeight="SemiBold"
-                       Foreground="{StaticResource TextPrimaryBrush}"/>
+        <Grid Margin="30">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-            <!-- General -->
-            <Border Classes="card">
-                <StackPanel Spacing="16">
-                    <TextBlock Text="General" Classes="h2"/>
+            <!-- Header -->
+            <StackPanel Spacing="8" Margin="0,0,0,32">
+                <TextBlock Text="Settings" 
+                           FontSize="28" 
+                           FontWeight="Bold"
+                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                <TextBlock Text="Configure your Swarm preferences"
+                           FontSize="14"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+            </StackPanel>
+
+            <!-- Two-Column Layout -->
+            <Grid Grid.Row="1" ColumnDefinitions="*,24,*">
+                
+                <!-- Left Column -->
+                <StackPanel Grid.Column="0" Spacing="20">
                     
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Device Name" Classes="label"/>
-                        <TextBox Text="{Binding DeviceName}" Watermark="Enter device name"/>
-                        <TextBlock Text="This name will be visible to other devices on the network."
-                                   Classes="description"/>
-                    </StackPanel>
-                    
-                    <CheckBox IsChecked="{Binding StartMinimized}"
-                              Content="Start minimized to system tray"/>
-                    
-                    <CheckBox IsChecked="{Binding CloseToTray}"
-                              Content="Close to tray instead of exiting"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Notifications -->
-            <Border Classes="card">
-                <StackPanel Spacing="16">
-                    <TextBlock Text="Notifications" Classes="h2"/>
-                    
-                    <CheckBox IsChecked="{Binding ShowNotifications}"
-                              Content="Show desktop notifications"/>
-                    
-                    <CheckBox IsChecked="{Binding ShowTransferComplete}"
-                              Content="Show notification when transfers complete"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Synchronization -->
-            <Border Classes="card">
-                <StackPanel Spacing="16">
-                    <TextBlock Text="Synchronization" Classes="h2"/>
-
-                    <CheckBox IsChecked="{Binding SyncEnabled}"
-                              Content="Enable folder synchronization"/>
-
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Sync Folder Location" Classes="label"/>
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBox Text="{Binding SyncFolderPath}" IsReadOnly="True" Margin="0,0,8,0"/>
-                            <Button Grid.Column="1" Command="{Binding BrowseSyncFolderCommand}" Content="Browse..."/>
-                        </Grid>
-                    </StackPanel>
-
-                    <CheckBox IsChecked="{Binding PauseOnBattery}"
-                              Content="Pause sync when on battery power"/>
-                </StackPanel>
-            </Border>
-
-            <!-- Transfers -->
-            <Border Classes="card">
-                <StackPanel Spacing="16">
-                    <TextBlock Text="Transfers" Classes="h2"/>
-
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="Download Location" Classes="label"/>
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBox Text="{Binding DownloadPath}" IsReadOnly="True" Margin="0,0,8,0"/>
-                            <Button Grid.Column="1" Command="{Binding BrowseDownloadPathCommand}" Content="Browse..."/>
-                        </Grid>
-                    </StackPanel>
-
-                    <CheckBox IsChecked="{Binding AutoAcceptFromTrusted}"
-                              Content="Auto-accept files from trusted peers"/>
-
-                    <StackPanel Spacing="8">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="Max Download Speed" Classes="label"/>
-                            <TextBlock Text="{Binding MaxDownloadSpeedDisplay}" 
-                                       Foreground="{StaticResource AccentBrush}"/>
-                        </Grid>
-                        <Slider Minimum="0" Maximum="102400" 
-                                Value="{Binding MaxDownloadSpeedKBps}"
-                                TickFrequency="256" IsSnapToTickEnabled="True"/>
-                    </StackPanel>
-
-                    <StackPanel Spacing="8">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="Max Upload Speed" Classes="label"/>
-                            <TextBlock Text="{Binding MaxUploadSpeedDisplay}" 
-                                       Foreground="{StaticResource AccentBrush}"/>
-                        </Grid>
-                        <Slider Minimum="0" Maximum="102400" 
-                                Value="{Binding MaxUploadSpeedKBps}"
-                                TickFrequency="256" IsSnapToTickEnabled="True"/>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- Versioning -->
-            <Border Classes="card">
-                <StackPanel Spacing="16">
-                    <TextBlock Text="Versioning" Classes="h2"/>
-
-                    <CheckBox IsChecked="{Binding VersioningEnabled}"
-                              Content="Enable file versioning (keep backup copies)"/>
-
-                    <StackPanel Spacing="8">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="Max Versions Per File" Classes="label"/>
-                            <TextBlock Text="{Binding MaxVersionsPerFile}" 
-                                       Foreground="{StaticResource AccentBrush}"/>
-                        </Grid>
-                        <Slider Minimum="1" Maximum="50" 
-                                Value="{Binding MaxVersionsPerFile}"/>
-                    </StackPanel>
-
-                    <StackPanel Spacing="8">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="Retention Period" Classes="label"/>
-                            <TextBlock Text="{Binding MaxVersionAgeDisplay}" 
-                                       Foreground="{StaticResource AccentBrush}"/>
-                        </Grid>
-                        <Slider Minimum="0" Maximum="365" 
-                                Value="{Binding MaxVersionAgeDays}"/>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- Trusted Peers -->
-            <Border Classes="card">
-                <StackPanel Spacing="16">
-                    <TextBlock Text="Trusted Peers" Classes="h2"/>
-                    <TextBlock Text="Devices authorized for automatic file acceptance." Classes="description"/>
-
-                    <Border Background="{StaticResource SurfaceSecondaryBrush}" 
-                            CornerRadius="8" Padding="12" MinHeight="100">
-                        <ListBox ItemsSource="{Binding TrustedPeers}"
-                                 SelectedItem="{Binding SelectedPeer}"
-                                 Background="Transparent">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding Name}" FontWeight="Medium"/>
-                                            <TextBlock Text="{Binding Id}" FontSize="11" Opacity="0.6"/>
-                                        </StackPanel>
-                                    </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                    <!-- General Settings -->
+                    <Border Classes="settings-card">
+                        <StackPanel Spacing="20">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="GENERAL" Classes="section-title"/>
+                                <TextBlock Text="Basic application preferences" Classes="section-desc"/>
+                            </StackPanel>
+                            
+                            <StackPanel Spacing="12">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Device Name" Classes="field-label"/>
+                                    <TextBox Text="{Binding DeviceName}" 
+                                             Watermark="Enter device name"
+                                             Classes="settings"/>
+                                    <TextBlock Text="Visible to other devices on the network" Classes="field-hint"/>
+                                </StackPanel>
+                                
+                                <Border Height="1" Background="#15ffffff" Margin="0,8"/>
+                                
+                                <CheckBox IsChecked="{Binding StartMinimized}"
+                                          Content="Start minimized to system tray"/>
+                                
+                                <CheckBox IsChecked="{Binding CloseToTray}"
+                                          Content="Close to tray instead of exiting"/>
+                            </StackPanel>
+                        </StackPanel>
                     </Border>
-                    
-                    <Button Command="{Binding RemoveTrustedPeerCommand}"
-                            Content="Remove Selected"
-                            HorizontalAlignment="Left"/>
-                </StackPanel>
-            </Border>
 
-            <!-- Actions -->
-            <Button Command="{Binding SaveSettingsCommand}"
-                    Content="Save Settings"
-                    Classes="accent"
-                    HorizontalAlignment="Right"/>
-        </StackPanel>
+                    <!-- Synchronization -->
+                    <Border Classes="settings-card">
+                        <StackPanel Spacing="20">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="SYNCHRONIZATION" Classes="section-title"/>
+                                <TextBlock Text="Folder sync configuration" Classes="section-desc"/>
+                            </StackPanel>
+                            
+                            <StackPanel Spacing="12">
+                                <CheckBox IsChecked="{Binding SyncEnabled}"
+                                          Content="Enable folder synchronization"/>
+                                
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Sync Folder" Classes="field-label"/>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBox Text="{Binding SyncFolderPath}" 
+                                                 IsReadOnly="True" 
+                                                 Classes="settings"
+                                                 Margin="0,0,8,0"/>
+                                        <Button Grid.Column="1" 
+                                                Command="{Binding BrowseSyncFolderCommand}" 
+                                                Content="Browse"
+                                                Classes="secondary"/>
+                                    </Grid>
+                                </StackPanel>
+                                
+                                <CheckBox IsChecked="{Binding PauseOnBattery}"
+                                          Content="Pause sync when on battery power"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Selective Sync -->
+                    <Border Classes="settings-card">
+                        <StackPanel Spacing="20">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="SELECTIVE SYNC" Classes="section-title"/>
+                                <TextBlock Text="Exclude folders from synchronization" Classes="section-desc"/>
+                            </StackPanel>
+                            
+                            <Border Background="{StaticResource BackgroundLightBrush}" 
+                                    CornerRadius="8" 
+                                    Padding="4"
+                                    MinHeight="80"
+                                    BorderBrush="{StaticResource BorderLightBrush}"
+                                    BorderThickness="1">
+                                <ListBox ItemsSource="{Binding ExcludedFolders}"
+                                         SelectedItem="{Binding SelectedExcludedFolder}"
+                                         Background="Transparent">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" 
+                                                       Margin="8,4"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+                            
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Command="{Binding AddExcludedFolderCommand}"
+                                        Content="Add Folder"
+                                        Classes="secondary"/>
+                                <Button Command="{Binding RemoveExcludedFolderCommand}"
+                                        Content="Remove"
+                                        Classes="secondary"/>
+                            </StackPanel>
+                            
+                            <TextBlock Text="Excluded folders will not be synchronized with other devices" 
+                                       Classes="field-hint"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Notifications -->
+                    <Border Classes="settings-card">
+                        <StackPanel Spacing="20">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="NOTIFICATIONS" Classes="section-title"/>
+                                <TextBlock Text="Alert preferences" Classes="section-desc"/>
+                            </StackPanel>
+                            
+                            <StackPanel Spacing="12">
+                                <CheckBox IsChecked="{Binding ShowNotifications}"
+                                          Content="Show desktop notifications"/>
+                                
+                                <CheckBox IsChecked="{Binding ShowTransferComplete}"
+                                          Content="Notify when transfers complete"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Right Column -->
+                <StackPanel Grid.Column="2" Spacing="20">
+                    
+                    <!-- Transfers -->
+                    <Border Classes="settings-card">
+                        <StackPanel Spacing="20">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="TRANSFERS" Classes="section-title"/>
+                                <TextBlock Text="File transfer settings" Classes="section-desc"/>
+                            </StackPanel>
+                            
+                            <StackPanel Spacing="12">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Download Location" Classes="field-label"/>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBox Text="{Binding DownloadPath}" 
+                                                 IsReadOnly="True" 
+                                                 Classes="settings"
+                                                 Margin="0,0,8,0"/>
+                                        <Button Grid.Column="1" 
+                                                Command="{Binding BrowseDownloadPathCommand}" 
+                                                Content="Browse"
+                                                Classes="secondary"/>
+                                    </Grid>
+                                </StackPanel>
+                                
+                                <CheckBox IsChecked="{Binding AutoAcceptFromTrusted}"
+                                          Content="Auto-accept files from trusted peers"/>
+                                
+                                <Border Height="1" Background="#15ffffff" Margin="0,8"/>
+                                
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Download Speed Limit" Classes="field-label"/>
+                                    <Slider Minimum="0" Maximum="102400" 
+                                            Value="{Binding MaxDownloadSpeedKBps}"
+                                            TickFrequency="256" IsSnapToTickEnabled="True"/>
+                                    <TextBlock Text="{Binding MaxDownloadSpeedDisplay}" 
+                                               Foreground="{StaticResource AccentPrimaryBrush}"
+                                               FontWeight="SemiBold"
+                                               FontSize="12"/>
+                                </StackPanel>
+                                
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Upload Speed Limit" Classes="field-label"/>
+                                    <Slider Minimum="0" Maximum="102400" 
+                                            Value="{Binding MaxUploadSpeedKBps}"
+                                            TickFrequency="256" IsSnapToTickEnabled="True"/>
+                                    <TextBlock Text="{Binding MaxUploadSpeedDisplay}" 
+                                               Foreground="{StaticResource AccentPrimaryBrush}"
+                                               FontWeight="SemiBold"
+                                               FontSize="12"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Versioning -->
+                    <Border Classes="settings-card">
+                        <StackPanel Spacing="20">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="FILE VERSIONING" Classes="section-title"/>
+                                <TextBlock Text="Backup copies configuration" Classes="section-desc"/>
+                            </StackPanel>
+                            
+                            <StackPanel Spacing="12">
+                                <CheckBox IsChecked="{Binding VersioningEnabled}"
+                                          Content="Enable file versioning"/>
+                                
+                                <Border Height="1" Background="#15ffffff" Margin="0,8"/>
+                                
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Max Versions Per File" Classes="field-label"/>
+                                    <Slider Minimum="1" Maximum="50" 
+                                            Value="{Binding MaxVersionsPerFile}"/>
+                                    <TextBlock Text="{Binding MaxVersionsPerFile, StringFormat='{}{0} versions'}" 
+                                               Foreground="{StaticResource AccentPrimaryBrush}"
+                                               FontWeight="SemiBold"
+                                               FontSize="12"/>
+                                </StackPanel>
+                                
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Retention Period" Classes="field-label"/>
+                                    <Slider Minimum="0" Maximum="365" 
+                                            Value="{Binding MaxVersionAgeDays}"/>
+                                    <TextBlock Text="{Binding MaxVersionAgeDisplay}" 
+                                               Foreground="{StaticResource AccentPrimaryBrush}"
+                                               FontWeight="SemiBold"
+                                               FontSize="12"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Trusted Peers -->
+                    <Border Classes="settings-card">
+                        <StackPanel Spacing="20">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="TRUSTED PEERS" Classes="section-title"/>
+                                <TextBlock Text="Devices authorized for auto-accept" Classes="section-desc"/>
+                            </StackPanel>
+                            
+                            <Border Background="{StaticResource BackgroundLightBrush}" 
+                                    CornerRadius="8" 
+                                    Padding="4"
+                                    MinHeight="120"
+                                    BorderBrush="{StaticResource BorderLightBrush}"
+                                    BorderThickness="1">
+                                <ListBox ItemsSource="{Binding TrustedPeers}"
+                                         SelectedItem="{Binding SelectedPeer}"
+                                         Background="Transparent">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="8,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Name}" 
+                                                               FontWeight="Medium"
+                                                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                    <TextBlock Text="{Binding Id}" 
+                                                               FontSize="11" 
+                                                               Foreground="{StaticResource TextMutedBrush}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+                            
+                            <Button Command="{Binding RemoveTrustedPeerCommand}"
+                                    Content="Remove Selected"
+                                    Classes="secondary"
+                                    HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+
+            <!-- Footer Actions -->
+            <Border Grid.Row="2" 
+                    Margin="0,24,0,0"
+                    Padding="0,20,0,0"
+                    BorderThickness="0,1,0,0"
+                    BorderBrush="#15ffffff">
+                <Button Command="{Binding SaveSettingsCommand}"
+                        Content="Save Settings"
+                        Classes="primary"
+                        HorizontalAlignment="Right"
+                        Padding="32,12"/>
+            </Border>
+        </Grid>
     </ScrollViewer>
 
     <UserControl.Styles>
-        <Style Selector="Border.card">
+        <Style Selector="Border.settings-card">
             <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
-            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="CornerRadius" Value="12"/>
             <Setter Property="Padding" Value="24"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderLightBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
         </Style>
-        <Style Selector="TextBlock.h2">
-            <Setter Property="FontSize" Value="18"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
-            <Setter Property="Margin" Value="0,0,0,8"/>
+        <Style Selector="TextBlock.section-title">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{StaticResource AccentPrimaryBrush}"/>
+            <Setter Property="LetterSpacing" Value="1"/>
         </Style>
-        <Style Selector="TextBlock.label">
-            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
-            <Setter Property="FontWeight" Value="Medium"/>
-        </Style>
-        <Style Selector="TextBlock.description">
-            <Setter Property="FontSize" Value="12"/>
+        <Style Selector="TextBlock.section-desc">
+            <Setter Property="FontSize" Value="13"/>
             <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.field-label">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.field-hint">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}"/>
+        </Style>
+        <Style Selector="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+            <Setter Property="FontSize" Value="13"/>
         </Style>
     </UserControl.Styles>
 </UserControl>

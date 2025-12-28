@@ -1,0 +1,87 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:icon="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="280"
+        x:Class="Swarm.Avalonia.Views.FileTransferDialog"
+        Title="Incoming File"
+        Width="420" Height="260"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{StaticResource BackgroundDarkBrush}">
+
+    <Grid Margin="28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="12" Margin="0,0,0,20">
+            <icon:MaterialIcon Kind="FileDownload" 
+                               Width="32" Height="32"
+                               Foreground="{StaticResource AccentPrimaryBrush}"/>
+            <StackPanel>
+                <TextBlock Text="Incoming File Transfer"
+                           FontSize="18"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                <TextBlock Name="SenderText"
+                           Text="From: Unknown"
+                           FontSize="12"
+                           Foreground="{StaticResource TextSecondaryBrush}"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- File Info Card -->
+        <Border Grid.Row="1" 
+                Background="{StaticResource SurfaceBrush}"
+                CornerRadius="10"
+                Padding="16"
+                Margin="0,0,0,16"
+                BorderBrush="{StaticResource BorderLightBrush}"
+                BorderThickness="1">
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+                <icon:MaterialIcon Kind="File" 
+                                   Width="40" Height="40"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Grid.RowSpan="2"
+                                   Margin="0,0,16,0"
+                                   VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Grid.Row="0"
+                           Name="FileNameText"
+                           Text="filename.ext"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource TextPrimaryBrush}"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="1" Grid.Row="1"
+                           Name="FileSizeText"
+                           Text="0 KB"
+                           FontSize="12"
+                           Foreground="{StaticResource TextMutedBrush}"/>
+            </Grid>
+        </Border>
+
+        <!-- Spacer -->
+        <Grid Grid.Row="2"/>
+
+        <!-- Action Buttons -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto">
+            <Button Grid.Column="1"
+                    Name="RejectButton"
+                    Content="Decline"
+                    Classes="secondary"
+                    Width="100"
+                    Margin="0,0,12,0"/>
+            <Button Grid.Column="2"
+                    Name="AcceptButton"
+                    Content="Accept"
+                    Classes="primary"
+                    Width="100"/>
+        </Grid>
+    </Grid>
+</Window>

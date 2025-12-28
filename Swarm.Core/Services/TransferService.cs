@@ -29,7 +29,7 @@ public class TransferService : IDisposable
     private readonly SemaphoreSlim _connectionLimiter = new(MAX_CONCURRENT_CONNECTIONS, MAX_CONCURRENT_CONNECTIONS);
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
-    private string _downloadPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "Swarm");
+    private string _downloadPath;
 
     public int ListenPort { get; private set; }
     public ObservableCollection<FileTransfer> Transfers { get; } = [];
@@ -39,6 +39,7 @@ public class TransferService : IDisposable
         _settings = settings;
         _cryptoService = cryptoService;
         _dispatcher = dispatcher;
+        _downloadPath = _settings.DownloadPath;
     }
     
     private void InvokeOnUI(Action action)

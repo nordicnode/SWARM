@@ -6,6 +6,7 @@
 
     <Application.Resources>
         <converters:IconConverter x:Key="IconConverter"/>
+        <converters:BoolToIconKindConverter x:Key="BoolToIconKindConverter"/>
     </Application.Resources>
 
     <Application.Styles>

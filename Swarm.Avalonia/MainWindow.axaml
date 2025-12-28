@@ -4,6 +4,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:Swarm.Avalonia.ViewModels"
         xmlns:views="clr-namespace:Swarm.Avalonia.Views"
+        xmlns:avalonia="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         mc:Ignorable="d" d:DesignWidth="1180" d:DesignHeight="720"
         x:Class="Swarm.Avalonia.MainWindow"
         x:DataType="vm:MainViewModel"
@@ -182,14 +183,37 @@
 
                         <!-- Footer -->
                         <StackPanel Grid.Row="2">
-                            <!-- Version Info -->
-                            <TextBlock Text="v0.4.0-beta" 
-                                       Foreground="{StaticResource TextMutedBrush}" 
-                                       FontSize="11" 
-                                       Margin="16,0,0,4"/>
+                            <!-- Progress Bar -->
+                            <ProgressBar Value="{Binding SyncProgress}" 
+                                         Minimum="0" Maximum="100"
+                                         Height="4" 
+                                         IsVisible="{Binding IsSyncing}"
+                                         Margin="0,0,0,12"
+                                         Foreground="{StaticResource AccentPrimaryBrush}"
+                                         Background="#20FFFFFF"/>
+
+                            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+                                <!-- Version Info -->
+                                <TextBlock Text="v0.4.0-beta" 
+                                           Foreground="{StaticResource TextMutedBrush}" 
+                                           FontSize="11" 
+                                           VerticalAlignment="Center"
+                                           Margin="16,0,0,0"/>
+
+                                <!-- Pause/Resume Button -->
+                                <Button Grid.Column="1" 
+                                        Command="{Binding ToggleSyncCommand}"
+                                        Classes="icon"
+                                        ToolTip.Tip="Pause/Resume Sync"
+                                        Margin="0,0,16,0">
+                                    <avalonia:MaterialIcon Kind="{Binding PauseIconKind}" 
+                                                         Width="16" Height="16"
+                                                         Foreground="{StaticResource TextSecondaryBrush}"/>
+                                </Button>
+                            </Grid>
                             
                             <!-- Status Indicator -->
-                            <Border Background="#10ffffff" CornerRadius="8" Padding="12,8" Margin="0,12,0,0">
+                            <Border Background="#10ffffff" CornerRadius="8" Padding="12,8">
                                 <Grid ColumnDefinitions="Auto,*">
                                     <Ellipse Width="8" Height="8" 
                                              Fill="{StaticResource StatusOnlineBrush}" 

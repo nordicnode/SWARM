@@ -9,6 +9,8 @@ using Swarm.Avalonia.Services;
 using Swarm.Core.Helpers;
 using Swarm.Core.Models;
 using Swarm.Core.Services;
+using Swarm.Core.ViewModels;
+using Avalonia.Controls.Notifications;
 
 namespace Swarm.Avalonia.ViewModels;
 
@@ -29,6 +31,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private readonly ActivityLogService _activityLogService;
     private readonly ConflictResolutionService _conflictResolutionService;
     private readonly ShareLinkService _shareLinkService;
+    private readonly PairingService _pairingService;
 
     // Services specific to Avalonia
     private readonly AvaloniaDispatcher _dispatcher;
@@ -74,10 +77,11 @@ public class MainViewModel : ViewModelBase, IDisposable
         _rescanService = new RescanService(_settings, _syncService);
         _conflictResolutionService = new ConflictResolutionService(_settings, _versioningService, _activityLogService);
         _shareLinkService = new ShareLinkService(_settings);
+        _pairingService = new PairingService(_cryptoService);
 
         // Initialize Sub-ViewModels
         OverviewVM = new OverviewViewModel(_syncService, _versioningService, _activityLogService, _discoveryService, _settings);
-        FilesVM = new FilesViewModel(_settings, _shareLinkService);
+        FilesVM = new FilesViewModel(_settings, _syncService);
         PeersVM = new PeersViewModel(_discoveryService, _transferService, _settings);
         SettingsVM = new SettingsViewModel(
             _settings,
@@ -96,6 +100,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         NavigateToFilesCommand = new RelayCommand(NavigateToFiles);
         NavigateToPeersCommand = new RelayCommand(NavigateToPeers);
         NavigateToSettingsCommand = new RelayCommand(NavigateToSettings);
+        ToggleSyncCommand = new RelayCommand(ToggleSync);
         
         // Start services
         InitializeServices();
@@ -120,7 +125,57 @@ public class MainViewModel : ViewModelBase, IDisposable
 
         // Subscribe to events
         _syncService.SyncStatusChanged += OnSyncStatusChanged;
+        _syncService.TimeTravelDetected += OnTimeTravelDetected;
         _transferService.TransferProgress += OnTransferProgress;
+        _transferService.IncomingFileRequest += OnIncomingFileRequest;
+        _discoveryService.UntrustedPeerDiscovered += OnUntrustedPeerDiscovered;
+    }
+
+    private void OnIncomingFileRequest(string fileName, string senderName, long size, Action<bool> callback)
+    {
+        Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                // Get the main window as the owner for the dialog
+                var mainWindow = global::Avalonia.Application.Current?.ApplicationLifetime is 
+                    global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                    ? desktop.MainWindow
+                    : null;
+
+                if (mainWindow == null)
+                {
+                    // Fallback: auto-accept if no window available
+                    callback(true);
+                    return;
+                }
+
+                // Show the file transfer dialog
+                var dialog = new Views.FileTransferDialog(fileName, senderName, size);
+                var result = await dialog.ShowDialog<bool?>(mainWindow);
+
+                if (result == true)
+                {
+                    ToastService.Show("Receiving File", 
+                        $"Receiving '{fileName}' ({FileHelpers.FormatBytes(size)}) from {senderName}", 
+                        NotificationType.Information);
+                    callback(true);
+                }
+                else
+                {
+                    ToastService.Show("Transfer Declined", 
+                        $"Declined '{fileName}' from {senderName}", 
+                        NotificationType.Warning);
+                    callback(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"File transfer dialog error: {ex.Message}");
+                // Fallback: auto-accept on error
+                callback(true);
+            }
+        });
     }
 
     private void OnSyncStatusChanged(string status)
@@ -128,15 +183,87 @@ public class MainViewModel : ViewModelBase, IDisposable
         Dispatcher.UIThread.Post(() => StatusText = status);
     }
 
+    private void OnTimeTravelDetected(string fileName, DateTime futureTime)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            ToastService.Show("Time Travel Detected", 
+                $"File '{fileName}' is from the future ({futureTime}). Check peer clocks!", 
+                NotificationType.Warning);
+        });
+    }
+
+    private void OnUntrustedPeerDiscovered(Peer peer)
+    {
+        Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                // Get the main window as the owner for the dialog
+                var mainWindow = global::Avalonia.Application.Current?.ApplicationLifetime is 
+                    global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                    ? desktop.MainWindow
+                    : null;
+
+                if (mainWindow == null) return;
+
+                var dialog = new Views.PairingDialog(peer, _pairingService);
+                var result = await dialog.ShowDialog<bool?>(mainWindow);
+
+                if (result == true)
+                {
+                    // User chose to trust this peer
+                    _settings.TrustPeer(peer);
+                    _settings.Save();
+                    
+                    ToastService.Show("Device Trusted", 
+                        $"'{peer.Name}' is now a trusted device.", 
+                        NotificationType.Success);
+                }
+                else
+                {
+                    ToastService.Show("Device Rejected", 
+                        $"'{peer.Name}' was not trusted.", 
+                        NotificationType.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Pairing dialog error: {ex.Message}");
+            }
+        });
+    }
+
     private void OnTransferProgress(FileTransfer transfer)
     {
         Dispatcher.UIThread.Post(() =>
         {
             // Simple status update for now
-            var active = _transferService.Transfers.Count(t => t.Status == TransferStatus.InProgress);
-            IsSyncing = active > 0 || _syncService.IsRunning;
-            SyncingFileCountText = active > 0 ? $"{active} active transfers" : "";
+            var active = _transferService.Transfers.Where(t => t.Status == TransferStatus.InProgress).ToList();
+            IsSyncing = active.Count > 0 || _syncService.IsRunning;
+            SyncingFileCountText = active.Count > 0 ? $"{active.Count} active transfers" : "";
+
+            if (active.Count > 0)
+            {
+                long totalBytes = active.Sum(t => t.FileSize);
+                long transferred = active.Sum(t => t.BytesTransferred);
+                SyncProgress = totalBytes > 0 ? (double)transferred / totalBytes * 100 : 0;
+            }
+            else
+            {
+                SyncProgress = 0;
+            }
         });
+    }
+
+    private void ToggleSync()
+    {
+        _settings.IsSyncEnabled = !_settings.IsSyncEnabled;
+        _settings.Save();
+        ApplySettings(_settings);
+        // Refresh UI properties
+        OnPropertyChanged(nameof(IsPaused));
+        OnPropertyChanged(nameof(PauseIconKind));
     }
 
     public void ApplySettings(Settings settings)
@@ -189,6 +316,16 @@ public class MainViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _transferSpeedText, value);
     }
 
+    private double _syncProgress;
+    public double SyncProgress
+    {
+        get => _syncProgress;
+        set => SetProperty(ref _syncProgress, value);
+    }
+
+    public bool IsPaused => !_settings.IsSyncEnabled;
+    public string PauseIconKind => IsPaused ? "Play" : "Pause";
+
     // Navigation state properties
     public bool IsOverviewSelected
     {
@@ -222,6 +359,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     public ICommand NavigateToFilesCommand { get; }
     public ICommand NavigateToPeersCommand { get; }
     public ICommand NavigateToSettingsCommand { get; }
+    public ICommand ToggleSyncCommand { get; }
 
     #endregion
 
@@ -267,6 +405,8 @@ public class MainViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        OverviewVM.Dispose();
+        FilesVM.Dispose();
         _rescanService.Dispose();
         _activityLogService.Dispose();
         _syncService.Dispose();

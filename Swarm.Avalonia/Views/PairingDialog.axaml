@@ -1,0 +1,136 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="450" d:DesignHeight="400"
+        x:Class="Swarm.Avalonia.Views.PairingDialog"
+        Title="Pair Device"
+        Width="450" Height="420"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{StaticResource BackgroundDarkBrush}">
+
+    <Grid Margin="32">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="8" Margin="0,0,0,24">
+            <TextBlock Text="New Device Discovered"
+                       FontSize="22"
+                       FontWeight="Bold"
+                       Foreground="{StaticResource TextPrimaryBrush}"/>
+            <TextBlock Text="Verify and trust this device to allow file sharing"
+                       FontSize="13"
+                       Foreground="{StaticResource TextSecondaryBrush}"/>
+        </StackPanel>
+
+        <!-- Peer Info Card -->
+        <Border Grid.Row="1" 
+                Background="{StaticResource SurfaceBrush}"
+                CornerRadius="12"
+                Padding="20"
+                Margin="0,0,0,20"
+                BorderBrush="{StaticResource BorderLightBrush}"
+                BorderThickness="1">
+            <StackPanel Spacing="12">
+                <Grid ColumnDefinitions="Auto,*">
+                    <TextBlock Text="Device Name:" 
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Width="100"/>
+                    <TextBlock Grid.Column="1" 
+                               Name="PeerNameText"
+                               Text="Unknown Device"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                </Grid>
+                <Grid ColumnDefinitions="Auto,*">
+                    <TextBlock Text="Fingerprint:" 
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Width="100"/>
+                    <TextBlock Grid.Column="1" 
+                               Name="FingerprintText"
+                               Text="00:00:00:00:00:00:00:00"
+                               FontFamily="Consolas, Courier New"
+                               FontSize="12"
+                               Foreground="{StaticResource AccentPrimaryBrush}"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- Pairing Code Section -->
+        <Border Grid.Row="2" 
+                Background="{StaticResource SurfaceBrush}"
+                CornerRadius="12"
+                Padding="20"
+                Margin="0,0,0,20"
+                BorderBrush="{StaticResource AccentPrimaryBrush}"
+                BorderThickness="1">
+            <StackPanel Spacing="12">
+                <TextBlock Text="PEER'S PAIRING CODE"
+                           FontSize="10"
+                           FontWeight="Bold"
+                           Foreground="{StaticResource AccentPrimaryBrush}"
+                           LetterSpacing="1"/>
+                <TextBlock Name="PairingCodeText"
+                           Text="------"
+                           FontSize="36"
+                           FontWeight="Bold"
+                           FontFamily="Consolas, Courier New"
+                           Foreground="{StaticResource TextPrimaryBrush}"
+                           HorizontalAlignment="Center"
+                           LetterSpacing="8"/>
+                <TextBlock Text="Compare this code with the code shown on the other device"
+                           FontSize="11"
+                           Foreground="{StaticResource TextMutedBrush}"
+                           TextAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Your Code (for reference) -->
+        <Border Grid.Row="3" 
+                Background="#08ffffff"
+                CornerRadius="8"
+                Padding="16"
+                Margin="0,0,0,20">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel>
+                    <TextBlock Text="Your pairing code (show to peer):"
+                               FontSize="11"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                    <TextBlock Name="MyCodeText"
+                               Text="------"
+                               FontSize="18"
+                               FontWeight="Bold"
+                               FontFamily="Consolas, Courier New"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               LetterSpacing="4"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Spacer -->
+        <Grid Grid.Row="4"/>
+
+        <!-- Action Buttons -->
+        <Grid Grid.Row="5" ColumnDefinitions="*,Auto,Auto">
+            <Button Grid.Column="1"
+                    Name="RejectButton"
+                    Content="Reject"
+                    Classes="secondary"
+                    Width="100"
+                    Margin="0,0,12,0"/>
+            <Button Grid.Column="2"
+                    Name="TrustButton"
+                    Content="Trust Device"
+                    Classes="primary"
+                    Width="140"/>
+        </Grid>
+    </Grid>
+</Window>
