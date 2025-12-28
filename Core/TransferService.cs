@@ -906,9 +906,12 @@ public class TransferService : IDisposable
 
     /// <summary>
     /// Handles incoming compressed file sync messages. Uses Brotli decompression.
+    /// For large files (>50MB), uses streaming to a temp file to avoid memory pressure.
     /// </summary>
     private async Task HandleSyncFileChangedCompressed(BinaryReader reader, NetworkStream stream, Peer remotePeer, CancellationToken ct)
     {
+        const long STREAMING_THRESHOLD = 50 * 1024 * 1024; // 50MB threshold for streaming
+        
         var relativePath = reader.ReadString();
         var contentHash = reader.ReadString();
         var lastModified = DateTime.FromBinary(reader.ReadInt64());
@@ -929,23 +932,71 @@ public class TransferService : IDisposable
 
         System.Diagnostics.Debug.WriteLine($"Sync file received (compressed): {relativePath} ({compressedSize} -> {fileSize} bytes)");
         
-        // Wrap the network stream in a decompression stream for reading the compressed data
-        // We need to read exactly compressedSize bytes from the network, then decompress
-        var compressedData = new byte[compressedSize];
-        var totalRead = 0;
-        while (totalRead < compressedSize)
+        if (compressedSize > STREAMING_THRESHOLD)
         {
-            var bytesRead = await stream.ReadAsync(compressedData.AsMemory(totalRead, (int)(compressedSize - totalRead)), ct);
-            if (bytesRead == 0) throw new EndOfStreamException("Unexpected end of stream while receiving compressed data");
-            totalRead += bytesRead;
+            // Large file: stream to temp file to avoid memory pressure
+            var tempPath = Path.GetTempFileName();
+            try
+            {
+                // Stream compressed data to temp file
+                await using (var tempFile = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, BUFFER_SIZE, useAsync: true))
+                {
+                    var buffer = ArrayPool<byte>.Shared.Rent(BUFFER_SIZE);
+                    try
+                    {
+                        var remaining = compressedSize;
+                        while (remaining > 0)
+                        {
+                            var toRead = (int)Math.Min(BUFFER_SIZE, remaining);
+                            var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, toRead), ct);
+                            if (bytesRead == 0) throw new EndOfStreamException("Unexpected end of stream while receiving compressed data");
+                            await tempFile.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
+                            remaining -= bytesRead;
+                        }
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(buffer);
+                    }
+                }
+                
+                // Now decompress from temp file
+                await using var compressedFileStream = new FileStream(tempPath, FileMode.Open, FileAccess.Read, FileShare.Read, BUFFER_SIZE, useAsync: true);
+                await using var brotliStream = new BrotliStream(compressedFileStream, CompressionMode.Decompress, leaveOpen: true);
+                
+                SyncFileReceived?.Invoke(syncFile, brotliStream, remotePeer);
+            }
+            finally
+            {
+                // Clean up temp file
+                try { File.Delete(tempPath); } catch { }
+            }
         }
+        else
+        {
+            // Small file: use ArrayPool for memory efficiency
+            var compressedData = ArrayPool<byte>.Shared.Rent((int)compressedSize);
+            try
+            {
+                var totalRead = 0;
+                while (totalRead < compressedSize)
+                {
+                    var bytesRead = await stream.ReadAsync(compressedData.AsMemory(totalRead, (int)(compressedSize - totalRead)), ct);
+                    if (bytesRead == 0) throw new EndOfStreamException("Unexpected end of stream while receiving compressed data");
+                    totalRead += bytesRead;
+                }
 
-        // Create a memory stream with the compressed data and wrap in BrotliStream for decompression
-        using var compressedStream = new MemoryStream(compressedData);
-        await using var brotliStream = new BrotliStream(compressedStream, CompressionMode.Decompress, leaveOpen: true);
-        
-        // Raise event for SyncService to handle - pass the decompression stream for reading file data
-        SyncFileReceived?.Invoke(syncFile, brotliStream, remotePeer);
+                // Create a memory stream with the compressed data (only use the bytes we read)
+                using var compressedStream = new MemoryStream(compressedData, 0, (int)compressedSize);
+                await using var brotliStream = new BrotliStream(compressedStream, CompressionMode.Decompress, leaveOpen: true);
+                
+                SyncFileReceived?.Invoke(syncFile, brotliStream, remotePeer);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(compressedData);
+            }
+        }
     }
 
     private void HandleSyncManifest(BinaryReader reader, Peer remotePeer)

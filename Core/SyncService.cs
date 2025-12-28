@@ -26,6 +26,7 @@ public class SyncService : IDisposable
     private readonly TransferService _transferService;
     private readonly VersioningService _versioningService;
     private readonly SwarmIgnoreService _swarmIgnoreService;
+    private readonly ActivityLogService? _activityLogService;
     
     private FileSystemWatcher? _watcher;
     private CancellationTokenSource? _cts;
@@ -41,6 +42,10 @@ public class SyncService : IDisposable
     // Ignore list for files currently being written by sync
     private readonly ConcurrentDictionary<string, DateTime> _ignoreList = new();
     private const int IGNORE_DURATION_MS = ProtocolConstants.SYNC_IGNORE_DURATION_MS;
+    
+    // Activity log debounce to prevent duplicate entries
+    private readonly ConcurrentDictionary<string, DateTime> _activityLogDebounce = new();
+    private const int ACTIVITY_DEBOUNCE_MS = 2000; // 2 second debounce for activity logging
 
     // Directory rename coalescence: track potential directory renames detected from file rename patterns
     // Key: oldParentPath, Value: (newParentPath, set of affected file paths, first seen time)
@@ -62,12 +67,57 @@ public class SyncService : IDisposable
     public string SyncFolderPath => _settings.SyncFolderPath;
     public bool IsEnabled => _settings.IsSyncEnabled;
     public bool IsRunning => _watcher != null;
+    
+    // Dashboard tracking
+    private DateTime? _lastSyncTime;
+    private long _sessionBytesTransferred;
+    
+    /// <summary>
+    /// Gets the last sync completion time.
+    /// </summary>
+    public DateTime? LastSyncTime => _lastSyncTime;
+    
+    /// <summary>
+    /// Gets the number of files in the sync folder.
+    /// </summary>
+    public int GetTrackedFileCount()
+    {
+        try
+        {
+            if (!Directory.Exists(_settings.SyncFolderPath))
+                return 0;
+            return Directory.EnumerateFiles(_settings.SyncFolderPath, "*", SearchOption.AllDirectories).Count();
+        }
+        catch
+        {
+            return _fileStates.Count; // Fallback to tracked state
+        }
+    }
+    
+    /// <summary>
+    /// Gets the total bytes transferred this session.
+    /// </summary>
+    public long GetSessionBytesTransferred() => _sessionBytesTransferred;
+    
+    /// <summary>
+    /// Adds to the session bytes transferred count.
+    /// </summary>
+    public void AddBytesTransferred(long bytes)
+    {
+        Interlocked.Add(ref _sessionBytesTransferred, bytes);
+    }
 
     public event Action<SyncedFile>? FileChanged;
     public event Action<string>? SyncStatusChanged;
     public event Action<SyncedFile>? IncomingSyncFile;
     public event Action<string, string?>? FileConflictDetected;
     public event Action<SyncProgress>? SyncProgressChanged;
+    
+    /// <summary>
+    /// Raised when a deep rescan is recommended (e.g., after FSW buffer overflow).
+    /// External services like RescanService can subscribe to this.
+    /// </summary>
+    public event Action? RescanRequested;
 
     // Progress tracking fields (totalFilesCount is set by bulk sync operations)
     private int _totalFilesCount = 0;
@@ -78,12 +128,13 @@ public class SyncService : IDisposable
     // Track pending delta sync operations (relativePath -> peer awaiting delta)
     private readonly ConcurrentDictionary<string, (Peer peer, SyncedFile syncFile)> _pendingDeltaSyncs = new();
 
-    public SyncService(Settings settings, DiscoveryService discoveryService, TransferService transferService, VersioningService versioningService)
+    public SyncService(Settings settings, DiscoveryService discoveryService, TransferService transferService, VersioningService versioningService, ActivityLogService? activityLogService = null)
     {
         _settings = settings;
         _discoveryService = discoveryService;
         _transferService = transferService;
         _versioningService = versioningService;
+        _activityLogService = activityLogService;
         _swarmIgnoreService = new SwarmIgnoreService(settings);
 
         // Subscribe to TransferService sync events
@@ -97,6 +148,29 @@ public class SyncService : IDisposable
         _transferService.SignaturesRequested += OnSignaturesRequested;
         _transferService.BlockSignaturesReceived += OnBlockSignaturesReceived;
         _transferService.DeltaDataReceived += OnDeltaDataReceived;
+        
+        // Subscribe to peer discovery to auto-sync with new trusted peers
+        _discoveryService.PeerDiscovered += OnPeerDiscovered;
+    }
+    
+    private async void OnPeerDiscovered(Peer peer)
+    {
+        // Only sync with trusted peers that have sync enabled
+        if (!peer.IsTrusted || !peer.IsSyncEnabled || !IsRunning)
+            return;
+            
+        System.Diagnostics.Debug.WriteLine($"[SYNC] Trusted peer {peer.Name} connected, sending manifest...");
+        
+        try
+        {
+            // Short delay to ensure peer is fully initialized
+            await Task.Delay(500);
+            await SendManifestToPeer(peer);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[SYNC] Failed to sync with {peer.Name}: {ex.Message}");
+        }
     }
 
 
@@ -221,6 +295,7 @@ public class SyncService : IDisposable
             await SendManifestToPeer(peer);
         }
 
+        _lastSyncTime = DateTime.Now;
         SyncStatusChanged?.Invoke("Sync complete");
     }
 
@@ -403,18 +478,28 @@ public class SyncService : IDisposable
     {
         if (ShouldIgnore(e.FullPath)) return;
         QueueChange(e.FullPath, SyncAction.Create);
+        
+        var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, e.FullPath);
+        LogActivityDebounced(relativePath, "created");
     }
 
     private void OnFileChanged(object sender, FileSystemEventArgs e)
     {
         if (ShouldIgnore(e.FullPath)) return;
         QueueChange(e.FullPath, SyncAction.Update);
+        
+        // Don't log "modified" if we just logged "created" for this file
+        var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, e.FullPath);
+        LogActivityDebounced(relativePath, "modified");
     }
 
     private void OnFileDeleted(object sender, FileSystemEventArgs e)
     {
         if (ShouldIgnore(e.FullPath)) return;
         QueueChange(e.FullPath, SyncAction.Delete);
+        
+        var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, e.FullPath);
+        LogActivityDebounced(relativePath, "deleted");
     }
 
     private void OnFileRenamed(object sender, RenamedEventArgs e)
@@ -423,6 +508,42 @@ public class SyncService : IDisposable
         
         // Queue as a proper rename operation with both old and new paths
         QueueRename(e.OldFullPath, e.FullPath);
+        
+        var oldRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, e.OldFullPath);
+        var newRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, e.FullPath);
+        _activityLogService?.LogFileSync(newRelativePath, $"renamed from {oldRelativePath}");
+    }
+    
+    /// <summary>
+    /// Logs file activity with debounce to prevent duplicate entries from multiple FSW events.
+    /// </summary>
+    private void LogActivityDebounced(string relativePath, string action)
+    {
+        // Key on file path only - ignore any subsequent events for the same file within debounce window
+        var key = relativePath.ToLowerInvariant();
+        var now = DateTime.Now;
+        
+        // Check if we recently logged ANY action for this file
+        if (_activityLogDebounce.TryGetValue(key, out var lastLog))
+        {
+            if ((now - lastLog).TotalMilliseconds < ACTIVITY_DEBOUNCE_MS)
+            {
+                return; // Skip - already logged recently
+            }
+        }
+        
+        _activityLogDebounce[key] = now;
+        _activityLogService?.LogFileSync(relativePath, action);
+        
+        // Clean old entries periodically
+        if (_activityLogDebounce.Count > 100)
+        {
+            var cutoff = now.AddMilliseconds(-ACTIVITY_DEBOUNCE_MS * 2);
+            foreach (var old in _activityLogDebounce.Where(kv => kv.Value < cutoff).ToList())
+            {
+                _activityLogDebounce.TryRemove(old.Key, out _);
+            }
+        }
     }
 
     private void OnWatcherError(object sender, ErrorEventArgs e)
@@ -474,6 +595,12 @@ public class SyncService : IDisposable
                 }
                 
                 await ForceSyncAsync();
+                
+                // After a buffer overflow, also recommend a deep rescan to catch any missed changes
+                if (isPotentialBufferOverflow)
+                {
+                    RescanRequested?.Invoke();
+                }
             }
             catch (Exception syncEx)
             {

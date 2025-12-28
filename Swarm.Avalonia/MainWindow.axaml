@@ -1,0 +1,254 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Swarm.Avalonia.ViewModels"
+        xmlns:views="clr-namespace:Swarm.Avalonia.Views"
+        mc:Ignorable="d" d:DesignWidth="1180" d:DesignHeight="720"
+        x:Class="Swarm.Avalonia.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="Swarm"
+        Icon="/Assets/swarm.ico"
+        Width="1180" Height="720"
+        MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="-1"
+        Background="Transparent"
+        TransparencyLevelHint="AcrylicBlur">
+
+    <Window.DataTemplates>
+        <!-- Map ViewModels to Views -->
+        <DataTemplate DataType="{x:Type vm:OverviewViewModel}">
+            <views:OverviewView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:FilesViewModel}">
+            <views:FilesView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:PeersViewModel}">
+            <views:PeersView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+            <views:SettingsView/>
+        </DataTemplate>
+    </Window.DataTemplates>
+
+    <Window.Styles>
+        <!-- DataTemplates for Views -->
+        <Style Selector="ContentControl.view-host">
+            <Setter Property="Margin" Value="0"/>
+        </Style>
+    </Window.Styles>
+
+    <!-- Main Container -->
+    <Border Background="{StaticResource BackgroundDarkBrush}" 
+            CornerRadius="12" 
+            BorderBrush="#30FFFFFF" 
+            BorderThickness="1"
+            ClipToBounds="True">
+        <Grid>
+            <!-- Background Elements -->
+            <Canvas IsHitTestVisible="False">
+                <Ellipse Width="600" Height="600" 
+                         Fill="{StaticResource GlowBrush}" 
+                         Opacity="0.1" 
+                         Canvas.Right="-100" Canvas.Bottom="-100"/>
+                <Ellipse Width="400" Height="400" 
+                         Fill="{StaticResource GlowBrush}" 
+                         Opacity="0.05" 
+                         Canvas.Left="-100" Canvas.Top="-100"/>
+            </Canvas>
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="240"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- ========== SIDEBAR ========== -->
+                <Border Grid.Column="0" 
+                        Background="#0Cffffff" 
+                        BorderBrush="#15ffffff" 
+                        BorderThickness="0,0,1,0" 
+                        CornerRadius="12,0,0,12"
+                        PointerPressed="TitleBar_PointerPressed">
+                    <Grid Margin="20">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/> <!-- Header -->
+                            <RowDefinition Height="*"/>    <!-- Nav -->
+                            <RowDefinition Height="Auto"/> <!-- Footer -->
+                        </Grid.RowDefinitions>
+
+                        <!-- Header -->
+                        <StackPanel Grid.Row="0" Margin="0,12,0,24">
+                            <!-- Logo & Title -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <Ellipse Width="12" Height="12" Fill="{StaticResource AccentPrimaryBrush}"/>
+                                <Ellipse Width="12" Height="12" Fill="{StaticResource AccentSecondaryBrush}" Margin="-6,0,0,0" Opacity="0.8"/>
+                                <TextBlock Text="SWARM" 
+                                           FontWeight="Bold" 
+                                           FontSize="18" 
+                                           Foreground="{StaticResource TextPrimaryBrush}" 
+                                           VerticalAlignment="Center" 
+                                           Margin="12,0,0,0"/>
+                                
+                                <!-- Syncing Indicator with Animation -->
+                                <Border IsVisible="{Binding IsSyncing}" 
+                                        Background="#20ffffff" 
+                                        CornerRadius="10" 
+                                        Padding="6,3" 
+                                        Margin="8,0,0,0" 
+                                        VerticalAlignment="Center"
+                                        Cursor="Hand">
+                                    <StackPanel Orientation="Horizontal">
+                                        <!-- Animated sync icon -->
+                                        <PathIcon Data="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z" 
+                                                  Foreground="{StaticResource AccentPrimaryBrush}"
+                                                  Width="12" Height="12">
+                                            <PathIcon.RenderTransform>
+                                                <RotateTransform />
+                                            </PathIcon.RenderTransform>
+                                        </PathIcon>
+                                        <TextBlock Text="{Binding SyncingFileCountText}" 
+                                                   Foreground="{StaticResource AccentPrimaryBrush}" 
+                                                   FontSize="10" 
+                                                   FontWeight="SemiBold" 
+                                                   Margin="5,0,0,0" 
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                            
+                            <!-- Transfer Speed Indicator -->
+                            <TextBlock Text="{Binding TransferSpeedText}" 
+                                       Foreground="{StaticResource TextMutedBrush}" 
+                                       FontSize="11"
+                                       IsVisible="{Binding TransferSpeedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                       Cursor="Hand"/>
+                        </StackPanel>
+
+                        <!-- Navigation -->
+                        <StackPanel Grid.Row="1" Spacing="4">
+                            <Button Classes="nav-button" 
+                                    Command="{Binding NavigateToOverviewCommand}">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <PathIcon Data="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" 
+                                              Foreground="{StaticResource TextSecondaryBrush}" 
+                                              Width="18" Height="18"/>
+                                    <TextBlock Grid.Column="1" Text="Overview" 
+                                               VerticalAlignment="Center" 
+                                               Margin="12,0,0,0"/>
+                                </Grid>
+                            </Button>
+                            <Button Classes="nav-button" 
+                                    Command="{Binding NavigateToFilesCommand}">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <PathIcon Data="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" 
+                                              Foreground="{StaticResource TextSecondaryBrush}" 
+                                              Width="18" Height="18"/>
+                                    <TextBlock Grid.Column="1" Text="My Files" 
+                                               VerticalAlignment="Center" 
+                                               Margin="12,0,0,0"/>
+                                </Grid>
+                            </Button>
+                            <Button Classes="nav-button" 
+                                    Command="{Binding NavigateToPeersCommand}">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <PathIcon Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" 
+                                              Foreground="{StaticResource TextSecondaryBrush}" 
+                                              Width="18" Height="18"/>
+                                    <TextBlock Grid.Column="1" Text="Peers" 
+                                               VerticalAlignment="Center" 
+                                               Margin="12,0,0,0"/>
+                                </Grid>
+                            </Button>
+                            <Button Classes="nav-button" 
+                                    Command="{Binding NavigateToSettingsCommand}">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <PathIcon Data="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" 
+                                              Foreground="{StaticResource TextSecondaryBrush}" 
+                                              Width="18" Height="18"/>
+                                    <TextBlock Grid.Column="1" Text="Settings" 
+                                               VerticalAlignment="Center" 
+                                               Margin="12,0,0,0"/>
+                                </Grid>
+                            </Button>
+                        </StackPanel>
+
+                        <!-- Footer -->
+                        <StackPanel Grid.Row="2">
+                            <!-- Version Info -->
+                            <TextBlock Text="v0.4.0-beta" 
+                                       Foreground="{StaticResource TextMutedBrush}" 
+                                       FontSize="11" 
+                                       Margin="16,0,0,4"/>
+                            
+                            <!-- Status Indicator -->
+                            <Border Background="#10ffffff" CornerRadius="8" Padding="12,8" Margin="0,12,0,0">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <Ellipse Width="8" Height="8" 
+                                             Fill="{StaticResource StatusOnlineBrush}" 
+                                             VerticalAlignment="Center" 
+                                             Margin="0,0,8,0"/>
+                                    <TextBlock Grid.Column="1" 
+                                               Text="{Binding StatusText}" 
+                                               Foreground="{StaticResource TextSecondaryBrush}" 
+                                               FontSize="12" 
+                                               TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- ========== MAIN CONTENT AREA ========== -->
+                <Grid Grid.Column="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="50"/> <!-- Title Bar (Window Controls) -->
+                        <RowDefinition Height="*"/>  <!-- View Content -->
+                    </Grid.RowDefinitions>
+
+                    <!-- Custom Title Bar (Drag Area + Window Controls) -->
+                    <Grid Grid.Row="0" 
+                          Background="Transparent"
+                          PointerPressed="TitleBar_PointerPressed">
+                        <StackPanel Orientation="Horizontal" 
+                                    HorizontalAlignment="Right" 
+                                    Margin="0,0,16,0" 
+                                    VerticalAlignment="Center">
+                            <Button Classes="icon" Click="MinimizeButton_Click" ToolTip.Tip="Minimize">
+                                <PathIcon Data="M20 14H4v-2h16" 
+                                          Width="10" Height="10" 
+                                          Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </Button>
+                            <Button Classes="icon" Click="MaximizeButton_Click" ToolTip.Tip="Maximize">
+                                <PathIcon Data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z" 
+                                          Width="10" Height="10" 
+                                          Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </Button>
+                            <Button Classes="icon" Click="CloseButton_Click" ToolTip.Tip="Close">
+                                <PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" 
+                                          Width="10" Height="10" 
+                                          Foreground="{StaticResource AccentDestructiveBrush}"/>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- View Content -->
+                    <ContentControl Grid.Row="1" 
+                                    Content="{Binding CurrentView}" 
+                                    Classes="view-host"/>
+
+                    <!-- Notification Stack (Toast) -->
+                    <StackPanel x:Name="NotificationStack" 
+                                Grid.Row="1" 
+                                VerticalAlignment="Bottom" 
+                                HorizontalAlignment="Right" 
+                                Margin="0,0,24,24" 
+                                Width="300"/>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

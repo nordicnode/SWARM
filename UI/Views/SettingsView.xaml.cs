@@ -1,35 +1,71 @@
+using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
-using Swarm.Core;
+using Swarm.Core.Models;
+using Swarm.Core.Services;
+using Swarm.ViewModels;
+using Button = System.Windows.Controls.Button;
+using UserControl = System.Windows.Controls.UserControl;
+using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
 
-namespace Swarm.UI;
+namespace Swarm.UI.Views;
 
 /// <summary>
-/// Settings dialog for configuring Swarm application settings.
+/// Settings view for configuring Swarm application settings.
 /// </summary>
-public partial class SettingsDialog : Window
+public partial class SettingsView : System.Windows.Controls.UserControl
 {
-    private readonly Settings _originalSettings;
-    private readonly Settings _workingSettings;
-    private readonly Action<Settings>? _onSettingsChanged;
-    private readonly IntegrityService? _integrityService;
+    private Settings _originalSettings = null!;
+    private Settings _workingSettings = null!;
+    private Action<Settings>? _onSettingsChanged;
+    private IntegrityService? _integrityService;
+    private RescanService? _rescanService;
+    private ActivityLogService? _activityLogService;
+    private VersioningService? _versioningService;
 
-    public SettingsDialog(Settings settings, Action<Settings>? onSettingsChanged = null, IntegrityService? integrityService = null)
+    public SettingsView()
     {
         InitializeComponent();
-        
+        this.DataContextChanged += OnDataContextChanged;
+    }
+
+    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (DataContext is SettingsViewModel vm)
+        {
+            Initialize(
+                vm.Settings, 
+                s => vm.NotifySettingsChanged(s),
+                vm.IntegrityService, 
+                vm.RescanService, 
+                vm.ActivityLogService, 
+                vm.VersioningService
+            );
+        }
+    }
+
+    public void Initialize(Settings settings, Action<Settings>? onSettingsChanged = null, IntegrityService? integrityService = null, RescanService? rescanService = null, ActivityLogService? activityLogService = null, VersioningService? versioningService = null)
+    {
         _originalSettings = settings;
-        _workingSettings = settings.Clone();
         _onSettingsChanged = onSettingsChanged;
         _integrityService = integrityService;
-        
+        _rescanService = rescanService;
+        _activityLogService = activityLogService;
+        _versioningService = versioningService;
+
+        _workingSettings = settings.Clone();
         LoadSettings();
+        UpdateVersionStorageStats();
     }
 
     private void LoadSettings()
     {
+        if (_workingSettings == null) return;
+
         // General
         DeviceNameTextBox.Text = _workingSettings.DeviceName;
         StartMinimizedToggle.IsChecked = _workingSettings.StartMinimized;
@@ -65,9 +101,30 @@ public partial class SettingsDialog : Window
         // Excluded Folders (Selective Sync)
         UpdateExcludedFoldersList();
         
+        // Rescan Settings
+        RescanIntervalSlider.Value = _workingSettings.RescanIntervalMinutes;
+        UpdateRescanIntervalText(_workingSettings.RescanIntervalMinutes);
+        DeepRescanToggle.IsChecked = _workingSettings.RescanMode == RescanMode.DeepWithHash;
+        
+        // Conflict Resolution
+        LoadConflictResolutionSetting();
+        
         // Version
         var version = Assembly.GetExecutingAssembly().GetName().Version;
         VersionText.Text = $" v{version?.Major ?? 1}.{version?.Minor ?? 0}.{version?.Build ?? 0}";
+    }
+
+    private void LoadConflictResolutionSetting()
+    {
+        var tag = _workingSettings.ConflictResolution.ToString();
+        foreach (System.Windows.Controls.ComboBoxItem item in ConflictResolutionComboBox.Items)
+        {
+            if (item.Tag?.ToString() == tag)
+            {
+                ConflictResolutionComboBox.SelectedItem = item;
+                break;
+            }
+        }
     }
 
     private void UpdateTrustedPeersList()
@@ -90,7 +147,7 @@ public partial class SettingsDialog : Window
 
     private static string ShortenPath(string path)
     {
-        // Get the last two directory parts for display
+        if (string.IsNullOrEmpty(path)) return "Not set";
         var parts = path.Split(Path.DirectorySeparatorChar);
         if (parts.Length > 2)
         {
@@ -104,7 +161,7 @@ public partial class SettingsDialog : Window
 
     private void BrowseDownloadPath_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new System.Windows.Forms.FolderBrowserDialog
+        using var dialog = new System.Windows.Forms.FolderBrowserDialog
         {
             Description = "Select download folder",
             SelectedPath = _workingSettings.DownloadPath,
@@ -121,7 +178,7 @@ public partial class SettingsDialog : Window
 
     private void BrowseSyncFolder_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new System.Windows.Forms.FolderBrowserDialog
+        using var dialog = new System.Windows.Forms.FolderBrowserDialog
         {
             Description = "Select sync folder",
             SelectedPath = _workingSettings.SyncFolderPath,
@@ -138,8 +195,8 @@ public partial class SettingsDialog : Window
 
     private void RemoveTrustedPeer_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is System.Windows.Controls.Button button && 
-            button.DataContext is Swarm.Models.TrustedPeer peer)
+        if (sender is Button button && 
+            button.DataContext is TrustedPeer peer)
         {
             var itemToRemove = _workingSettings.TrustedPeers.FirstOrDefault(p => p.Id == peer.Id);
             if (itemToRemove != null)
@@ -150,14 +207,9 @@ public partial class SettingsDialog : Window
         }
     }
 
-    private void StartMinimizedToggle_Click(object sender, RoutedEventArgs e)
-    {
-        // Handled by binding/toggle logic
-    }
-
     private void AddExcludedFolder_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new System.Windows.Forms.FolderBrowserDialog
+        using var dialog = new System.Windows.Forms.FolderBrowserDialog
         {
             Description = "Select folder to exclude from sync",
             SelectedPath = _workingSettings.SyncFolderPath,
@@ -190,7 +242,7 @@ public partial class SettingsDialog : Window
 
     private void RemoveExcludedFolder_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is System.Windows.Controls.Button button && 
+        if (sender is Button button && 
             button.DataContext is string folder)
         {
             _workingSettings.ExcludedFolders.Remove(folder);
@@ -231,11 +283,151 @@ public partial class SettingsDialog : Window
         }
     }
 
+    private void RescanIntervalSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        UpdateRescanIntervalText((int)e.NewValue);
+    }
+
+    private void UpdateRescanIntervalText(int minutes)
+    {
+        if (RescanIntervalValueText != null)
+        {
+            RescanIntervalValueText.Text = minutes == 0 ? "Disabled" : $"{minutes} min";
+        }
+    }
+
+    private async void RescanNow_Click(object sender, RoutedEventArgs e)
+    {
+        if (_rescanService == null)
+        {
+            System.Windows.MessageBox.Show(
+                "Rescan service is not available. Please ensure sync is enabled.",
+                "Service Not Available",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        RescanNowButton.IsEnabled = false;
+        RescanNowButton.Content = "Scanning...";
+
+        try
+        {
+            var mode = DeepRescanToggle.IsChecked == true ? RescanMode.DeepWithHash : RescanMode.QuickTimestampOnly;
+            var changesFound = await _rescanService.RescanAsync(mode);
+            
+            System.Windows.MessageBox.Show(
+                $"Rescan complete.\n\nChanges detected: {changesFound}\nDuration: {_rescanService.LastRescanDurationSeconds:F1} seconds",
+                "Rescan Complete",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(
+                $"Rescan failed: {ex.Message}",
+                "Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        finally
+        {
+            RescanNowButton.IsEnabled = true;
+            RescanNowButton.Content = "Rescan Now";
+        }
+    }
+
     private static string FormatSpeed(long kbps)
     {
         if (kbps == 0) return "Unlimited";
         if (kbps >= 1024) return $"{kbps / 1024} MB/s";
         return $"{kbps} KB/s";
+    }
+
+    private void UpdateVersionStorageStats()
+    {
+        if (_versioningService == null)
+        {
+            VersionStorageSizeText.Text = "N/A";
+            VersionCountText.Text = "0 versions";
+            return;
+        }
+
+        var totalBytes = _versioningService.GetTotalVersionsSize();
+        var versionCount = _versioningService.GetTotalVersionCount();
+        
+        VersionStorageSizeText.Text = Swarm.Core.Helpers.FileHelpers.FormatBytes(totalBytes);
+        VersionCountText.Text = versionCount == 1 ? "1 version" : $"{versionCount} versions";
+    }
+
+    private void ClearAllVersions_Click(object sender, RoutedEventArgs e)
+    {
+        if (_versioningService == null) return;
+
+        var versionCount = _versioningService.GetTotalVersionCount();
+        if (versionCount == 0)
+        {
+            System.Windows.MessageBox.Show(
+                "No versions to clear.",
+                "No Versions",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        var result = System.Windows.MessageBox.Show(
+            $"Are you sure you want to delete ALL {versionCount} versions?\n\nThis action cannot be undone.",
+            "Confirm Clear All Versions",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        
+        if (result == MessageBoxResult.Yes)
+        {
+            try
+            {
+                // Delete all versions for all files
+                var files = _versioningService.GetFilesWithVersions();
+                foreach (var file in files)
+                {
+                    _versioningService.DeleteAllVersionsForFile(file);
+                }
+                
+                UpdateVersionStorageStats();
+                
+                System.Windows.MessageBox.Show(
+                    "All versions have been deleted.",
+                    "Versions Cleared",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(
+                    $"Failed to clear versions: {ex.Message}",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+    }
+
+    private void ViewActivityLog_Click(object sender, RoutedEventArgs e)
+    {
+        if (_activityLogService == null)
+        {
+            System.Windows.MessageBox.Show(
+                "Activity log service is not available.",
+                "Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return;
+        }
+        
+        var dialog = new ActivityLogDialog(_activityLogService)
+        {
+            Owner = Window.GetWindow(this)
+        };
+        dialog.ShowDialog();
     }
 
     private async void VerifyIntegrity_Click(object sender, RoutedEventArgs e)
@@ -250,7 +442,6 @@ public partial class SettingsDialog : Window
             return;
         }
 
-        // Disable button during check
         VerifyIntegrityButton.IsEnabled = false;
         VerifyIntegrityButton.Content = "Checking...";
 
@@ -258,10 +449,9 @@ public partial class SettingsDialog : Window
         {
             var result = await _integrityService.VerifyLocalIntegrityAsync();
             
-            // Show result dialog
             var resultDialog = new IntegrityResultDialog(result)
             {
-                Owner = this
+                Owner = Window.GetWindow(this)
             };
             resultDialog.ShowDialog();
         }
@@ -286,6 +476,7 @@ public partial class SettingsDialog : Window
         _workingSettings.DeviceName = string.IsNullOrWhiteSpace(DeviceNameTextBox.Text) 
             ? Environment.MachineName 
             : DeviceNameTextBox.Text.Trim();
+        
         _workingSettings.StartMinimized = StartMinimizedToggle.IsChecked ?? false;
         _workingSettings.NotificationsEnabled = NotificationsToggle.IsChecked ?? true;
         _workingSettings.AutoAcceptFromTrusted = AutoAcceptToggle.IsChecked ?? false;
@@ -296,6 +487,18 @@ public partial class SettingsDialog : Window
         _workingSettings.MaxVersionAgeDays = (int)MaxAgeSlider.Value;
         _workingSettings.MaxDownloadSpeedKBps = (long)MaxDownloadSpeedSlider.Value;
         _workingSettings.MaxUploadSpeedKBps = (long)MaxUploadSpeedSlider.Value;
+        _workingSettings.RescanIntervalMinutes = (int)RescanIntervalSlider.Value;
+        _workingSettings.RescanMode = DeepRescanToggle.IsChecked == true 
+            ? RescanMode.DeepWithHash 
+            : RescanMode.QuickTimestampOnly;
+        
+        // Save conflict resolution
+        if (ConflictResolutionComboBox.SelectedItem is ComboBoxItem selectedItem 
+            && selectedItem.Tag is string tag 
+            && Enum.TryParse<ConflictResolutionMode>(tag, out var mode))
+        {
+            _workingSettings.ConflictResolution = mode;
+        }
         
         // Update original settings from working copy
         _originalSettings.UpdateFrom(_workingSettings);
@@ -306,33 +509,24 @@ public partial class SettingsDialog : Window
         // Notify parent
         _onSettingsChanged?.Invoke(_originalSettings);
         
-        DialogResult = true;
-        Close();
+        System.Windows.MessageBox.Show(
+            "Settings saved successfully.",
+            "Settings Saved",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e)
     {
         // Reload original settings (discard changes)
-        DialogResult = false;
-        Close();
-    }
-
-    private void CloseButton_Click(object sender, RoutedEventArgs e)
-    {
-        DialogResult = false;
-        Close();
-    }
-
-    #endregion
-
-    #region Window Controls
-
-    private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ClickCount == 1)
-        {
-            DragMove();
-        }
+        _workingSettings = _originalSettings.Clone();
+        LoadSettings();
+        
+        System.Windows.MessageBox.Show(
+            "Changes discarded.",
+            "Cancelled",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
     }
 
     #endregion

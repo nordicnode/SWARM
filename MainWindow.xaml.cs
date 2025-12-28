@@ -4,18 +4,14 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using Swarm.Helpers;
-using Swarm.Models;
+using Swarm.Core.Helpers;
+using Swarm.Core.Models;
 using Swarm.ViewModels;
-using DataFormats = System.Windows.DataFormats;
-using DragDropEffects = System.Windows.DragDropEffects;
-using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
-using Brush = System.Windows.Media.Brush;
-using Swarm.UI;
 using System.Windows.Forms;
 using Drawing = System.Drawing;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using Brush = System.Windows.Media.Brush;
 
 namespace Swarm;
 
@@ -46,7 +42,10 @@ public partial class MainWindow : Window
         _viewModel.IncomingFileRequestEvent += OnIncomingFileRequest;
         _viewModel.TransferCompletedEvent += OnTransferCompleted;
         _viewModel.FileConflictDetectedEvent += OnFileConflictDetected;
+        
+        // These are now handled by Commands/Navigation, but ActivityLog/VersionHistory are still Dialogs
         _viewModel.OpenVersionHistoryRequested += OnOpenVersionHistoryRequested;
+        _viewModel.OpenActivityLogRequested += OnOpenActivityLogRequested;
 
         InitializeTrayIcon();
 
@@ -139,7 +138,7 @@ public partial class MainWindow : Window
                 WindowState = WindowState.Normal;
                 ShowInTaskbar = true;
                 Activate();
-                SettingsButton_Click(this, new RoutedEventArgs());
+                _viewModel.NavigateToSettingsCommand.Execute(null);
             };
             contextMenu.Items.Add(settingsItem);
             
@@ -175,10 +174,8 @@ public partial class MainWindow : Window
     {
         // Initialize ViewModel services
         _viewModel.Initialize();
-
-        // Start radar animation
-        var radarAnimation = (Storyboard)FindResource("PulseAnimation");
-        radarAnimation.Begin();
+        
+        // Note: SettingsView initialization is now handled via DataContextChanged in that View.
 
         // Check if we should start minimized
         if (_viewModel.Settings.StartMinimized)
@@ -316,6 +313,31 @@ public partial class MainWindow : Window
         CloseModal();
     }
 
+    private void DeviceFingerprint_Click(object sender, MouseButtonEventArgs e)
+    {
+        CopyToClipboardWithFeedback(DeviceFingerprint.Text, "Device fingerprint");
+    }
+
+    private void MyFingerprint_Click(object sender, MouseButtonEventArgs e)
+    {
+        CopyToClipboardWithFeedback(MyFingerprint.Text, "Your fingerprint");
+    }
+
+    private void CopyToClipboardWithFeedback(string text, string itemName)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        
+        try
+        {
+            System.Windows.Clipboard.SetText(text);
+            ShowNotification("Copied to Clipboard", $"{itemName} copied.");
+        }
+        catch (Exception ex)
+        {
+            ShowNotification("Copy Failed", $"Could not copy: {ex.Message}", true);
+        }
+    }
+
     private void OnIncomingFileRequest(string fileName, string senderName, long fileSize, Action<bool> acceptCallback)
     {
         if (!_viewModel.Settings.NotificationsEnabled)
@@ -383,78 +405,41 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnOpenVersionHistoryRequested()
+    private void ActivityFlyout_BackgroundClick(object sender, MouseButtonEventArgs e)
     {
-        var dialog = new FileHistoryDialog(_viewModel.VersioningService)
+        // Close flyout when clicking the background
+        if (e.OriginalSource == sender)
+        {
+            _viewModel.IsActivityFlyoutOpen = false;
+        }
+    }
+    
+    private void SyncingIndicator_Click(object sender, MouseButtonEventArgs e)
+    {
+        // Open the activity flyout when clicking the syncing indicator
+        _viewModel.IsActivityFlyoutOpen = true;
+    }
+
+    #endregion
+
+    #region Dialog Handlers
+
+    private void OnOpenActivityLogRequested()
+    {
+        var dialog = new UI.ActivityLogDialog(_viewModel.ActivityLogService)
         {
             Owner = this
         };
         dialog.ShowDialog();
     }
 
-    #endregion
-
-    #region Drag & Drop
-
-    private void DropZone_DragEnter(object sender, System.Windows.DragEventArgs e)
+    private void OnOpenVersionHistoryRequested()
     {
-        if (e.Data.GetDataPresent(DataFormats.FileDrop))
-        {
-            e.Effects = DragDropEffects.Copy;
-            DropZoneTitle.Text = "Release to send";
-            // Visual feedback handled by Style/Triggers if possible or manual here
-            DropZoneBorder.BorderBrush = (Brush)FindResource("AccentGlowBrush");
-            DropZoneBorder.Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(40, 45, 212, 191)); // #282dd4bf
-        }
-    }
-
-    private void DropZone_DragLeave(object sender, System.Windows.DragEventArgs e)
-    {
-        DropZoneTitle.Text = "Send Files";
-        DropZoneBorder.BorderBrush = (Brush)FindResource("AccentPrimaryBrush"); // Default state
-        DropZoneBorder.Background = (Brush)FindResource("BackgroundGlassBrush");
-    }
-
-    private async void DropZone_Drop(object sender, System.Windows.DragEventArgs e)
-    {
-        DropZone_DragLeave(sender, e);
-
-        if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
-
-        var files = (string[])e.Data.GetData(DataFormats.FileDrop)!;
-        await _viewModel.SendFilesAsync(files);
-    }
-
-    #endregion
-
-    #region Button Handlers
-
-    private async void BrowseButton_Click(object sender, RoutedEventArgs e)
-    {
-        var dialog = new OpenFileDialog
-        {
-            Title = "Select files to send",
-            Multiselect = true
-        };
-
-        if (dialog.ShowDialog() == true)
-        {
-            await _viewModel.SendFilesAsync(dialog.FileNames);
-        }
-    }
-
-    private void PeerListBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-    {
-        _viewModel.SelectedPeer = (sender as System.Windows.Controls.ListBox)?.SelectedItem as Peer;
-    }
-
-    private void SettingsButton_Click(object sender, RoutedEventArgs e)
-    {
-        var settingsDialog = new SettingsDialog(_viewModel.Settings, _viewModel.ApplySettings, _viewModel.IntegrityService)
+        var dialog = new UI.FileHistoryDialog(_viewModel.VersioningService)
         {
             Owner = this
         };
-        settingsDialog.ShowDialog();
+        dialog.ShowDialog();
     }
 
     #endregion

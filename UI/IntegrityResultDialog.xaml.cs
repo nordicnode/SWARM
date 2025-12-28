@@ -1,7 +1,8 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
-using Swarm.Models;
+using Swarm.Core.Models;
+using Swarm.Core.Services;
 using Color = System.Windows.Media.Color;
 
 namespace Swarm.UI;

@@ -1,0 +1,108 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Swarm.Avalonia.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             x:Class="Swarm.Avalonia.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+    
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24">
+            <!-- Header -->
+            <TextBlock Text="Settings" 
+                       FontSize="28" 
+                       FontWeight="Bold" 
+                       Foreground="{StaticResource TextPrimaryBrush}" 
+                       Margin="0,0,0,24"/>
+            
+            <!-- General Settings Card -->
+            <Border Classes="card" Margin="0,0,0,24">
+                <StackPanel>
+                    <TextBlock Text="GENERAL" Classes="settings-section" Margin="0,0,0,16"/>
+                    
+                    <!-- Device Name -->
+                    <StackPanel Margin="0,0,0,20">
+                        <TextBlock Text="Device Name" Classes="settings-label"/>
+                        <TextBlock Text="How this device appears to others on the network" Classes="settings-description" Margin="0,0,0,8"/>
+                        <TextBox Classes="settings" 
+                                 Text="{Binding DeviceName}" 
+                                 Watermark="Enter device name"/>
+                    </StackPanel>
+                    
+                    <!-- Sync Folder -->
+                    <StackPanel Margin="0,0,0,20">
+                        <TextBlock Text="Sync Folder" Classes="settings-label"/>
+                        <TextBlock Text="Files in this folder will be synchronized with trusted peers" Classes="settings-description" Margin="0,0,0,8"/>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Grid.Column="0" 
+                                     Classes="settings" 
+                                     Text="{Binding SyncFolderPath}" 
+                                     IsReadOnly="True"/>
+                            <Button Grid.Column="1" 
+                                    Classes="secondary" 
+                                    Content="Browse" 
+                                    Command="{Binding BrowseSyncFolderCommand}"
+                                    Margin="8,0,0,0"/>
+                        </Grid>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            
+            <!-- Behavior Settings Card -->
+            <Border Classes="card" Margin="0,0,0,24">
+                <StackPanel>
+                    <TextBlock Text="BEHAVIOR" Classes="settings-section" Margin="0,0,0,16"/>
+                    
+                    <!-- Start with System -->
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Start with System" Classes="settings-label"/>
+                            <TextBlock Text="Launch Swarm automatically when you sign in" Classes="settings-description"/>
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding StartWithSystem}"/>
+                    </Grid>
+                    
+                    <!-- Pause on Battery -->
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Pause on Battery" Classes="settings-label"/>
+                            <TextBlock Text="Pause syncing when running on battery power" Classes="settings-description"/>
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding PauseOnBattery}"/>
+                    </Grid>
+                    
+                    <!-- Notifications -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Show Notifications" Classes="settings-label"/>
+                            <TextBlock Text="Display notifications for sync events and file transfers" Classes="settings-description"/>
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" IsChecked="{Binding ShowNotifications}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+            
+            <!-- About Section -->
+            <Border Classes="card" Padding="16">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel>
+                        <TextBlock Text="Swarm" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <TextBlock Text="v0.4.0-beta • Cross-platform LAN File Sync" 
+                                   Foreground="{StaticResource TextMutedBrush}" 
+                                   FontSize="12" 
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Classes="secondary" Command="{Binding SaveSettingsCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <PathIcon Data="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z" 
+                                      Foreground="{StaticResource TextSecondaryBrush}" 
+                                      Width="14" Height="14"/>
+                            <TextBlock Text="Save Settings" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

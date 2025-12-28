@@ -149,6 +149,111 @@ public class Settings
     public List<string> ExcludedFolders { get; set; } = [];
 
     /// <summary>
+    /// Interval in minutes between automatic rescans (0 = disabled).
+    /// Rescan catches changes that FileSystemWatcher may have missed.
+    /// </summary>
+    public int RescanIntervalMinutes { get; set; } = 30;
+
+    /// <summary>
+    /// Rescan mode: QuickTimestampOnly (fast) or DeepWithHash (thorough).
+    /// </summary>
+    public RescanMode RescanMode { get; set; } = RescanMode.QuickTimestampOnly;
+
+    /// <summary>
+    /// Conflict resolution mode when files differ between local and remote.
+    /// </summary>
+    public ConflictResolutionMode ConflictResolution { get; set; } = ConflictResolutionMode.AutoNewest;
+
+    /// <summary>
+    /// Sync is paused until this time (null = not paused).
+    /// Used for temporary "Pause for X minutes" feature.
+    /// </summary>
+    public DateTime? SyncPausedUntil { get; set; }
+
+    /// <summary>
+    /// Whether to automatically pause sync when on battery power.
+    /// </summary>
+    public bool PauseOnBattery { get; set; } = false;
+
+    /// <summary>
+    /// Whether to automatically pause sync on metered network connections.
+    /// </summary>
+    public bool PauseOnMeteredNetwork { get; set; } = false;
+
+    /// <summary>
+    /// Returns true if sync is currently in a paused state (either manual or auto).
+    /// </summary>
+    [JsonIgnore]
+    public bool IsSyncCurrentlyPaused => 
+        (SyncPausedUntil.HasValue && SyncPausedUntil.Value > DateTime.Now) ||
+        (PauseOnBattery && IsOnBattery()) ||
+        (PauseOnMeteredNetwork && IsOnMeteredConnection());
+
+    /// <summary>
+    /// Gets the remaining pause time as a human-readable string.
+    /// </summary>
+    [JsonIgnore]
+    public string PauseRemainingDisplay
+    {
+        get
+        {
+            if (!SyncPausedUntil.HasValue || SyncPausedUntil.Value <= DateTime.Now)
+                return "";
+            
+            var remaining = SyncPausedUntil.Value - DateTime.Now;
+            if (remaining.TotalHours >= 1)
+                return $"Paused for {remaining.Hours}h {remaining.Minutes}m";
+            if (remaining.TotalMinutes >= 1)
+                return $"Paused for {remaining.Minutes}m";
+            return "Resuming soon...";
+        }
+    }
+
+    /// <summary>
+    /// Pauses sync for a specified duration.
+    /// </summary>
+    public void PauseSyncFor(TimeSpan duration)
+    {
+        SyncPausedUntil = DateTime.Now.Add(duration);
+        Save();
+    }
+
+    /// <summary>
+    /// Resumes sync immediately by clearing the pause timer.
+    /// </summary>
+    public void ResumeSync()
+    {
+        SyncPausedUntil = null;
+        Save();
+    }
+
+    private static bool IsOnBattery()
+    {
+        try
+        {
+            return System.Windows.Forms.SystemInformation.PowerStatus.PowerLineStatus == 
+                   System.Windows.Forms.PowerLineStatus.Offline;
+        }
+        catch { return false; }
+    }
+
+    private static bool IsOnMeteredConnection()
+    {
+        // Windows 10+ API for metered connection detection
+        try
+        {
+            var connectionProfile = Windows.Networking.Connectivity.NetworkInformation.GetInternetConnectionProfile();
+            if (connectionProfile != null)
+            {
+                var cost = connectionProfile.GetConnectionCost();
+                return cost.NetworkCostType != Windows.Networking.Connectivity.NetworkCostType.Unrestricted;
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    /// <summary>
     /// Loads settings from disk, or returns default settings if file doesn't exist.
     /// </summary>
     public static Settings Load()
@@ -243,7 +348,13 @@ public class Settings
             MaxVersionsPerFile = MaxVersionsPerFile,
             MaxVersionAgeDays = MaxVersionAgeDays,
             MaxUploadSpeedKBps = MaxUploadSpeedKBps,
-            MaxDownloadSpeedKBps = MaxDownloadSpeedKBps
+            MaxDownloadSpeedKBps = MaxDownloadSpeedKBps,
+            RescanIntervalMinutes = RescanIntervalMinutes,
+            RescanMode = RescanMode,
+            ConflictResolution = ConflictResolution,
+            SyncPausedUntil = SyncPausedUntil,
+            PauseOnBattery = PauseOnBattery,
+            PauseOnMeteredNetwork = PauseOnMeteredNetwork
         };
 
         foreach (var peer in TrustedPeers)
@@ -283,6 +394,12 @@ public class Settings
         MaxVersionAgeDays = source.MaxVersionAgeDays;
         MaxUploadSpeedKBps = source.MaxUploadSpeedKBps;
         MaxDownloadSpeedKBps = source.MaxDownloadSpeedKBps;
+        RescanIntervalMinutes = source.RescanIntervalMinutes;
+        RescanMode = source.RescanMode;
+        ConflictResolution = source.ConflictResolution;
+        SyncPausedUntil = source.SyncPausedUntil;
+        PauseOnBattery = source.PauseOnBattery;
+        PauseOnMeteredNetwork = source.PauseOnMeteredNetwork;
         
         TrustedPeers.Clear();
         foreach (var peer in source.TrustedPeers)

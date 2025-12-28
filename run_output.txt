@@ -1,0 +1,1 @@
+﻿[21:27:11 INF] Swarm Avalonia application started.

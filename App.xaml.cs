@@ -1,8 +1,10 @@
 ﻿using System.Configuration;
 using System.Data;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using Serilog;
+using Swarm.UI;
 
 namespace Swarm;
 
@@ -15,7 +17,7 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
-        // Configure Serilog
+        // Configure Serilog first (fast operation)
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
             .WriteTo.Debug()
@@ -28,6 +30,36 @@ public partial class App : System.Windows.Application
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
         DispatcherUnhandledException += App_DispatcherUnhandledException;
         TaskScheduler.UnobservedTaskException += TaskScheduler_UnobservedTaskException;
+        
+        try
+        {
+            // Show splash screen first
+            var splash = new StartupSplash();
+            splash.Show();
+            splash.SetStatus("Initializing...");
+            
+            // Force UI update
+            Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+            
+            splash.SetStatus("Loading main window...");
+            
+            // Create main window
+            var mainWindow = new MainWindow();
+            MainWindow = mainWindow;
+            
+            // Keep splash visible for minimum 2 seconds
+            splash.SetStatus("Ready!");
+            System.Threading.Thread.Sleep(2000);
+            
+            // Close splash and show main window
+            splash.Close();
+            mainWindow.Show();
+        }
+        catch (Exception ex)
+        {
+            Log.Fatal(ex, "Startup failed");
+            ShowErrorAndExit(ex, "Startup Error");
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -71,4 +103,3 @@ public partial class App : System.Windows.Application
         System.Windows.Application.Current.Shutdown(1);
     }
 }
-

@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -39,11 +39,41 @@
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
   </ItemGroup>
 
-  <!-- Exclude test project from main build -->
+  <!-- Exclude original source folders migrated to Swarm.Core -->
+  <ItemGroup>
+    <Compile Remove="Core\**" />
+    <Content Remove="Core\**" />
+    <None Remove="Core\**" />
+    <EmbeddedResource Remove="Core\**" />
+    <Compile Remove="Models\**" />
+    <Content Remove="Models\**" />
+    <None Remove="Models\**" />
+    <EmbeddedResource Remove="Models\**" />
+    <Compile Remove="Helpers\**" />
+    <Content Remove="Helpers\**" />
+    <None Remove="Helpers\**" />
+    <EmbeddedResource Remove="Helpers\**" />
+  </ItemGroup>
+
+  <!-- Exclude other projects from main build -->
   <ItemGroup>
     <Compile Remove="Swarm.Tests\**" />
     <Content Remove="Swarm.Tests\**" />
     <None Remove="Swarm.Tests\**" />
+    <Compile Remove="Swarm.Avalonia\**" />
+    <Content Remove="Swarm.Avalonia\**" />
+    <None Remove="Swarm.Avalonia\**" />
+    <EmbeddedResource Remove="Swarm.Avalonia\**" />
+    <Compile Remove="Swarm.Core\**" />
+    <Content Remove="Swarm.Core\**" />
+    <None Remove="Swarm.Core\**" />
+    <EmbeddedResource Remove="Swarm.Core\**" />
+    <Compile Remove="ViewModels\BaseViewModel.cs" />
+    <Compile Remove="ViewModels\RelayCommand.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="Swarm.Core\Swarm.Core.csproj" />
   </ItemGroup>
 
 </Project>

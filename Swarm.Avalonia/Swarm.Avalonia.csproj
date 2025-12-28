@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <RootNamespace>Swarm.Avalonia</RootNamespace>
+    <AssemblyName>Swarm</AssemblyName>
+    
+    <!-- Application Info -->
+    <Version>1.0.0</Version>
+    <Company>Swarm</Company>
+    <Product>Swarm</Product>
+    <Description>Cross-platform LAN File Sharing and Sync</Description>
+    <ApplicationIcon>Assets\swarm.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Avalonia Core -->
+    <PackageReference Include="Avalonia" Version="11.2.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.1" />
+    
+    <!-- Diagnostics (for development) -->
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.2.1" Condition="'$(Configuration)' == 'Debug'" />
+    
+    <!-- Additional controls -->
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.2.1" />
+    
+    <!-- MessageBox support -->
+    <PackageReference Include="MessageBox.Avalonia" Version="3.1.6" />
+    
+    <!-- Serilog for logging -->
+    <PackageReference Include="Serilog" Version="4.3.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageReference Include="Serilog.Sinks.Debug" Version="3.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reference to shared core library -->
+    <ProjectReference Include="..\Swarm.Core\Swarm.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Assets -->
+    <None Update="Assets\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+</Project>

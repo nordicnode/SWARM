@@ -7,8 +7,11 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Swarm.Core;
-using Swarm.Helpers;
-using Swarm.Models;
+using Swarm.Core.Models;
+using Swarm.Core.Services;
+using Swarm.Core.Helpers;
+using Swarm.Core.ViewModels;
+using Swarm.Services;
 using MessageBox = System.Windows.MessageBox;
 
 namespace Swarm.ViewModels;
@@ -17,7 +20,7 @@ namespace Swarm.ViewModels;
 /// Main ViewModel for the Swarm application.
 /// Handles all UI state and command logic, making MainWindow.xaml.cs purely view code.
 /// </summary>
-public class MainViewModel : INotifyPropertyChanged, IDisposable
+public class MainViewModel : BaseViewModel, IDisposable
 {
     private readonly Settings _settings;
     private readonly CryptoService _cryptoService;
@@ -26,7 +29,14 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private readonly VersioningService _versioningService;
     private readonly SyncService _syncService;
     private readonly IntegrityService _integrityService;
-    private readonly Dispatcher _dispatcher;
+    private readonly RescanService _rescanService;
+    private readonly ActivityLogService _activityLogService;
+    private readonly ConflictResolutionService _conflictResolutionService;
+    private readonly ShareLinkService _shareLinkService;
+    private readonly WpfToastService _toastService;
+    private readonly WpfDispatcher _wpfDispatcher;
+    private readonly WpfPowerService _powerService;
+    private readonly Dispatcher _uiDispatcher;
 
     private Peer? _selectedPeer;
     private string _peerCountText = "Scanning for peers...";
@@ -39,21 +49,56 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private Visibility _emptyPeersVisibility = Visibility.Visible;
     private Visibility _emptyTransfersVisibility = Visibility.Visible;
     private bool _isSyncEnabled;
+    
+    // Transfer speed tracking
+    private string _uploadSpeedText = "↑ 0 B/s";
+    private string _downloadSpeedText = "↓ 0 B/s";
+    private string _transferSpeedText = "";
+    private int _syncingFileCount = 0;
+    private bool _isSyncing = false;
+    private bool _isActivityFlyoutOpen = false;
+    private long _lastBytesUploaded = 0;
+    private long _lastBytesDownloaded = 0;
+    private DateTime _lastSpeedCheck = DateTime.Now;
+    private readonly System.Timers.Timer _speedTimer;
 
     public MainViewModel(Dispatcher dispatcher)
     {
-        _dispatcher = dispatcher;
+        _uiDispatcher = dispatcher;
+        _wpfDispatcher = new WpfDispatcher();
+        _powerService = new WpfPowerService();
+        _toastService = new WpfToastService();
 
-        // Load settings
+        // Register power service and load settings
+        Settings.RegisterPowerService(_powerService);
         _settings = Settings.Load();
 
-        // Initialize services
+        // Initialize services with dispatcher abstraction
         _cryptoService = new CryptoService();
-        _discoveryService = new DiscoveryService(_settings.LocalId, _cryptoService, _settings);
-        _transferService = new TransferService(_settings, _cryptoService);
+        _discoveryService = new DiscoveryService(_settings.LocalId, _cryptoService, _settings, _wpfDispatcher);
+        _transferService = new TransferService(_settings, _cryptoService, _wpfDispatcher);
         _versioningService = new VersioningService(_settings);
-        _syncService = new SyncService(_settings, _discoveryService, _transferService, _versioningService);
+        _activityLogService = new ActivityLogService(_settings);
+        _syncService = new SyncService(_settings, _discoveryService, _transferService, _versioningService, _activityLogService);
         _integrityService = new IntegrityService(_settings, _syncService);
+        _rescanService = new RescanService(_settings, _syncService);
+        _conflictResolutionService = new ConflictResolutionService(_settings, _versioningService, _activityLogService);
+        _shareLinkService = new ShareLinkService(_settings);
+
+        // Initialize Sub-ViewModels
+        OverviewVM = new OverviewViewModel(_syncService, _versioningService, _activityLogService, _discoveryService, _settings);
+        FilesVM = new FilesViewModel(_settings, _shareLinkService);
+        PeersVM = new PeersViewModel(_discoveryService, _transferService, _settings);
+        SettingsVM = new SettingsViewModel(
+            _settings, 
+            _syncService, 
+            _discoveryService,
+            _integrityService,
+            _rescanService,
+            _activityLogService,
+            _versioningService
+        );
+        SettingsVM.SettingsChanged += ApplySettings;
 
         // Initialize commands
         SendFilesCommand = new AsyncRelayCommand(SendFilesAsync, CanSendFiles);
@@ -62,17 +107,52 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         OpenSyncFolderCommand = new RelayCommand(OpenSyncFolder);
         ForceSyncCommand = new AsyncRelayCommand(ForceSync);
         OpenVersionHistoryCommand = new RelayCommand(OpenVersionHistory);
+        TogglePauseSyncCommand = new RelayCommand(TogglePauseSync);
+        OpenActivityLogCommand = new RelayCommand(OpenActivityLog);
+        ToggleActivityFlyoutCommand = new RelayCommand(_ => IsActivityFlyoutOpen = !IsActivityFlyoutOpen);
+        
+        // Navigation Commands
+        NavigateToOverviewCommand = new RelayCommand(_ => CurrentView = OverviewVM);
+        NavigateToFilesCommand = new RelayCommand(_ => CurrentView = FilesVM);
+        NavigateToPeersCommand = new RelayCommand(_ => CurrentView = PeersVM);
+        NavigateToSettingsCommand = new RelayCommand(_ => CurrentView = SettingsVM);
+        
+        // Initialize speed timer (1 second interval for real-time updates)
+        _speedTimer = new System.Timers.Timer(1000);
+        _speedTimer.AutoReset = true;
+        
+        // Hook core RelayCommand to WPF CommandManager
+        RelayCommand.StaticCanExecuteChanged += (s, e) => CommandManager.InvalidateRequerySuggested();
+
+        _speedTimer.Elapsed += (s, e) => _uiDispatcher.Invoke(UpdateTransferSpeeds);
+        _speedTimer.Start();
 
         // Wire up service events
         SubscribeToEvents();
 
         // Initialize UI state
         UpdateSyncUI();
+        
+        // Set default view
+        CurrentView = OverviewVM;
     }
 
     private bool CanSendFiles(object? _) => SelectedPeer != null || Peers.Count > 0;
 
     #region Properties
+
+    // Sub-ViewModels
+    public OverviewViewModel OverviewVM { get; }
+    public FilesViewModel FilesVM { get; }
+    public PeersViewModel PeersVM { get; }
+    public SettingsViewModel SettingsVM { get; }
+
+    private object? _currentView;
+    public object? CurrentView
+    {
+        get => _currentView;
+        set => SetProperty(ref _currentView, value);
+    }
 
     public ObservableCollection<Peer> Peers => _discoveryService.Peers;
     public ObservableCollection<FileTransfer> Transfers => _transferService.Transfers;
@@ -83,6 +163,11 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public SyncService SyncService => _syncService;
     public VersioningService VersioningService => _versioningService;
     public IntegrityService IntegrityService => _integrityService;
+    public RescanService RescanService => _rescanService;
+    public ActivityLogService ActivityLogService => _activityLogService;
+    public ConflictResolutionService ConflictResolutionService => _conflictResolutionService;
+    public ShareLinkService ShareLinkService => _shareLinkService;
+    public WpfToastService ToastService => _toastService;
 
     public Peer? SelectedPeer
     {
@@ -92,7 +177,8 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             if (SetProperty(ref _selectedPeer, value))
             {
                 SelectedPeerText = value != null ? $"Sending to: {value.Name}" : "";
-                RelayCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(HasSelectedPeer));
+                RelayCommand.RaiseGlobalCanExecuteChanged();
             }
         }
     }
@@ -159,6 +245,107 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public string SyncToggleButtonText => IsSyncEnabled ? "Disable Sync" : "Enable Sync";
 
+    // Transfer speed properties for title bar
+    public string UploadSpeedText
+    {
+        get => _uploadSpeedText;
+        private set => SetProperty(ref _uploadSpeedText, value);
+    }
+    
+    public string DownloadSpeedText
+    {
+        get => _downloadSpeedText;
+        private set => SetProperty(ref _downloadSpeedText, value);
+    }
+    
+    public string TransferSpeedText
+    {
+        get => _transferSpeedText;
+        private set => SetProperty(ref _transferSpeedText, value);
+    }
+    
+    public int SyncingFileCount
+    {
+        get => _syncingFileCount;
+        private set
+        {
+            if (SetProperty(ref _syncingFileCount, value))
+            {
+                OnPropertyChanged(nameof(SyncingFileCountText));
+                OnPropertyChanged(nameof(IsSyncingVisible));
+            }
+        }
+    }
+    
+    public string SyncingFileCountText => _syncingFileCount > 0 ? _syncingFileCount.ToString() : "";
+    public Visibility IsSyncingVisible => _isSyncing ? Visibility.Visible : Visibility.Collapsed;
+    
+    public bool IsSyncing
+    {
+        get => _isSyncing;
+        private set
+        {
+            if (SetProperty(ref _isSyncing, value))
+            {
+                OnPropertyChanged(nameof(IsSyncingVisible));
+            }
+        }
+    }
+    
+    public bool IsActivityFlyoutOpen
+    {
+        get => _isActivityFlyoutOpen;
+        set => SetProperty(ref _isActivityFlyoutOpen, value);
+    }
+
+    // Computed properties for new layout
+    public string PeerCountDisplay => Peers.Count == 0 ? "" : $"({Peers.Count})";
+    public string SyncFolderName => Path.GetFileName(_settings.SyncFolderPath) ?? "Sync Folder";
+    public string TransferCountDisplay => Transfers.Count == 0 ? "" : $"{Transfers.Count} active";
+    public bool HasSelectedPeer => SelectedPeer != null;
+
+    // Transfer speed tracking
+    private string _uploadSpeedDisplay = "";
+    private string _downloadSpeedDisplay = "";
+    private bool _hasActiveTransfers;
+    private int _pendingTransferCount;
+
+    public string UploadSpeedDisplay
+    {
+        get => _uploadSpeedDisplay;
+        private set => SetProperty(ref _uploadSpeedDisplay, value);
+    }
+
+    public string DownloadSpeedDisplay
+    {
+        get => _downloadSpeedDisplay;
+        private set => SetProperty(ref _downloadSpeedDisplay, value);
+    }
+
+    public bool HasActiveTransfers
+    {
+        get => _hasActiveTransfers;
+        private set => SetProperty(ref _hasActiveTransfers, value);
+    }
+
+    public int PendingTransferCount
+    {
+        get => _pendingTransferCount;
+        private set => SetProperty(ref _pendingTransferCount, value);
+    }
+
+    public string TransferStatusDisplay
+    {
+        get
+        {
+            if (!HasActiveTransfers) return "";
+            var parts = new List<string>();
+            if (!string.IsNullOrEmpty(UploadSpeedDisplay)) parts.Add($"↑ {UploadSpeedDisplay}");
+            if (!string.IsNullOrEmpty(DownloadSpeedDisplay)) parts.Add($"↓ {DownloadSpeedDisplay}");
+            return string.Join(" | ", parts);
+        }
+    }
+
     #endregion
 
     #region Commands
@@ -169,6 +356,19 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand OpenSyncFolderCommand { get; }
     public ICommand ForceSyncCommand { get; }
     public ICommand OpenVersionHistoryCommand { get; }
+    public ICommand TogglePauseSyncCommand { get; }
+    public ICommand OpenActivityLogCommand { get; }
+    public ICommand ToggleActivityFlyoutCommand { get; }
+    public ICommand NavigateToOverviewCommand { get; }
+    public ICommand NavigateToFilesCommand { get; }
+    public ICommand NavigateToPeersCommand { get; }
+    public ICommand NavigateToSettingsCommand { get; }
+
+    // Pause state properties
+    public bool IsSyncPaused => _settings.IsSyncCurrentlyPaused;
+    public string PauseButtonText => IsSyncPaused ? "Resume" : "Pause";
+    public string PauseStatusDisplay => IsSyncPaused ? _settings.PauseRemainingDisplay : "";
+    public Visibility PauseStatusVisibility => IsSyncPaused ? Visibility.Visible : Visibility.Collapsed;
 
     #endregion
 
@@ -187,6 +387,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         if (_settings.IsSyncEnabled)
         {
             _syncService.Start();
+            _rescanService.Start();
         }
 
         UpdatePeerUI();
@@ -324,8 +525,35 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         OpenVersionHistoryRequested?.Invoke();
     }
 
-    // Event for view to handle opening version history dialog
+    private void TogglePauseSync(object? parameter)
+    {
+        if (IsSyncPaused)
+        {
+            _settings.ResumeSync();
+        }
+        else
+        {
+            // Default pause for 1 hour
+            _settings.PauseSyncFor(TimeSpan.FromHours(1));
+        }
+        
+        // Notify UI of changes
+        OnPropertyChanged(nameof(IsSyncPaused));
+        OnPropertyChanged(nameof(PauseButtonText));
+        OnPropertyChanged(nameof(PauseStatusDisplay));
+        OnPropertyChanged(nameof(PauseStatusVisibility));
+    }
+
+    private void OpenActivityLog(object? parameter)
+    {
+        OpenActivityLogRequested?.Invoke();
+    }
+
+
+
+    // Events for view to handle opening dialogs
     public event Action? OpenVersionHistoryRequested;
+    public event Action? OpenActivityLogRequested;
 
     #endregion
 
@@ -333,7 +561,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void SubscribeToEvents()
     {
-        _discoveryService.Peers.CollectionChanged += (s, e) => _dispatcher.Invoke(UpdatePeerUI);
+        _discoveryService.Peers.CollectionChanged += (s, e) => _uiDispatcher.Invoke(UpdatePeerUI);
         _discoveryService.BindingFailed += OnDiscoveryBindingFailed;
         _discoveryService.UntrustedPeerDiscovered += OnUntrustedPeerDiscovered;
         
@@ -346,6 +574,36 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         _syncService.IncomingSyncFile += OnIncomingSyncFile;
         _syncService.SyncProgressChanged += OnSyncProgressChanged;
         _syncService.FileConflictDetected += OnFileConflictDetected;
+        
+        // Wire RescanService to SyncService buffer overflow events
+        _syncService.RescanRequested += OnRescanRequested;
+        
+        // Wire ConflictResolutionService to show dialog when needed
+        _conflictResolutionService.ConflictNeedsResolution += OnConflictNeedsResolution;
+    }
+
+    private void OnRescanRequested()
+    {
+        // Trigger a deep rescan when FileSystemWatcher buffer overflows
+        _ = Task.Run(async () =>
+        {
+            _activityLogService.LogWarning("FileSystemWatcher buffer overflow - triggering deep rescan");
+            await _rescanService.RescanAsync(RescanMode.DeepWithHash);
+        });
+    }
+
+    private async Task<ConflictChoice?> OnConflictNeedsResolution(FileConflict conflict)
+    {
+        ConflictChoice? result = null;
+        
+        await _uiDispatcher.InvokeAsync(() =>
+        {
+            var dialog = new UI.ConflictResolutionDialog(conflict);
+            dialog.ShowDialog();
+            result = dialog.Result;
+        });
+        
+        return result;
     }
 
     private void UpdatePeerUI()
@@ -354,6 +612,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         PeerCountText = count == 1 ? "1 device found" : $"{count} devices found";
         EmptyPeersVisibility = count == 0 ? Visibility.Visible : Visibility.Collapsed;
         StatusText = count == 0 ? "Scanning for peers..." : $"Connected to {count} device(s)";
+        OnPropertyChanged(nameof(PeerCountDisplay));
     }
 
     private void UpdateSyncUI()
@@ -370,7 +629,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void OnSyncStatusChanged(string status)
     {
-        _dispatcher.Invoke(() =>
+        _uiDispatcher.Invoke(() =>
         {
             if (SyncProgressVisibility == Visibility.Collapsed || status.Contains("complete") || status.Contains("disabled"))
             {
@@ -385,7 +644,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void OnSyncProgressChanged(SyncProgress progress)
     {
-        _dispatcher.Invoke(() =>
+        _uiDispatcher.Invoke(() =>
         {
             if (progress.TotalFiles > 0 && progress.CompletedFiles < progress.TotalFiles)
             {
@@ -421,62 +680,146 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void OnDiscoveryBindingFailed()
     {
-        _dispatcher.Invoke(() => DiscoveryBindingFailed?.Invoke());
+        _uiDispatcher.Invoke(() => DiscoveryBindingFailed?.Invoke());
     }
 
     private void OnUntrustedPeerDiscovered(Peer peer)
     {
-        _dispatcher.Invoke(() => UntrustedPeerDiscoveredEvent?.Invoke(peer));
+        _uiDispatcher.Invoke(() => UntrustedPeerDiscoveredEvent?.Invoke(peer));
     }
 
     private void OnIncomingFileRequest(string fileName, string senderName, long fileSize, Action<bool> callback)
     {
-        _dispatcher.Invoke(() => IncomingFileRequestEvent?.Invoke(fileName, senderName, fileSize, callback));
+        _uiDispatcher.Invoke(() => IncomingFileRequestEvent?.Invoke(fileName, senderName, fileSize, callback));
     }
 
     private void OnTransferProgress(FileTransfer transfer)
     {
-        _dispatcher.Invoke(() =>
+        _uiDispatcher.Invoke(() =>
         {
             EmptyTransfersVisibility = Visibility.Collapsed;
+            UpdateTransferStats();
         });
+    }
+
+    private void UpdateTransferStats()
+    {
+        var activeTransfers = Transfers.Where(t => t.Status == TransferStatus.InProgress).ToList();
+        HasActiveTransfers = activeTransfers.Any();
+        PendingTransferCount = Transfers.Count(t => t.Status == TransferStatus.Pending);
+        OnPropertyChanged(nameof(TransferCountDisplay));
+
+        if (!HasActiveTransfers)
+        {
+            UploadSpeedDisplay = "";
+            DownloadSpeedDisplay = "";
+            OnPropertyChanged(nameof(TransferStatusDisplay));
+            return;
+        }
+
+        // Calculate aggregate speeds
+        double uploadBytesPerSec = 0;
+        double downloadBytesPerSec = 0;
+
+        foreach (var t in activeTransfers)
+        {
+            var elapsed = (DateTime.Now - t.StartTime).TotalSeconds;
+            if (elapsed < 0.1) continue;
+            var speed = t.BytesTransferred / elapsed;
+
+            if (t.Direction == TransferDirection.Outgoing)
+                uploadBytesPerSec += speed;
+            else
+                downloadBytesPerSec += speed;
+        }
+
+        UploadSpeedDisplay = uploadBytesPerSec > 0 ? FileHelpers.FormatBytes(uploadBytesPerSec) + "/s" : "";
+        DownloadSpeedDisplay = downloadBytesPerSec > 0 ? FileHelpers.FormatBytes(downloadBytesPerSec) + "/s" : "";
+        OnPropertyChanged(nameof(TransferStatusDisplay));
     }
 
     private void OnTransferCompleted(FileTransfer transfer)
     {
-        _dispatcher.Invoke(() => TransferCompletedEvent?.Invoke(transfer));
+        _uiDispatcher.Invoke(() =>
+        {
+            TransferCompletedEvent?.Invoke(transfer);
+            UpdateTransferStats();
+            
+            // Show empty state if no more transfers
+            if (!Transfers.Any(t => t.Status == TransferStatus.InProgress || t.Status == TransferStatus.Pending))
+            {
+                EmptyTransfersVisibility = Visibility.Visible;
+            }
+        });
     }
 
     private void OnFileConflictDetected(string filePath, string? backupPath)
     {
-        _dispatcher.Invoke(() => FileConflictDetectedEvent?.Invoke(filePath, backupPath));
+        _uiDispatcher.Invoke(() => FileConflictDetectedEvent?.Invoke(filePath, backupPath));
     }
 
     #endregion
 
-    #region INotifyPropertyChanged
 
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-    }
-
-    protected bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
-    {
-        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
-        field = value;
-        OnPropertyChanged(propertyName);
-        return true;
-    }
-
-    #endregion
 
     #region IDisposable
 
+    private void UpdateTransferSpeeds()
+    {
+        try
+        {
+            // Calculate speeds based on active transfers
+            var activeTransfers = Transfers.Where(t => t.Status == TransferStatus.InProgress).ToList();
+            
+            long uploadBytes = 0;
+            long downloadBytes = 0;
+            
+            foreach (var transfer in activeTransfers)
+            {
+                if (transfer.Direction == TransferDirection.Outgoing)
+                    uploadBytes += transfer.BytesTransferred;
+                else if (transfer.Direction == TransferDirection.Incoming)
+                    downloadBytes += transfer.BytesTransferred;
+            }
+            
+            // Calculate speed (bytes per second)
+            var elapsed = (DateTime.Now - _lastSpeedCheck).TotalSeconds;
+            if (elapsed > 0)
+            {
+                var uploadSpeed = (uploadBytes - _lastBytesUploaded) / elapsed;
+                var downloadSpeed = (downloadBytes - _lastBytesDownloaded) / elapsed;
+                
+                // Always show speed values (0 B/s when idle)
+                UploadSpeedText = uploadSpeed > 0 ? $"↑ {FileHelpers.FormatBytes((long)uploadSpeed)}/s" : "0 B/s";
+                DownloadSpeedText = downloadSpeed > 0 ? $"↓ {FileHelpers.FormatBytes((long)downloadSpeed)}/s" : "0 B/s";
+                
+                // Combined display for title bar (only show if there's actual activity)
+                var parts = new List<string>();
+                if (uploadSpeed > 0) parts.Add($"↑ {FileHelpers.FormatBytes((long)uploadSpeed)}/s");
+                if (downloadSpeed > 0) parts.Add($"↓ {FileHelpers.FormatBytes((long)downloadSpeed)}/s");
+                TransferSpeedText = parts.Count > 0 ? string.Join(" | ", parts) : "";
+            }
+            
+            _lastBytesUploaded = uploadBytes;
+            _lastBytesDownloaded = downloadBytes;
+            _lastSpeedCheck = DateTime.Now;
+            
+            // Update syncing status
+            SyncingFileCount = activeTransfers.Count;
+            IsSyncing = activeTransfers.Count > 0 || _syncService.IsRunning;
+        }
+        catch
+        {
+            // Ignore errors in speed calculation
+        }
+    }
+    
     public void Dispose()
     {
+        _speedTimer?.Stop();
+        _speedTimer?.Dispose();
+        _rescanService.Dispose();
+        _activityLogService.Dispose();
         _syncService.Dispose();
         _versioningService.Dispose();
         _discoveryService.Dispose();
