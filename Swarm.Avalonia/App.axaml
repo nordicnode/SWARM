@@ -1,9 +1,31 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:converters="clr-namespace:Swarm.Avalonia.Converters"
              x:Class="Swarm.Avalonia.App"
              RequestedThemeVariant="Dark">
+
+    <Application.Resources>
+        <converters:IconConverter x:Key="IconConverter"/>
+    </Application.Resources>
+
     <Application.Styles>
         <FluentTheme />
-        <StyleInclude Source="/Styles/Theme.axaml"/>
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
+        <StyleInclude Source="/Styles/AppResources.axaml" />
+        <StyleInclude Source="/Styles/GlobalStyles.axaml" />
     </Application.Styles>
+
+    <TrayIcon.Icons>
+        <TrayIcons>
+            <TrayIcon Icon="/Assets/swarm.ico" ToolTipText="Swarm">
+                <TrayIcon.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Show Swarm" Command="{Binding ShowWindowCommand}" />
+                        <NativeMenuItemSeperator />
+                        <NativeMenuItem Header="Exit" Command="{Binding ExitCommand}" />
+                    </NativeMenu>
+                </TrayIcon.Menu>
+            </TrayIcon>
+        </TrayIcons>
+    </TrayIcon.Icons>
 </Application>

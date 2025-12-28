@@ -1,20 +1,44 @@
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
+using System.Windows.Input;
+using Swarm.Core.Models;
+using Swarm.Core.Services;
 
 namespace Swarm.Avalonia.ViewModels;
 
 /// <summary>
-/// ViewModel for the Files browser view.
+/// ViewModel for the Files view (file browser).
 /// </summary>
 public class FilesViewModel : ViewModelBase
 {
+    private readonly Settings _settings;
+    private readonly ShareLinkService _shareLinkService;
+
+    private string _currentPath = "";
     private ObservableCollection<FileItemViewModel> _files = new();
     private FileItemViewModel? _selectedFile;
-    private string _currentPath = "";
 
-    public FilesViewModel()
+    public FilesViewModel() {
+        // Design-time
+    }
+
+    public FilesViewModel(Settings settings, ShareLinkService shareLinkService)
     {
-        // TODO: Initialize with actual data from Swarm.Core services
-        CurrentPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        _settings = settings;
+        _shareLinkService = shareLinkService;
+
+        CurrentPath = _settings.SyncFolderPath;
+        LoadFiles();
+
+        NavigateUpCommand = new RelayCommand(NavigateUp, CanNavigateUp);
+        OpenCommand = new RelayCommand(Open, CanOpen);
+    }
+
+    public string CurrentPath
+    {
+        get => _currentPath;
+        set => SetProperty(ref _currentPath, value);
     }
 
     public ObservableCollection<FileItemViewModel> Files
@@ -26,38 +50,96 @@ public class FilesViewModel : ViewModelBase
     public FileItemViewModel? SelectedFile
     {
         get => _selectedFile;
-        set => SetProperty(ref _selectedFile, value);
+        set
+        {
+            if (SetProperty(ref _selectedFile, value))
+            {
+                RelayCommand.RaiseGlobalCanExecuteChanged();
+            }
+        }
     }
 
-    public string CurrentPath
+    public ICommand NavigateUpCommand { get; }
+    public ICommand OpenCommand { get; }
+
+    private void LoadFiles()
     {
-        get => _currentPath;
-        set => SetProperty(ref _currentPath, value);
+        try
+        {
+            if (!Directory.Exists(CurrentPath)) return;
+
+            var items = new ObservableCollection<FileItemViewModel>();
+
+            // Directories
+            foreach (var dir in Directory.GetDirectories(CurrentPath))
+            {
+                var info = new DirectoryInfo(dir);
+                items.Add(new FileItemViewModel
+                {
+                    Name = info.Name,
+                    Path = info.FullName,
+                    IsDirectory = true,
+                    Size = "",
+                    Modified = info.LastWriteTime.ToString("g")
+                });
+            }
+
+            // Files
+            foreach (var file in Directory.GetFiles(CurrentPath))
+            {
+                var info = new FileInfo(file);
+                items.Add(new FileItemViewModel
+                {
+                    Name = info.Name,
+                    Path = info.FullName,
+                    IsDirectory = false,
+                    Size = FileHelpers.FormatBytes(info.Length),
+                    Modified = info.LastWriteTime.ToString("g")
+                });
+            }
+
+            Files = items;
+        }
+        catch
+        {
+            // Ignore access errors
+        }
+    }
+
+    private bool CanNavigateUp()
+    {
+        return !string.IsNullOrEmpty(CurrentPath) &&
+               Path.GetFullPath(CurrentPath) != Path.GetFullPath(_settings.SyncFolderPath);
+    }
+
+    private void NavigateUp()
+    {
+        var parent = Directory.GetParent(CurrentPath);
+        if (parent != null)
+        {
+            CurrentPath = parent.FullName;
+            LoadFiles();
+        }
+    }
+
+    private bool CanOpen() => SelectedFile != null;
+
+    private void Open()
+    {
+        if (SelectedFile?.IsDirectory == true)
+        {
+            CurrentPath = SelectedFile.Path;
+            LoadFiles();
+        }
     }
 }
 
-/// <summary>
-/// ViewModel for a single file item in the browser.
-/// </summary>
 public class FileItemViewModel : ViewModelBase
 {
     public required string Name { get; set; }
-    public required string FullPath { get; set; }
+    public required string Path { get; set; }
     public bool IsDirectory { get; set; }
-    public long Size { get; set; }
-    public DateTime LastModified { get; set; }
-    public string SizeDisplay => IsDirectory ? "" : FormatSize(Size);
-
-    private static string FormatSize(long bytes)
-    {
-        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
-        int order = 0;
-        double size = bytes;
-        while (size >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            size /= 1024;
-        }
-        return $"{size:0.##} {sizes[order]}";
-    }
+    public required string Size { get; set; }
+    public required string Modified { get; set; }
+    public string IconKind => IsDirectory ? "Folder" : "File";
 }
