@@ -3,154 +3,127 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Swarm.Avalonia.ViewModels"
-             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
              x:Class="Swarm.Avalonia.Views.OverviewView"
              x:DataType="vm:OverviewViewModel">
     
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="24">
-            <!-- Page Header -->
-            <TextBlock Text="Overview" 
-                       FontSize="28" 
-                       FontWeight="Bold" 
-                       Foreground="{StaticResource TextPrimaryBrush}" 
-                       Margin="0,0,0,24"/>
-            
-            <!-- Stats Cards Row -->
-            <Grid ColumnDefinitions="*,*,*" Margin="0,0,0,24">
-                <Grid.Styles>
-                    <Style Selector="Border.stat-card">
-                        <Setter Property="Background" Value="{StaticResource BackgroundMediumBrush}"/>
-                        <Setter Property="CornerRadius" Value="16"/>
-                        <Setter Property="Padding" Value="24"/>
-                        <Setter Property="BorderBrush" Value="#18ffffff"/>
-                        <Setter Property="BorderThickness" Value="1"/>
-                        <Setter Property="Margin" Value="0,0,12,0"/>
-                    </Style>
-                </Grid.Styles>
-                
-                <!-- Files Card -->
-                <Border Grid.Column="0" Classes="stat-card">
-                    <StackPanel>
-                        <PathIcon Data="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" 
-                                  Foreground="{StaticResource AccentPrimaryBrush}" 
-                                  Width="32" Height="32" 
-                                  HorizontalAlignment="Left"
-                                  Margin="0,0,0,12"/>
-                        <TextBlock Text="{Binding TotalFiles}" 
-                                   FontSize="32" 
-                                   FontWeight="Bold" 
-                                   Foreground="{StaticResource TextPrimaryBrush}"/>
-                        <TextBlock Text="Files Synced" 
+    <Grid Margin="30">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock Text="Overview"
+                   FontSize="28"
+                   FontWeight="SemiBold"
+                   Foreground="{StaticResource TextPrimaryBrush}"
+                   Margin="0,0,0,24"/>
+
+        <!-- Stats Cards -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,*,*">
+            <Grid.Styles>
+                <Style Selector="Border.card">
+                    <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
+                    <Setter Property="CornerRadius" Value="8"/>
+                    <Setter Property="Padding" Value="20"/>
+                    <Setter Property="Margin" Value="0,0,16,0"/>
+                </Style>
+            </Grid.Styles>
+
+            <!-- Card 1: Connected Peers -->
+            <Border Grid.Column="0" Classes="card">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <PathIcon Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
+                                  Width="20" Height="20"
+                                  Foreground="{StaticResource AccentPrimaryBrush}"/>
+                        <TextBlock Text="Peers"
                                    Foreground="{StaticResource TextSecondaryBrush}" 
-                                   FontSize="14" 
-                                   Margin="0,4,0,0"/>
-                    </StackPanel>
-                </Border>
-                
-                <!-- Size Card -->
-                <Border Grid.Column="1" Classes="stat-card">
-                    <StackPanel>
-                        <PathIcon Data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 16H6c-.55 0-1-.45-1-1V6c0-.55.45-1 1-1h12c.55 0 1 .45 1 1v12c0 .55-.45 1-1 1zm-5-9c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" 
-                                  Foreground="{StaticResource AccentSecondaryBrush}" 
-                                  Width="32" Height="32" 
-                                  HorizontalAlignment="Left"
-                                  Margin="0,0,0,12"/>
-                        <TextBlock Text="{Binding TotalSize}" 
-                                   FontSize="32" 
-                                   FontWeight="Bold" 
-                                   Foreground="{StaticResource TextPrimaryBrush}"/>
-                        <TextBlock Text="Total Size" 
-                                   Foreground="{StaticResource TextSecondaryBrush}" 
-                                   FontSize="14" 
-                                   Margin="0,4,0,0"/>
-                    </StackPanel>
-                </Border>
-                
-                <!-- Peers Card -->
-                <Border Grid.Column="2" Classes="stat-card" Margin="0">
-                    <StackPanel>
-                        <PathIcon Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" 
-                                  Foreground="{StaticResource StatusOnlineBrush}" 
-                                  Width="32" Height="32" 
-                                  HorizontalAlignment="Left"
-                                  Margin="0,0,0,12"/>
-                        <TextBlock Text="{Binding ConnectedPeers}" 
-                                   FontSize="32" 
-                                   FontWeight="Bold" 
-                                   Foreground="{StaticResource TextPrimaryBrush}"/>
-                        <TextBlock Text="Connected Peers" 
-                                   Foreground="{StaticResource TextSecondaryBrush}" 
-                                   FontSize="14" 
-                                   Margin="0,4,0,0"/>
-                    </StackPanel>
-                </Border>
-            </Grid>
-            
-            <!-- Sync Folder Card -->
-            <Border Classes="card-primary" Margin="0,0,0,24">
-                <Grid RowDefinitions="Auto,Auto">
-                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,16">
-                        <PathIcon Data="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" 
-                                  Foreground="{StaticResource AccentPrimaryBrush}" 
-                                  Width="24" Height="24" 
-                                  VerticalAlignment="Center"/>
-                        <TextBlock Text="Sync Folder" 
-                                   FontSize="18" 
-                                   FontWeight="SemiBold" 
-                                   Foreground="{StaticResource TextPrimaryBrush}" 
                                    VerticalAlignment="Center"
                                    Margin="12,0,0,0"/>
                     </StackPanel>
-                    
-                    <Border Grid.Row="1" 
-                            Background="#10ffffff" 
-                            CornerRadius="8" 
-                            Padding="16">
-                        <TextBlock Text="{Binding SyncFolderPath}" 
-                                   Foreground="{StaticResource TextSecondaryBrush}" 
-                                   FontSize="14" 
-                                   TextTrimming="CharacterEllipsis"/>
-                    </Border>
-                </Grid>
+                    <TextBlock Text="{Binding ConnectedPeers}"
+                               FontSize="32"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="Online"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               FontSize="12"/>
+                </StackPanel>
             </Border>
-            
-            <!-- Quick Actions -->
-            <TextBlock Text="QUICK ACTIONS" Classes="section-header"/>
-            <WrapPanel>
-                <Button Classes="secondary" Margin="0,0,12,12">
-                    <StackPanel Orientation="Horizontal">
-                        <PathIcon Data="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z" 
-                                  Foreground="{StaticResource TextSecondaryBrush}" 
-                                  Width="14" Height="14"/>
-                        <TextBlock Text="Force Sync" Margin="8,0,0,0"/>
+
+            <!-- Card 2: Total Files -->
+            <Border Grid.Column="1" Classes="card">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <PathIcon Data="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"
+                                  Width="20" Height="20"
+                                  Foreground="{StaticResource AccentSecondaryBrush}"/>
+                        <TextBlock Text="Synced Files"
+                                   Foreground="{StaticResource TextSecondaryBrush}" 
+                                   VerticalAlignment="Center"
+                                   Margin="12,0,0,0"/>
                     </StackPanel>
-                </Button>
-                <Button Classes="secondary" Margin="0,0,12,12">
-                    <StackPanel Orientation="Horizontal">
-                        <PathIcon Data="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" 
-                                  Foreground="{StaticResource TextSecondaryBrush}" 
-                                  Width="14" Height="14"/>
-                        <TextBlock Text="Open Folder" Margin="8,0,0,0"/>
+                    <TextBlock Text="{Binding TotalFiles}"
+                               FontSize="32"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="{Binding TotalSize, StringFormat='Total Size: {0}'}"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               FontSize="12"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Card 3: Sync Status -->
+            <Border Grid.Column="2" Classes="card" Margin="0">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <PathIcon Data="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"
+                                  Width="20" Height="20"
+                                  Foreground="{StaticResource StatusOnlineBrush}"/>
+                        <TextBlock Text="Sync Status"
+                                   Foreground="{StaticResource TextSecondaryBrush}" 
+                                   VerticalAlignment="Center"
+                                   Margin="12,0,0,0"/>
                     </StackPanel>
-                </Button>
-                <Button Classes="secondary" Margin="0,0,12,12">
-                    <StackPanel Orientation="Horizontal">
-                        <PathIcon Data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z" 
-                                  Foreground="{StaticResource TextSecondaryBrush}" 
-                                  Width="14" Height="14"/>
-                        <TextBlock Text="Activity Log" Margin="8,0,0,0"/>
-                    </StackPanel>
-                </Button>
-                <Button Classes="secondary" Margin="0,0,12,12">
-                    <StackPanel Orientation="Horizontal">
-                        <PathIcon Data="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z" 
-                                  Foreground="{StaticResource TextSecondaryBrush}" 
-                                  Width="14" Height="14"/>
-                        <TextBlock Text="Check Integrity" Margin="8,0,0,0"/>
-                    </StackPanel>
-                </Button>
-            </WrapPanel>
-        </StackPanel>
-    </ScrollViewer>
+                    <TextBlock Text="Active"
+                               FontSize="32"
+                               FontWeight="Bold"
+                               Foreground="{StaticResource StatusOnlineBrush}"/>
+                    <TextBlock Text="{Binding SyncFolderPath}"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               FontSize="12"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding SyncFolderPath}"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Recent Activity Placeholder -->
+        <TextBlock Grid.Row="2"
+                   Text="Recent Activity"
+                   FontSize="18"
+                   FontWeight="SemiBold"
+                   Foreground="{StaticResource TextPrimaryBrush}"
+                   Margin="0,32,0,16"/>
+
+        <Border Grid.Row="2"
+                VerticalAlignment="Top"
+                Margin="0,60,0,0"
+                Background="{StaticResource SurfaceBrush}"
+                CornerRadius="8"
+                Padding="20"
+                Height="200">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <PathIcon Data="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"
+                          Width="48" Height="48"
+                          Foreground="{StaticResource TextDisabledBrush}"
+                          Margin="0,0,0,16"/>
+                <TextBlock Text="No recent activity to display"
+                           Foreground="{StaticResource TextMutedBrush}"/>
+            </StackPanel>
+        </Border>
+    </Grid>
 </UserControl>

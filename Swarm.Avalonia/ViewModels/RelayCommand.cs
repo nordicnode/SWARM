@@ -37,6 +37,17 @@ public class RelayCommand : ICommand
     {
         CanExecuteChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    // Static helper to raise for all commands (mocking WPF's CommandManager.InvalidateRequerySuggested)
+    // In a real MVVM framework, this would be handled differently.
+    public static event EventHandler? GlobalCanExecuteChanged;
+
+    public static void RaiseGlobalCanExecuteChanged()
+    {
+        GlobalCanExecuteChanged?.Invoke(null, EventArgs.Empty);
+    }
+
+    // Constructor to hook into global events if needed, but for now we rely on manual RaiseCanExecuteChanged
 }
 
 /// <summary>
