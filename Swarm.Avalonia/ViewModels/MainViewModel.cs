@@ -157,6 +157,8 @@ public class MainViewModel : ViewModelBase, IDisposable
 
     #region Properties
 
+    public Settings Settings => _settings;
+
     public object? CurrentView
     {
         get => _currentView;

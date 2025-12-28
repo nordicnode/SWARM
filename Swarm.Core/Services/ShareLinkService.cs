@@ -1,11 +1,11 @@
 using System;
 using System.IO;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Web;
-using Microsoft.Win32;
 
 namespace Swarm.Core.Services;
 
@@ -279,24 +279,57 @@ public class ShareLinkService : IDisposable
     }
     
     /// <summary>
-    /// Registers the swarm:// protocol handler (requires admin on Windows).
+    /// Registers the swarm:// protocol handler.
+    /// On Windows, this modifies the Registry. On Linux/macOS, returns false (TODO: implement).
     /// </summary>
     public static bool RegisterProtocolHandler()
     {
+        // Only supported on Windows currently
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            System.Diagnostics.Debug.WriteLine("[ShareLink] Protocol registration not supported on this platform");
+            return false;
+        }
+
         try
         {
             var exePath = Environment.ProcessPath ?? "";
             if (string.IsNullOrEmpty(exePath)) return false;
             
-            using var key = Registry.CurrentUser.CreateSubKey(@"SOFTWARE\Classes\swarm");
-            key?.SetValue("", "URL:Swarm Protocol");
-            key?.SetValue("URL Protocol", "");
+            // Use dynamic invocation to avoid compile-time dependency on Windows Registry
+            var registryType = Type.GetType("Microsoft.Win32.Registry, Microsoft.Win32.Registry");
+            var currentUserProp = registryType?.GetProperty("CurrentUser");
+            var currentUser = currentUserProp?.GetValue(null);
             
-            using var iconKey = key?.CreateSubKey("DefaultIcon");
-            iconKey?.SetValue("", $"\"{exePath}\",0");
+            if (currentUser == null)
+            {
+                System.Diagnostics.Debug.WriteLine("[ShareLink] Could not access Registry");
+                return false;
+            }
+
+            var createSubKeyMethod = currentUser.GetType().GetMethod("CreateSubKey", new[] { typeof(string) });
+            using var key = createSubKeyMethod?.Invoke(currentUser, new object[] { @"SOFTWARE\Classes\swarm" }) as IDisposable;
             
-            using var commandKey = key?.CreateSubKey(@"shell\open\command");
-            commandKey?.SetValue("", $"\"{exePath}\" --uri \"%1\"");
+            if (key != null)
+            {
+                var setValueMethod = key.GetType().GetMethod("SetValue", new[] { typeof(string), typeof(object) });
+                setValueMethod?.Invoke(key, new object[] { "", "URL:Swarm Protocol" });
+                setValueMethod?.Invoke(key, new object[] { "URL Protocol", "" });
+
+                using var iconKey = createSubKeyMethod?.Invoke(key, new object[] { "DefaultIcon" }) as IDisposable;
+                if (iconKey != null)
+                {
+                    var iconSetValue = iconKey.GetType().GetMethod("SetValue", new[] { typeof(string), typeof(object) });
+                    iconSetValue?.Invoke(iconKey, new object[] { "", $"\"{exePath}\",0" });
+                }
+
+                using var commandKey = createSubKeyMethod?.Invoke(key, new object[] { @"shell\open\command" }) as IDisposable;
+                if (commandKey != null)
+                {
+                    var cmdSetValue = commandKey.GetType().GetMethod("SetValue", new[] { typeof(string), typeof(object) });
+                    cmdSetValue?.Invoke(commandKey, new object[] { "", $"\"{exePath}\" --uri \"%1\"" });
+                }
+            }
             
             System.Diagnostics.Debug.WriteLine("[ShareLink] Protocol handler registered");
             return true;

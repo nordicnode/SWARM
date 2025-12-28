@@ -1,0 +1,105 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:dialogs="clr-namespace:Swarm.Avalonia.Dialogs"
+        mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="500"
+        x:Class="Swarm.Avalonia.Dialogs.ActivityLogDialog"
+        x:CompileBindings="False"
+        Title="Activity Log"
+        Width="700" Height="500"
+        MinWidth="500" MinHeight="400"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <!-- Header -->
+        <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="20,16">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel>
+                    <TextBlock Text="Activity Log" FontSize="20" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock x:Name="EntryCountText" Text="0 entries" FontSize="12"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Filter Bar -->
+        <Border Grid.Row="1" Background="{StaticResource SurfaceSecondaryBrush}" Padding="16,12">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBox x:Name="SearchBox" Watermark="Search activities..." 
+                         TextChanged="SearchBox_TextChanged"/>
+                <ComboBox x:Name="FilterComboBox" Grid.Column="1" Width="150" Margin="12,0,0,0"
+                          SelectionChanged="FilterComboBox_SelectionChanged">
+                    <ComboBoxItem Content="All Activities" IsSelected="True"/>
+                    <ComboBoxItem Content="Files Only"/>
+                    <ComboBoxItem Content="Transfers Only"/>
+                    <ComboBoxItem Content="Peers Only"/>
+                    <ComboBoxItem Content="Errors Only"/>
+                </ComboBox>
+            </Grid>
+        </Border>
+
+        <!-- Activity List -->
+        <ListBox x:Name="ActivityListBox" Grid.Row="2" 
+                 Background="Transparent" Padding="8"
+                 SelectionMode="Single">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid Margin="4,6" ColumnDefinitions="Auto,80,*,Auto">
+                        <!-- Severity Indicator -->
+                        <Ellipse Width="8" Height="8" VerticalAlignment="Center" Margin="0,0,12,0"
+                                 Fill="{Binding SeverityColor}"/>
+                        
+                        <!-- Time -->
+                        <TextBlock Grid.Column="1" 
+                                   Text="{Binding TimestampDisplay}" 
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   FontSize="11" FontFamily="Consolas"
+                                   VerticalAlignment="Center"/>
+                        
+                        <!-- Message -->
+                        <StackPanel Grid.Column="2" Margin="8,0">
+                            <TextBlock Text="{Binding Message}" 
+                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Details}" 
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="11"
+                                       TextTrimming="CharacterEllipsis"
+                                       IsVisible="{Binding HasDetails}"/>
+                        </StackPanel>
+                        
+                        <!-- Type Badge -->
+                        <Border Grid.Column="3" 
+                                Background="#20ffffff" 
+                                CornerRadius="4" 
+                                Padding="8,2"
+                                VerticalAlignment="Center">
+                            <TextBlock Text="{Binding TypeDisplay}" 
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="10"/>
+                        </Border>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Empty State -->
+        <TextBlock x:Name="EmptyStateText" Grid.Row="2"
+                   Text="No activity recorded yet" 
+                   Foreground="{StaticResource TextMutedBrush}"
+                   FontSize="14"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   IsVisible="False"/>
+
+        <!-- Footer -->
+        <Border Grid.Row="3" Background="{StaticResource SurfaceBrush}" Padding="16,12">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                <Button Content="Clear Log" Click="ClearButton_Click" Margin="0,0,8,0"/>
+                <Button Grid.Column="1" Content="Refresh" Click="RefreshButton_Click"/>
+                <Button Grid.Column="3" Content="Close" Classes="accent" Click="CloseButton_Click"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

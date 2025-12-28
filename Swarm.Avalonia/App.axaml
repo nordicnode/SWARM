@@ -11,6 +11,7 @@
     <Application.Styles>
         <FluentTheme />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
+        <StyleInclude Source="/Styles/Theme.axaml" />
         <StyleInclude Source="/Styles/AppResources.axaml" />
         <StyleInclude Source="/Styles/GlobalStyles.axaml" />
     </Application.Styles>
@@ -20,9 +21,9 @@
             <TrayIcon Icon="/Assets/swarm.ico" ToolTipText="Swarm">
                 <TrayIcon.Menu>
                     <NativeMenu>
-                        <NativeMenuItem Header="Show Swarm" Command="{Binding ShowWindowCommand}" />
-                        <NativeMenuItemSeperator />
-                        <NativeMenuItem Header="Exit" Command="{Binding ExitCommand}" />
+                        <NativeMenuItem Header="Show Swarm" Command="{ReflectionBinding ShowWindowCommand}" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Exit" Command="{ReflectionBinding ExitCommand}" />
                     </NativeMenu>
                 </TrayIcon.Menu>
             </TrayIcon>

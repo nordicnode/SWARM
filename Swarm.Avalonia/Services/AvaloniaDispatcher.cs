@@ -8,7 +8,7 @@ namespace Swarm.Avalonia.Services;
 /// <summary>
 /// Avalonia implementation of IDispatcher.
 /// </summary>
-public class AvaloniaDispatcher : IDispatcher
+public class AvaloniaDispatcher : Swarm.Core.Abstractions.IDispatcher
 {
     public void Invoke(Action action)
     {

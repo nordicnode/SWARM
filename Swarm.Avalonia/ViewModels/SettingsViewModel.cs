@@ -1,7 +1,9 @@
 using System;
+using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
+using Swarm.Core.Models;
 using Swarm.Core.Services;
 
 namespace Swarm.Avalonia.ViewModels;
@@ -11,21 +13,42 @@ namespace Swarm.Avalonia.ViewModels;
 /// </summary>
 public class SettingsViewModel : ViewModelBase
 {
-    private readonly Settings _settings;
-    private readonly SyncService _syncService;
-    private readonly DiscoveryService _discoveryService;
-    private readonly IntegrityService _integrityService;
-    private readonly RescanService _rescanService;
-    private readonly ActivityLogService _activityLogService;
-    private readonly VersioningService _versioningService;
+    private readonly Settings _settings = null!;
+    private readonly SyncService _syncService = null!;
+    private readonly DiscoveryService _discoveryService = null!;
+    private readonly IntegrityService _integrityService = null!;
+    private readonly RescanService _rescanService = null!;
+    private readonly ActivityLogService _activityLogService = null!;
+    private readonly VersioningService _versioningService = null!;
 
     public event Action<Settings>? SettingsChanged;
 
+    // General
     private string _deviceName = "";
+    private bool _startMinimized;
+    private bool _closeToTray = true;
+    private bool _showNotifications = true;
+    private bool _showTransferComplete = true;
+
+    // Sync
+    private bool _syncEnabled = true;
     private string _syncFolderPath = "";
-    private bool _startWithSystem;
     private bool _pauseOnBattery;
-    private bool _showNotifications;
+
+    // Transfers
+    private string _downloadPath = "";
+    private bool _autoAcceptFromTrusted;
+    private long _maxDownloadSpeedKBps;
+    private long _maxUploadSpeedKBps;
+
+    // Versioning
+    private bool _versioningEnabled = true;
+    private int _maxVersionsPerFile = 10;
+    private int _maxVersionAgeDays = 30;
+
+    // Trusted Peers
+    private ObservableCollection<TrustedPeer> _trustedPeers = new();
+    private TrustedPeer? _selectedPeer;
 
     public SettingsViewModel() {
         // Design-time
@@ -48,19 +71,45 @@ public class SettingsViewModel : ViewModelBase
         _activityLogService = activityLogService;
         _versioningService = versioningService;
 
-        // Load settings
-        DeviceName = _settings.DeviceName;
-        SyncFolderPath = _settings.SyncFolderPath;
-        StartWithSystem = _settings.StartMinimized; // Assuming mapping
-        PauseOnBattery = _settings.PauseOnBattery;
-        ShowNotifications = _settings.NotificationsEnabled;
+        LoadSettings();
 
         // Initialize commands
         BrowseSyncFolderCommand = new RelayCommand(BrowseSyncFolder);
+        BrowseDownloadPathCommand = new RelayCommand(BrowseDownloadPath);
         SaveSettingsCommand = new RelayCommand(SaveSettings);
+        RemoveTrustedPeerCommand = new RelayCommand(RemoveSelectedPeer, CanRemoveSelectedPeer);
     }
 
-    #region Properties
+    private void LoadSettings()
+    {
+        // General
+        DeviceName = _settings.DeviceName;
+        StartMinimized = _settings.StartMinimized;
+        CloseToTray = _settings.CloseToTray;
+        ShowNotifications = _settings.NotificationsEnabled;
+        ShowTransferComplete = _settings.ShowTransferComplete;
+
+        // Sync
+        SyncEnabled = _settings.IsSyncEnabled;
+        SyncFolderPath = _settings.SyncFolderPath;
+        PauseOnBattery = _settings.PauseOnBattery;
+
+        // Transfers
+        DownloadPath = _settings.DownloadPath;
+        AutoAcceptFromTrusted = _settings.AutoAcceptFromTrusted;
+        MaxDownloadSpeedKBps = _settings.MaxDownloadSpeedKBps;
+        MaxUploadSpeedKBps = _settings.MaxUploadSpeedKBps;
+
+        // Versioning
+        VersioningEnabled = _settings.VersioningEnabled;
+        MaxVersionsPerFile = _settings.MaxVersionsPerFile;
+        MaxVersionAgeDays = _settings.MaxVersionAgeDays;
+
+        // Trusted Peers
+        TrustedPeers = new ObservableCollection<TrustedPeer>(_settings.TrustedPeers);
+    }
+
+    #region General Properties
 
     public string DeviceName
     {
@@ -68,22 +117,16 @@ public class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _deviceName, value);
     }
 
-    public string SyncFolderPath
+    public bool StartMinimized
     {
-        get => _syncFolderPath;
-        set => SetProperty(ref _syncFolderPath, value);
+        get => _startMinimized;
+        set => SetProperty(ref _startMinimized, value);
     }
 
-    public bool StartWithSystem
+    public bool CloseToTray
     {
-        get => _startWithSystem;
-        set => SetProperty(ref _startWithSystem, value);
-    }
-
-    public bool PauseOnBattery
-    {
-        get => _pauseOnBattery;
-        set => SetProperty(ref _pauseOnBattery, value);
+        get => _closeToTray;
+        set => SetProperty(ref _closeToTray, value);
     }
 
     public bool ShowNotifications
@@ -92,12 +135,121 @@ public class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _showNotifications, value);
     }
 
+    public bool ShowTransferComplete
+    {
+        get => _showTransferComplete;
+        set => SetProperty(ref _showTransferComplete, value);
+    }
+
+    #endregion
+
+    #region Sync Properties
+
+    public bool SyncEnabled
+    {
+        get => _syncEnabled;
+        set => SetProperty(ref _syncEnabled, value);
+    }
+
+    public string SyncFolderPath
+    {
+        get => _syncFolderPath;
+        set => SetProperty(ref _syncFolderPath, value);
+    }
+
+    public bool PauseOnBattery
+    {
+        get => _pauseOnBattery;
+        set => SetProperty(ref _pauseOnBattery, value);
+    }
+
+    #endregion
+
+    #region Transfer Properties
+
+    public string DownloadPath
+    {
+        get => _downloadPath;
+        set => SetProperty(ref _downloadPath, value);
+    }
+
+    public bool AutoAcceptFromTrusted
+    {
+        get => _autoAcceptFromTrusted;
+        set => SetProperty(ref _autoAcceptFromTrusted, value);
+    }
+
+    public long MaxDownloadSpeedKBps
+    {
+        get => _maxDownloadSpeedKBps;
+        set => SetProperty(ref _maxDownloadSpeedKBps, value);
+    }
+
+    public long MaxUploadSpeedKBps
+    {
+        get => _maxUploadSpeedKBps;
+        set => SetProperty(ref _maxUploadSpeedKBps, value);
+    }
+
+    public string MaxDownloadSpeedDisplay => MaxDownloadSpeedKBps == 0 ? "Unlimited" : FormatSpeed(MaxDownloadSpeedKBps);
+    public string MaxUploadSpeedDisplay => MaxUploadSpeedKBps == 0 ? "Unlimited" : FormatSpeed(MaxUploadSpeedKBps);
+
+    private static string FormatSpeed(long kbps) => kbps >= 1024 ? $"{kbps / 1024} MB/s" : $"{kbps} KB/s";
+
+    #endregion
+
+    #region Versioning Properties
+
+    public bool VersioningEnabled
+    {
+        get => _versioningEnabled;
+        set => SetProperty(ref _versioningEnabled, value);
+    }
+
+    public int MaxVersionsPerFile
+    {
+        get => _maxVersionsPerFile;
+        set => SetProperty(ref _maxVersionsPerFile, value);
+    }
+
+    public int MaxVersionAgeDays
+    {
+        get => _maxVersionAgeDays;
+        set => SetProperty(ref _maxVersionAgeDays, value);
+    }
+
+    public string MaxVersionAgeDisplay => MaxVersionAgeDays == 0 ? "Forever" : $"{MaxVersionAgeDays} days";
+
+    #endregion
+
+    #region Trusted Peers Properties
+
+    public ObservableCollection<TrustedPeer> TrustedPeers
+    {
+        get => _trustedPeers;
+        set => SetProperty(ref _trustedPeers, value);
+    }
+
+    public TrustedPeer? SelectedPeer
+    {
+        get => _selectedPeer;
+        set
+        {
+            if (SetProperty(ref _selectedPeer, value))
+            {
+                RelayCommand.RaiseGlobalCanExecuteChanged();
+            }
+        }
+    }
+
     #endregion
 
     #region Commands
 
-    public ICommand BrowseSyncFolderCommand { get; }
-    public ICommand SaveSettingsCommand { get; }
+    public ICommand BrowseSyncFolderCommand { get; } = null!;
+    public ICommand BrowseDownloadPathCommand { get; } = null!;
+    public ICommand SaveSettingsCommand { get; } = null!;
+    public ICommand RemoveTrustedPeerCommand { get; } = null!;
 
     #endregion
 
@@ -120,30 +272,79 @@ public class SettingsViewModel : ViewModelBase
         }
     }
 
+    private async void BrowseDownloadPath()
+    {
+        var topLevel = GetTopLevel();
+        if (topLevel == null) return;
+
+        var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Select Download Folder",
+            AllowMultiple = false
+        });
+
+        if (folders.Count > 0)
+        {
+            DownloadPath = folders[0].Path.LocalPath;
+        }
+    }
+
+    private bool CanRemoveSelectedPeer() => SelectedPeer != null;
+
+    private void RemoveSelectedPeer()
+    {
+        if (SelectedPeer != null)
+        {
+            TrustedPeers.Remove(SelectedPeer);
+            SelectedPeer = null;
+        }
+    }
+
     private void SaveSettings()
     {
+        // General
         _settings.DeviceName = DeviceName;
+        _settings.StartMinimized = StartMinimized;
+        _settings.CloseToTray = CloseToTray;
+        _settings.NotificationsEnabled = ShowNotifications;
+        _settings.ShowTransferComplete = ShowTransferComplete;
 
-        // If sync folder changed
+        // Sync
+        _settings.IsSyncEnabled = SyncEnabled;
         if (_settings.SyncFolderPath != SyncFolderPath)
         {
             _syncService.SetSyncFolderPath(SyncFolderPath);
         }
-
-        _settings.StartMinimized = StartWithSystem;
         _settings.PauseOnBattery = PauseOnBattery;
-        _settings.NotificationsEnabled = ShowNotifications;
+
+        // Transfers
+        _settings.DownloadPath = DownloadPath;
+        _settings.AutoAcceptFromTrusted = AutoAcceptFromTrusted;
+        _settings.MaxDownloadSpeedKBps = MaxDownloadSpeedKBps;
+        _settings.MaxUploadSpeedKBps = MaxUploadSpeedKBps;
+
+        // Versioning
+        _settings.VersioningEnabled = VersioningEnabled;
+        _settings.MaxVersionsPerFile = MaxVersionsPerFile;
+        _settings.MaxVersionAgeDays = MaxVersionAgeDays;
+
+        // Trusted Peers
+        _settings.TrustedPeers.Clear();
+        foreach (var peer in TrustedPeers)
+        {
+            _settings.TrustedPeers.Add(new TrustedPeer { Id = peer.Id, Name = peer.Name });
+        }
 
         _settings.Save();
 
         SettingsChanged?.Invoke(_settings);
     }
 
-    private Avalonia.Controls.TopLevel? GetTopLevel()
+    private global::Avalonia.Controls.TopLevel? GetTopLevel()
     {
-        if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        if (global::Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            return Avalonia.Controls.TopLevel.GetTopLevel(desktop.MainWindow);
+            return global::Avalonia.Controls.TopLevel.GetTopLevel(desktop.MainWindow);
         }
         return null;
     }

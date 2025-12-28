@@ -181,6 +181,11 @@ public class Settings
     public bool PauseOnMeteredNetwork { get; set; } = false;
 
     /// <summary>
+    /// Whether to minimize to system tray instead of exiting when closing the window.
+    /// </summary>
+    public bool CloseToTray { get; set; } = true;
+
+    /// <summary>
     /// Returns true if sync is currently in a paused state (either manual or auto).
     /// </summary>
     [JsonIgnore]
@@ -352,7 +357,8 @@ public class Settings
             ConflictResolution = ConflictResolution,
             SyncPausedUntil = SyncPausedUntil,
             PauseOnBattery = PauseOnBattery,
-            PauseOnMeteredNetwork = PauseOnMeteredNetwork
+            PauseOnMeteredNetwork = PauseOnMeteredNetwork,
+            CloseToTray = CloseToTray
         };
 
         foreach (var peer in TrustedPeers)
@@ -398,6 +404,7 @@ public class Settings
         SyncPausedUntil = source.SyncPausedUntil;
         PauseOnBattery = source.PauseOnBattery;
         PauseOnMeteredNetwork = source.PauseOnMeteredNetwork;
+        CloseToTray = source.CloseToTray;
         
         TrustedPeers.Clear();
         foreach (var peer in source.TrustedPeers)

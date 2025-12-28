@@ -3,7 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Swarm.Avalonia.ViewModels"
-             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+             mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="800"
              x:Class="Swarm.Avalonia.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
@@ -26,15 +26,34 @@
                                    Classes="description"/>
                     </StackPanel>
                     
-                    <CheckBox IsChecked="{Binding StartWithSystem}"
-                              Content="Start Swarm when computer starts"/>
+                    <CheckBox IsChecked="{Binding StartMinimized}"
+                              Content="Start minimized to system tray"/>
+                    
+                    <CheckBox IsChecked="{Binding CloseToTray}"
+                              Content="Close to tray instead of exiting"/>
                 </StackPanel>
             </Border>
 
-            <!-- Sync -->
+            <!-- Notifications -->
+            <Border Classes="card">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="Notifications" Classes="h2"/>
+                    
+                    <CheckBox IsChecked="{Binding ShowNotifications}"
+                              Content="Show desktop notifications"/>
+                    
+                    <CheckBox IsChecked="{Binding ShowTransferComplete}"
+                              Content="Show notification when transfers complete"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Synchronization -->
             <Border Classes="card">
                 <StackPanel Spacing="16">
                     <TextBlock Text="Synchronization" Classes="h2"/>
+
+                    <CheckBox IsChecked="{Binding SyncEnabled}"
+                              Content="Enable folder synchronization"/>
 
                     <StackPanel Spacing="8">
                         <TextBlock Text="Sync Folder Location" Classes="label"/>
@@ -49,13 +68,107 @@
                 </StackPanel>
             </Border>
 
-            <!-- Notifications -->
+            <!-- Transfers -->
             <Border Classes="card">
                 <StackPanel Spacing="16">
-                    <TextBlock Text="Notifications" Classes="h2"/>
+                    <TextBlock Text="Transfers" Classes="h2"/>
+
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Download Location" Classes="label"/>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBox Text="{Binding DownloadPath}" IsReadOnly="True" Margin="0,0,8,0"/>
+                            <Button Grid.Column="1" Command="{Binding BrowseDownloadPathCommand}" Content="Browse..."/>
+                        </Grid>
+                    </StackPanel>
+
+                    <CheckBox IsChecked="{Binding AutoAcceptFromTrusted}"
+                              Content="Auto-accept files from trusted peers"/>
+
+                    <StackPanel Spacing="8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="Max Download Speed" Classes="label"/>
+                            <TextBlock Text="{Binding MaxDownloadSpeedDisplay}" 
+                                       Foreground="{StaticResource AccentBrush}"/>
+                        </Grid>
+                        <Slider Minimum="0" Maximum="102400" 
+                                Value="{Binding MaxDownloadSpeedKBps}"
+                                TickFrequency="256" IsSnapToTickEnabled="True"/>
+                    </StackPanel>
+
+                    <StackPanel Spacing="8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="Max Upload Speed" Classes="label"/>
+                            <TextBlock Text="{Binding MaxUploadSpeedDisplay}" 
+                                       Foreground="{StaticResource AccentBrush}"/>
+                        </Grid>
+                        <Slider Minimum="0" Maximum="102400" 
+                                Value="{Binding MaxUploadSpeedKBps}"
+                                TickFrequency="256" IsSnapToTickEnabled="True"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Versioning -->
+            <Border Classes="card">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="Versioning" Classes="h2"/>
+
+                    <CheckBox IsChecked="{Binding VersioningEnabled}"
+                              Content="Enable file versioning (keep backup copies)"/>
+
+                    <StackPanel Spacing="8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="Max Versions Per File" Classes="label"/>
+                            <TextBlock Text="{Binding MaxVersionsPerFile}" 
+                                       Foreground="{StaticResource AccentBrush}"/>
+                        </Grid>
+                        <Slider Minimum="1" Maximum="50" 
+                                Value="{Binding MaxVersionsPerFile}"/>
+                    </StackPanel>
+
+                    <StackPanel Spacing="8">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="Retention Period" Classes="label"/>
+                            <TextBlock Text="{Binding MaxVersionAgeDisplay}" 
+                                       Foreground="{StaticResource AccentBrush}"/>
+                        </Grid>
+                        <Slider Minimum="0" Maximum="365" 
+                                Value="{Binding MaxVersionAgeDays}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Trusted Peers -->
+            <Border Classes="card">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="Trusted Peers" Classes="h2"/>
+                    <TextBlock Text="Devices authorized for automatic file acceptance." Classes="description"/>
+
+                    <Border Background="{StaticResource SurfaceSecondaryBrush}" 
+                            CornerRadius="8" Padding="12" MinHeight="100">
+                        <ListBox ItemsSource="{Binding TrustedPeers}"
+                                 SelectedItem="{Binding SelectedPeer}"
+                                 Background="Transparent">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Name}" FontWeight="Medium"/>
+                                            <TextBlock Text="{Binding Id}" FontSize="11" Opacity="0.6"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
                     
-                    <CheckBox IsChecked="{Binding ShowNotifications}"
-                              Content="Show desktop notifications"/>
+                    <Button Command="{Binding RemoveTrustedPeerCommand}"
+                            Content="Remove Selected"
+                            HorizontalAlignment="Left"/>
                 </StackPanel>
             </Border>
 

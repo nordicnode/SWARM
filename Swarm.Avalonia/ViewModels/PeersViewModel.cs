@@ -12,9 +12,9 @@ namespace Swarm.Avalonia.ViewModels;
 /// </summary>
 public class PeersViewModel : ViewModelBase
 {
-    private readonly DiscoveryService _discoveryService;
-    private readonly TransferService _transferService;
-    private readonly Settings _settings;
+    private readonly DiscoveryService _discoveryService = null!;
+    private readonly TransferService _transferService = null!;
+    private readonly Settings _settings = null!;
 
     private ObservableCollection<PeerItemViewModel> _peers = new();
     private PeerItemViewModel? _selectedPeer;

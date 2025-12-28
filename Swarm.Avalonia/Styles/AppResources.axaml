@@ -1,30 +1,31 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- Colors -->
+    <!-- 
+        AppResources.axaml - Additional resources that complement Theme.axaml
+        Provides missing brush definitions needed by views
+    -->
     <Style>
         <Style.Resources>
-            <!-- Backgrounds -->
-            <SolidColorBrush x:Key="BackgroundDarkBrush" Color="#0f0f12"/>
-            <SolidColorBrush x:Key="SurfaceBrush" Color="#1E1E24"/>
-            <SolidColorBrush x:Key="OverlayBrush" Color="#000000" Opacity="0.5"/>
-
-            <!-- Text -->
-            <SolidColorBrush x:Key="TextPrimaryBrush" Color="#FFFFFF"/>
-            <SolidColorBrush x:Key="TextSecondaryBrush" Color="#A0A0A0"/>
-            <SolidColorBrush x:Key="TextMutedBrush" Color="#606060"/>
-            <SolidColorBrush x:Key="TextDisabledBrush" Color="#404040"/>
-
-            <!-- Accents -->
-            <SolidColorBrush x:Key="AccentPrimaryBrush" Color="#5C6BC0"/>
-            <SolidColorBrush x:Key="AccentSecondaryBrush" Color="#26A69A"/>
-            <SolidColorBrush x:Key="AccentDestructiveBrush" Color="#EF5350"/>
-            <SolidColorBrush x:Key="GlowBrush" Color="#304FFE"/>
-
-            <!-- Status -->
-            <SolidColorBrush x:Key="StatusOnlineBrush" Color="#66BB6A"/>
-            <SolidColorBrush x:Key="StatusBusyBrush" Color="#FFA726"/>
-            <SolidColorBrush x:Key="StatusErrorBrush" Color="#EF5350"/>
+            <!-- Surface/Card Backgrounds (for glass effect cards) -->
+            <SolidColorBrush x:Key="SurfaceBrush" Color="#1a1a1f"/>
+            <SolidColorBrush x:Key="SurfaceVariantBrush" Color="#22222a"/>
+            <SolidColorBrush x:Key="OverlayBrush" Color="#80000000"/>
+            
+            <!-- Additional Text Brushes -->
+            <SolidColorBrush x:Key="TextDisabledBrush" Color="#4a4a52"/>
+            
+            <!-- Card Accent Borders (for visual polish) -->
+            <LinearGradientBrush x:Key="CardBorderGradient" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#20ffffff" Offset="0"/>
+                <GradientStop Color="#08ffffff" Offset="1"/>
+            </LinearGradientBrush>
+            
+            <!-- Premium Glow Effect -->
+            <RadialGradientBrush x:Key="PremiumGlowBrush" Center="50%,50%" GradientOrigin="50%,50%">
+                <GradientStop Color="#152dd4bf" Offset="0"/>
+                <GradientStop Color="#00000000" Offset="1"/>
+            </RadialGradientBrush>
         </Style.Resources>
     </Style>
 </Styles>

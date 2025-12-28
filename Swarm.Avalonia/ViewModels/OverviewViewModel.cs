@@ -15,18 +15,18 @@ namespace Swarm.Avalonia.ViewModels;
 /// </summary>
 public class OverviewViewModel : ViewModelBase, IDisposable
 {
-    private readonly SyncService _syncService;
-    private readonly VersioningService _versioningService;
-    private readonly ActivityLogService _activityLogService;
-    private readonly DiscoveryService _discoveryService;
-    private readonly Settings _settings;
+    private readonly SyncService _syncService = null!;
+    private readonly VersioningService _versioningService = null!;
+    private readonly ActivityLogService _activityLogService = null!;
+    private readonly DiscoveryService _discoveryService = null!;
+    private readonly Settings _settings = null!;
 
     private string _syncFolderPath = "";
     private int _totalFiles;
     private string _totalSize = "0 KB";
     private int _connectedPeers;
 
-    private readonly System.Timers.Timer _debounceTimer;
+    private readonly System.Timers.Timer _debounceTimer = null!;
     private CancellationTokenSource? _statsCts;
 
     public OverviewViewModel()

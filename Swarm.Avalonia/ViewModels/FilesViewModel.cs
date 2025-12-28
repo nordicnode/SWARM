@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows.Input;
 using Swarm.Core.Models;
 using Swarm.Core.Services;
+using Swarm.Core.Helpers;
 
 namespace Swarm.Avalonia.ViewModels;
 
@@ -12,8 +13,8 @@ namespace Swarm.Avalonia.ViewModels;
 /// </summary>
 public class FilesViewModel : ViewModelBase
 {
-    private readonly Settings _settings;
-    private readonly ShareLinkService _shareLinkService;
+    private readonly Settings _settings = null!;
+    private readonly ShareLinkService _shareLinkService = null!;
 
     private string _currentPath = "";
     private ObservableCollection<FileItemViewModel> _files = new();
@@ -59,8 +60,8 @@ public class FilesViewModel : ViewModelBase
         }
     }
 
-    public ICommand NavigateUpCommand { get; }
-    public ICommand OpenCommand { get; }
+    public ICommand NavigateUpCommand { get; } = null!;
+    public ICommand OpenCommand { get; } = null!;
 
     private void LoadFiles()
     {
