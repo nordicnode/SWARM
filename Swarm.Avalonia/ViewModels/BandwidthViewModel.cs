@@ -6,7 +6,7 @@ using LiveChartsCore;
 using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
-using Serilog;
+using Microsoft.Extensions.Logging;
 using SkiaSharp;
 using Swarm.Core.Helpers;
 using Swarm.Core.Models;

@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Swarm.Core.Models;
-using Serilog;
 
 namespace Swarm.Core.Services;
 
@@ -11,12 +11,14 @@ public class FileStateCacheService
 {
     private const string CacheFileName = ".swarm-cache";
     private readonly Settings _settings;
+    private readonly ILogger<FileStateCacheService> _logger;
     private readonly string _cachePath;
     private readonly object _lock = new();
 
-    public FileStateCacheService(Settings settings)
+    public FileStateCacheService(Settings settings, ILogger<FileStateCacheService> logger)
     {
         _settings = settings;
+        _logger = logger;
         _cachePath = Path.Combine(settings.SyncFolderPath, CacheFileName);
     }
 
@@ -33,7 +35,7 @@ public class FileStateCacheService
 
                 var json = File.ReadAllText(_cachePath);
                 var cache = JsonSerializer.Deserialize<Dictionary<string, SyncedFile>>(json);
-                Log.Information($"Loaded {cache?.Count ?? 0} items from file state cache");
+                _logger.LogInformation($"Loaded {cache?.Count ?? 0} items from file state cache");
                 
                 // Use case-insensitive dictionary
                 if (cache != null)
@@ -45,7 +47,7 @@ public class FileStateCacheService
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Failed to load file state cache");
+                _logger.LogWarning(ex, "Failed to load file state cache");
                 return new Dictionary<string, SyncedFile>(StringComparer.OrdinalIgnoreCase);
             }
         }
@@ -76,11 +78,11 @@ public class FileStateCacheService
                     fileInfo.Attributes |= FileAttributes.Hidden;
                 }
                 
-                Log.Debug($"Saved {fileStates.Count} items to file state cache");
+                _logger.LogDebug($"Saved {fileStates.Count} items to file state cache");
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Failed to save file state cache");
+                _logger.LogWarning(ex, "Failed to save file state cache");
             }
         }
     }

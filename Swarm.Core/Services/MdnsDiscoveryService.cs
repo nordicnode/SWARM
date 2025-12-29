@@ -3,7 +3,8 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Makaretu.Dns;
-using Serilog;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Swarm.Core.Models;
 
 namespace Swarm.Core.Services;
@@ -22,6 +23,7 @@ public class MdnsDiscoveryService : IDisposable
     private readonly CryptoService _cryptoService;
     private readonly Settings _settings;
     private readonly ConcurrentDictionary<string, Peer> _discoveredPeers = new();
+    private readonly ILogger<MdnsDiscoveryService> _logger;
     
     private MulticastService? _mdns;
     private ServiceDiscovery? _serviceDiscovery;
@@ -35,11 +37,12 @@ public class MdnsDiscoveryService : IDisposable
     public event Action<Peer>? PeerDiscovered;
     public event Action<Peer>? PeerLost;
     
-    public MdnsDiscoveryService(string localId, CryptoService cryptoService, Settings settings)
+    public MdnsDiscoveryService(string localId, CryptoService cryptoService, Settings settings, ILogger<MdnsDiscoveryService>? logger = null)
     {
         _localId = localId;
         _cryptoService = cryptoService;
         _settings = settings;
+        _logger = logger ?? NullLogger<MdnsDiscoveryService>.Instance;
     }
     
     public void Start(int transferPort)
@@ -87,11 +90,11 @@ public class MdnsDiscoveryService : IDisposable
             
             _mdns.Start();
             
-            Log.Debug("mDNS discovery started for {LocalId}", _localId);
+            _logger.LogDebug("mDNS discovery started for {LocalId}", _localId);
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Failed to start mDNS discovery");
+            _logger.LogWarning(ex, "Failed to start mDNS discovery");
             // mDNS is optional, don't crash if it fails
         }
     }
@@ -122,7 +125,7 @@ public class MdnsDiscoveryService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Failed to update mDNS advertisement");
+            _logger.LogWarning(ex, "Failed to update mDNS advertisement");
         }
     }
     
@@ -147,7 +150,7 @@ public class MdnsDiscoveryService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "mDNS discovery error");
+            _logger.LogWarning(ex, "mDNS discovery error");
         }
     }
     
@@ -237,7 +240,7 @@ public class MdnsDiscoveryService : IDisposable
             
             if (_discoveredPeers.TryAdd(peerId, peer))
             {
-                Log.Debug("mDNS discovered peer: {PeerName} ({IpAddress})", peerName, ipAddress);
+                _logger.LogDebug("mDNS discovered peer: {PeerName} ({IpAddress})", peerName, ipAddress);
                 PeerDiscovered?.Invoke(peer);
             }
             else if (_discoveredPeers.TryGetValue(peerId, out var existing))
@@ -251,7 +254,7 @@ public class MdnsDiscoveryService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Error processing mDNS answers");
+            _logger.LogWarning(ex, "Error processing mDNS answers");
         }
     }
     
@@ -267,13 +270,13 @@ public class MdnsDiscoveryService : IDisposable
             
             if (_discoveredPeers.TryRemove(peerId, out var peer))
             {
-                Log.Debug("mDNS peer left: {PeerName}", peer.Name);
+                _logger.LogDebug("mDNS peer left: {PeerName}", peer.Name);
                 PeerLost?.Invoke(peer);
             }
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "mDNS shutdown handler error");
+            _logger.LogWarning(ex, "mDNS shutdown handler error");
         }
     }
     
@@ -297,7 +300,7 @@ public class MdnsDiscoveryService : IDisposable
         _mdns?.Dispose();
         _cts?.Dispose();
         
-        Log.Debug("mDNS discovery stopped");
+        _logger.LogDebug("mDNS discovery stopped");
     }
 }
 

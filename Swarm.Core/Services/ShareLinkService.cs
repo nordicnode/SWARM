@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Web;
+using Microsoft.Extensions.Logging;
 using Serilog;
 using Swarm.Core.Abstractions;
 
@@ -47,6 +48,7 @@ public class ShareLinkService : IDisposable
     
     private readonly Settings _settings;
     private readonly IHashingService _hashingService;
+    private readonly ILogger<ShareLinkService> _logger;
     private readonly string _shareLinksPath;
     private readonly Dictionary<string, ShareLink> _shareLinks = new();
     private readonly object _lock = new();
@@ -63,10 +65,11 @@ public class ShareLinkService : IDisposable
     public event Action<string, IPEndPoint>? ShareRequested;
 #pragma warning restore CS0067
     
-    public ShareLinkService(Settings settings, IHashingService hashingService)
+    public ShareLinkService(Settings settings, IHashingService hashingService, ILogger<ShareLinkService> logger)
     {
         _settings = settings;
         _hashingService = hashingService;
+        _logger = logger;
         
         // Store share links in settings directory
         var settingsDir = Settings.IsPortableMode
@@ -112,7 +115,7 @@ public class ShareLinkService : IDisposable
             SaveShareLinks();
         }
         
-        Log.Information($"[ShareLink] Created: {shareLink.Uri} -> {relativePath}");
+        _logger.LogInformation($"[ShareLink] Created: {shareLink.Uri} -> {relativePath}");
         
         return shareLink;
     }
@@ -132,7 +135,7 @@ public class ShareLinkService : IDisposable
             // Check expiration
             if (shareLink.IsExpired)
             {
-                Log.Information($"[ShareLink] Link expired: {shareId}");
+                _logger.LogInformation($"[ShareLink] Link expired: {shareId}");
                 return null;
             }
             
@@ -141,7 +144,7 @@ public class ShareLinkService : IDisposable
             {
                 if (password == null || HashPassword(password) != shareLink.Password)
                 {
-                    Log.Warning($"[ShareLink] Invalid password: {shareId}");
+                    _logger.LogWarning($"[ShareLink] Invalid password: {shareId}");
                     return null;
                 }
             }
@@ -167,7 +170,7 @@ public class ShareLinkService : IDisposable
             if (_shareLinks.Remove(shareId))
             {
                 SaveShareLinks();
-                Log.Information($"[ShareLink] Revoked: {shareId}");
+                _logger.LogInformation($"[ShareLink] Revoked: {shareId}");
                 return true;
             }
             return false;
@@ -208,7 +211,7 @@ public class ShareLinkService : IDisposable
             if (expired.Count > 0)
             {
                 SaveShareLinks();
-                Log.Information($"[ShareLink] Cleaned up {expired.Count} expired links");
+                _logger.LogInformation($"[ShareLink] Cleaned up {expired.Count} expired links");
             }
             
             return expired.Count;
@@ -345,7 +348,7 @@ public class ShareLinkService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"[ShareLink] Failed to register protocol: {ex.Message}");
+            Log.Error(ex, "[ShareLink] Failed to register protocol: {Message}", ex.Message);
             return false;
         }
     }
@@ -394,12 +397,12 @@ public class ShareLinkService : IDisposable
                         _shareLinks[link.Id] = link;
                     }
                 }
-                Log.Information($"[ShareLink] Loaded {links.Count} share links");
+                _logger.LogInformation($"[ShareLink] Loaded {links.Count} share links");
             }
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"[ShareLink] Failed to load: {ex.Message}");
+            _logger.LogError(ex, $"[ShareLink] Failed to load: {ex.Message}");
         }
     }
     
@@ -419,7 +422,7 @@ public class ShareLinkService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"[ShareLink] Failed to save: {ex.Message}");
+            _logger.LogError(ex, $"[ShareLink] Failed to save: {ex.Message}");
         }
     }
     
@@ -458,12 +461,12 @@ MimeType=x-scheme-handler/swarm;
             // 2. Register with xdg-mime
             System.Diagnostics.Process.Start("xdg-mime", "default swarm-handler.desktop x-scheme-handler/swarm");
             
-            Log.Information($"[ShareLink] Linux protocol handler registered at {desktopFilePath}");
+            Log.Information("[ShareLink] Linux protocol handler registered at {Path}", desktopFilePath);
             return true;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"[ShareLink] Failed to register Linux protocol: {ex.Message}");
+            Log.Error(ex, "[ShareLink] Failed to register Linux protocol: {Message}", ex.Message);
             return false;
         }
     }

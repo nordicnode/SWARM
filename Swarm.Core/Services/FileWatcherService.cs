@@ -1,7 +1,8 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Swarm.Core.Helpers;
 using Swarm.Core.Models;
-using Serilog;
 
 namespace Swarm.Core.Services;
 
@@ -13,6 +14,7 @@ public class FileWatcherService : IDisposable
 {
     private readonly Settings _settings;
     private readonly SwarmIgnoreService _swarmIgnoreService;
+    private readonly ILogger<FileWatcherService> _logger;
     
     private FileSystemWatcher? _watcher;
     private CancellationTokenSource? _cts;
@@ -47,9 +49,10 @@ public class FileWatcherService : IDisposable
     public event Action<string, string>? DirectoryRenameDetected; // oldPath, newPath
     public event Action<Exception, bool>? WatcherError; // exception, isBufferOverflow
 
-    public FileWatcherService(Settings settings)
+    public FileWatcherService(Settings settings, ILogger<FileWatcherService>? logger = null)
     {
         _settings = settings;
+        _logger = logger ?? NullLogger<FileWatcherService>.Instance;
         _swarmIgnoreService = new SwarmIgnoreService(settings);
     }
 
@@ -88,7 +91,7 @@ public class FileWatcherService : IDisposable
         // Start debounce processor
         _ = Task.Run(() => ProcessPendingChanges(_cts.Token));
         
-        Log.Information($"FileWatcherService started, watching: {_settings.SyncFolderPath}");
+        _logger.LogInformation($"FileWatcherService started, watching: {_settings.SyncFolderPath}");
     }
 
     /// <summary>
@@ -105,7 +108,7 @@ public class FileWatcherService : IDisposable
             _watcher = null;
         }
         
-        Log.Information("FileWatcherService stopped");
+        _logger.LogInformation("FileWatcherService stopped");
     }
 
     /// <summary>
@@ -147,14 +150,14 @@ public class FileWatcherService : IDisposable
     private void OnWatcherError(object sender, ErrorEventArgs e)
     {
         var exception = e.GetException();
-        Log.Error(exception, $"FileSystemWatcher error: {exception.Message}");
+        _logger.LogError(exception, $"FileSystemWatcher error: {exception.Message}");
         
         bool isBufferOverflow = false;
         if (exception is System.ComponentModel.Win32Exception win32Ex)
         {
             if (win32Ex.NativeErrorCode == 122)
             {
-                Log.Fatal("[CRITICAL] FileSystemWatcher internal buffer overflow detected!");
+                _logger.LogCritical("[CRITICAL] FileSystemWatcher internal buffer overflow detected!");
                 isBufferOverflow = true;
             }
         }
@@ -197,13 +200,13 @@ public class FileWatcherService : IDisposable
             var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, path);
             if (_swarmIgnoreService.IsIgnored(relativePath))
             {
-                Log.Debug($"[SwarmIgnore] Ignoring: {relativePath}");
+                _logger.LogDebug($"[SwarmIgnore] Ignoring: {relativePath}");
                 return true;
             }
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, $"[SwarmIgnore] Error checking path: {ex.Message}");
+            _logger.LogWarning(ex, $"[SwarmIgnore] Error checking path: {ex.Message}");
         }
 
         return false;
@@ -212,7 +215,7 @@ public class FileWatcherService : IDisposable
     private void QueueChange(string fullPath, SyncAction action)
     {
         _pendingChanges[fullPath] = DateTime.Now;
-        Log.Debug($"Queued change: {action} - {fullPath}");
+        _logger.LogDebug($"Queued change: {action} - {fullPath}");
     }
 
     private void QueueRename(string oldFullPath, string newFullPath)
@@ -227,7 +230,7 @@ public class FileWatcherService : IDisposable
             TrackDirectoryRenameCandidate(oldDir, newDir, newFullPath);
         }
         
-        Log.Debug($"Queued rename: {oldFullPath} -> {newFullPath}");
+        _logger.LogDebug($"Queued rename: {oldFullPath} -> {newFullPath}");
     }
 
     private void TrackDirectoryRenameCandidate(string oldParent, string newParent, string newFilePath)
@@ -294,7 +297,7 @@ public class FileWatcherService : IDisposable
                             
                             if (affectedFiles.Count >= DIRECTORY_RENAME_THRESHOLD)
                             {
-                                Log.Information($"[DIRECTORY RENAME] Detected: {oldParent} -> {newParent} ({affectedFiles.Count} files)");
+                                _logger.LogInformation($"[DIRECTORY RENAME] Detected: {oldParent} -> {newParent} ({affectedFiles.Count} files)");
                                 MarkDirectoryAsRenamed(oldParent);
                                 DirectoryRenameDetected?.Invoke(oldParent, newParent);
                                 
@@ -317,7 +320,7 @@ public class FileWatcherService : IDisposable
                             // Skip if part of a recently detected directory rename
                             if (IsSubpathOfRenamedDirectory(oldPath))
                             {
-                                Log.Debug($"Suppressing file rename (part of dir rename): {oldPath}");
+                                _logger.LogDebug($"Suppressing file rename (part of dir rename): {oldPath}");
                                 continue;
                             }
                             
@@ -348,7 +351,7 @@ public class FileWatcherService : IDisposable
             }
             catch (Exception ex)
             {
-                Log.Error(ex, $"Error processing pending changes: {ex.Message}");
+                _logger.LogError(ex, $"Error processing pending changes: {ex.Message}");
             }
         }
     }

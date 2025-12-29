@@ -1,0 +1,13 @@
+2025-12-29 11:26:28.329 -08:00 [INF] Swarm Avalonia application started.
+2025-12-29 11:26:29.415 -08:00 [INF] Migrating from legacy JSON cache to SQLite...
+2025-12-29 11:26:29.542 -08:00 [INF] Migrated 5 file states from JSON to SQLite
+2025-12-29 11:26:29.545 -08:00 [INF] Legacy JSON cache backed up to C:\Users\Mikey\Documents\SWARM\Synced\.swarm-cache.migrated
+2025-12-29 11:26:29.545 -08:00 [INF] Initialized SQLite file state repository: C:\Users\Mikey\Documents\SWARM\Synced\.swarm-state.db
+2025-12-29 11:26:29.581 -08:00 [INF] [ShareLink] Loaded 1 share links
+2025-12-29 11:26:29.583 -08:00 [INF] BandwidthTrackingService initialized
+2025-12-29 11:26:29.613 -08:00 [INF] IPv6 discovery enabled
+2025-12-29 11:26:29.800 -08:00 [DBG] SQLite repository ready with 0 entries
+2025-12-29 11:26:29.828 -08:00 [INF] Built initial state. Cache hits: 0, Misses/Updates: 0. Total tracked: 0
+2025-12-29 11:26:29.829 -08:00 [DBG] Saved 0 file states to SQLite
+2025-12-29 11:26:29.830 -08:00 [INF] SyncService started, watching: C:\Users\Mikey\Documents\SWARM\Synced
+2025-12-29 11:26:42.681 -08:00 [INF] Swarm Avalonia application exiting.

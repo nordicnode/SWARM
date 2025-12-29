@@ -2,7 +2,8 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using Avalonia.Threading;
-using Serilog;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Swarm.Core.Models;
 using Swarm.Core.Services;
 
@@ -16,6 +17,7 @@ public class PeersViewModel : ViewModelBase
     private readonly DiscoveryService _discoveryService = null!;
     private readonly TransferService _transferService = null!;
     private readonly Settings _settings = null!;
+    private readonly ILogger<PeersViewModel> _logger;
 
     private ObservableCollection<PeerItemViewModel> _peers = new();
     private PeerItemViewModel? _selectedPeer;
@@ -23,6 +25,7 @@ public class PeersViewModel : ViewModelBase
     public PeersViewModel()
     {
         // Design-time constructor
+        _logger = NullLogger<PeersViewModel>.Instance;
     }
 
     public PeersViewModel(DiscoveryService discoveryService, TransferService transferService, Settings settings)
@@ -81,7 +84,7 @@ public class PeersViewModel : ViewModelBase
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Failed to send file {File} to peer {Peer}", file, peer.Name);
+                _logger.LogError(ex, "Failed to send file {File} to peer {Peer}", file, peer.Name);
             }
         }
     }

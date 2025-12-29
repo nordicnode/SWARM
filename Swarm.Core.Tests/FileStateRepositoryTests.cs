@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Swarm.Core.Abstractions;
 using Swarm.Core.Models;
 using Swarm.Core.Services;
@@ -19,7 +20,7 @@ public class FileStateRepositoryTests : IDisposable
         _testSyncFolder = Path.Combine(Path.GetTempPath(), $"SwarmRepoTest_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testSyncFolder);
         _settings = new Settings { SyncFolderPath = _testSyncFolder };
-        _repository = new FileStateRepository(_settings);
+        _repository = new FileStateRepository(_settings, NullLogger<FileStateRepository>.Instance);
     }
 
     [Fact]
@@ -203,7 +204,7 @@ public class FileStateRepositoryTests : IDisposable
         _repository.SaveChanges();
 
         // Create new repository instance
-        var newRepository = new FileStateRepository(_settings);
+        var newRepository = new FileStateRepository(_settings, NullLogger<FileStateRepository>.Instance);
 
         // Act
         newRepository.Load();

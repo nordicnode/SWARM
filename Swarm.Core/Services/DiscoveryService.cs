@@ -4,8 +4,8 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Swarm.Core.Models;
-using Serilog;
 using Swarm.Core.Abstractions;
 
 namespace Swarm.Core.Services;
@@ -27,6 +27,7 @@ public class DiscoveryService : IDiscoveryService
     private readonly CryptoService _cryptoService;
     private readonly Settings _settings;
     private readonly Abstractions.IDispatcher? _dispatcher;
+    private readonly ILogger<DiscoveryService> _logger;
     private MdnsDiscoveryService? _mdnsService;
     
     public ObservableCollection<Peer> Peers { get; } = [];
@@ -48,11 +49,12 @@ public class DiscoveryService : IDiscoveryService
     /// </summary>
     public bool IsSyncEnabled { get; set; }
 
-    public DiscoveryService(string localId, CryptoService cryptoService, Settings settings, Abstractions.IDispatcher? dispatcher = null)
+    public DiscoveryService(string localId, CryptoService cryptoService, Settings settings, ILogger<DiscoveryService> logger, Abstractions.IDispatcher? dispatcher = null)
     {
         LocalId = localId;
         _cryptoService = cryptoService;
         _settings = settings;
+        _logger = logger;
         _dispatcher = dispatcher;
         
         // Initialize mDNS companion service for VLAN/corporate networks
@@ -65,7 +67,7 @@ public class DiscoveryService : IDiscoveryService
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, $"mDNS initialization failed (non-fatal): {ex.Message}");
+            _logger.LogWarning(ex, $"mDNS initialization failed (non-fatal): {ex.Message}");
             _mdnsService = null;
         }
     }
@@ -86,7 +88,7 @@ public class DiscoveryService : IDiscoveryService
         }
         catch (SocketException ex)
         {
-            Log.Warning(ex, $"IPv4 discovery socket error: {ex.Message}");
+            _logger.LogWarning(ex, $"IPv4 discovery socket error: {ex.Message}");
             BindingFailed?.Invoke();
             _udpClient = new UdpClient(0);
             _udpClient.EnableBroadcast = true;
@@ -100,11 +102,11 @@ public class DiscoveryService : IDiscoveryService
             _udpClientV6.Client.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, true);
             _udpClientV6.ExclusiveAddressUse = false;
             _udpClientV6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, DISCOVERY_PORT));
-            Log.Information("IPv6 discovery enabled");
+            _logger.LogInformation("IPv6 discovery enabled");
         }
         catch (SocketException ex)
         {
-            Log.Debug($"IPv6 discovery not available: {ex.Message}");
+            _logger.LogDebug($"IPv6 discovery not available: {ex.Message}");
             _udpClientV6 = null; // IPv6 not available on this system
         }
 
@@ -144,7 +146,7 @@ public class DiscoveryService : IDiscoveryService
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                Log.Warning(ex, $"Broadcast error: {ex.Message}");
+                _logger.LogWarning(ex, $"Broadcast error: {ex.Message}");
             }
         }
     }
@@ -205,7 +207,7 @@ public class DiscoveryService : IDiscoveryService
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                Log.Error(ex, $"Listen error: {ex.Message}");
+                _logger.LogError(ex, $"Listen error: {ex.Message}");
             }
         }
     }
@@ -226,7 +228,7 @@ public class DiscoveryService : IDiscoveryService
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                Log.Debug($"IPv6 listen error: {ex.Message}");
+                _logger.LogDebug($"IPv6 listen error: {ex.Message}");
             }
         }
     }
@@ -266,20 +268,20 @@ public class DiscoveryService : IDiscoveryService
                         
                         if (!signatureValid)
                         {
-                            Log.Warning($"Invalid signature from peer {peerId}");
+                            _logger.LogWarning($"Invalid signature from peer {peerId}");
                             return; // Reject messages with invalid signatures
                         }
                     }
                     catch (Exception ex)
                     {
-                        Log.Warning(ex, $"Signature verification error: {ex.Message}");
+                        _logger.LogWarning(ex, $"Signature verification error: {ex.Message}");
                         return;
                     }
                 }
             }
             catch (JsonException ex)
             {
-                Log.Debug(ex, $"JSON parse error: {ex.Message}");
+                _logger.LogDebug(ex, $"JSON parse error: {ex.Message}");
                 return;
             }
         }
@@ -417,7 +419,7 @@ public class DiscoveryService : IDiscoveryService
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Failed to enumerate network interfaces for broadcast");
+            _logger.LogWarning(ex, "Failed to enumerate network interfaces for broadcast");
         }
 
         return addresses;

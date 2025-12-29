@@ -5,7 +5,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
-using Serilog;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Swarm.Core.Models;
 using Swarm.Core.Services;
 using Swarm.Core.Helpers;
@@ -21,6 +22,7 @@ public class OverviewViewModel : ViewModelBase, IDisposable
     private readonly DiscoveryService _discoveryService = null!;
     private readonly ActivityLogService? _activityLogService;
     private readonly Settings _settings = null!;
+    private readonly ILogger<OverviewViewModel> _logger;
 
     private string _syncFolderPath = "";
     private int _totalFiles;
@@ -45,6 +47,7 @@ public class OverviewViewModel : ViewModelBase, IDisposable
         // Sample design-time activities
         RecentActivities.Add(new RecentActivityItem("File Synced", "document.pdf synced with Laptop", DateTime.Now.AddMinutes(-2)));
         RecentActivities.Add(new RecentActivityItem("Peer Connected", "Laptop connected", DateTime.Now.AddMinutes(-5)));
+        _logger = NullLogger<OverviewViewModel>.Instance;
     }
 
     public OverviewViewModel(
@@ -155,7 +158,7 @@ public class OverviewViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Failed to calculate sync folder stats for {Path}", _settings.SyncFolderPath);
+            _logger.LogWarning(ex, "Failed to calculate sync folder stats for {Path}", _settings.SyncFolderPath);
             if (!ct.IsCancellationRequested)
             {
                 UpdateUI(0, "Error");

@@ -1,9 +1,10 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Swarm.Core.Abstractions;
 using Swarm.Core.Models;
-using Serilog;
 
 namespace Swarm.Core.Services;
 
@@ -16,16 +17,18 @@ public class ConnectionManager : IDisposable
     private readonly ConcurrentDictionary<string, ConnectionPool> _connectionPools = new();
     private readonly Settings _settings;
     private readonly CryptoService _cryptoService;
+    private readonly ILogger<ConnectionManager> _logger;
 
     /// <summary>
     /// Delegate for performing secure handshake when establishing a connection.
     /// </summary>
     public Func<PeerConnection, Peer, CancellationToken, Task>? HandshakeHandler { get; set; }
 
-    public ConnectionManager(Settings settings, CryptoService cryptoService)
+    public ConnectionManager(Settings settings, CryptoService cryptoService, ILogger<ConnectionManager>? logger = null)
     {
         _settings = settings;
         _cryptoService = cryptoService;
+        _logger = logger ?? NullLogger<ConnectionManager>.Instance;
     }
 
     /// <summary>
@@ -134,7 +137,7 @@ public class ConnectionManager : IDisposable
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, $"Error disposing connection pool: {ex.Message}");
+                _logger.LogWarning(ex, $"Error disposing connection pool: {ex.Message}");
             }
         }
         _connectionPools.Clear();

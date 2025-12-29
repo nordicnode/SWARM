@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Swarm.Core.Abstractions;
 using Swarm.Core.Models;
@@ -34,7 +35,7 @@ public class VersioningServiceTests : IDisposable
         _mockHashing.Setup(h => h.ComputeFileHashAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("TESTHASH123");
             
-        _service = new VersioningService(_settings, _mockHashing.Object);
+        _service = new VersioningService(_settings, _mockHashing.Object, NullLogger<VersioningService>.Instance);
     }
 
     [Fact]
@@ -206,3 +207,4 @@ public class VersioningServiceTests : IDisposable
         catch { /* Ignore cleanup errors */ }
     }
 }
+

@@ -1,9 +1,9 @@
 using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Swarm.Core.Models;
 
-using Serilog;
 using Swarm.Core.Abstractions;
 
 namespace Swarm.Core.Services;
@@ -19,16 +19,18 @@ public class VersioningService : IDisposable
     
     private readonly Settings _settings;
     private readonly IHashingService _hashingService;
+    private readonly ILogger<VersioningService> _logger;
     private readonly string _versionsBasePath;
     private readonly string _manifestPath;
     private readonly object _manifestLock = new();
     private List<VersionInfo> _versions = [];
     private bool _isInitialized;
 
-    public VersioningService(Settings settings, IHashingService hashingService)
+    public VersioningService(Settings settings, IHashingService hashingService, ILogger<VersioningService> logger)
     {
         _settings = settings;
         _hashingService = hashingService;
+        _logger = logger;
         _versionsBasePath = Path.Combine(settings.SyncFolderPath, VERSIONS_FOLDER);
         _manifestPath = Path.Combine(_versionsBasePath, MANIFEST_FILE);
     }
@@ -56,11 +58,11 @@ public class VersioningService : IDisposable
             LoadManifest();
             _isInitialized = true;
 
-            Log.Information($"VersioningService initialized with {_versions.Count} versions");
+            _logger.LogInformation($"VersioningService initialized with {_versions.Count} versions");
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"Failed to initialize VersioningService: {ex.Message}");
+            _logger.LogError(ex, $"Failed to initialize VersioningService: {ex.Message}");
         }
     }
 
@@ -105,7 +107,7 @@ public class VersioningService : IDisposable
                 v.RelativePath == relativePath && v.ContentHash == contentHash);
             if (existingVersion != null)
             {
-                Log.Debug($"Skipping duplicate version for {relativePath}");
+                _logger.LogDebug($"Skipping duplicate version for {relativePath}");
                 return existingVersion;
             }
 
@@ -142,12 +144,12 @@ public class VersioningService : IDisposable
             // Prune old versions for this file
             await PruneVersionsForFileAsync(relativePath);
 
-            Log.Information($"Created version {versionId} for {relativePath} (Reason: {reason})");
+            _logger.LogInformation($"Created version {versionId} for {relativePath} (Reason: {reason})");
             return versionInfo;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"Failed to create version for {relativePath}: {ex.Message}");
+            _logger.LogError(ex, $"Failed to create version for {relativePath}: {ex.Message}");
             return null;
         }
     }
@@ -224,7 +226,7 @@ public class VersioningService : IDisposable
 
             if (!File.Exists(versionFilePath))
             {
-                Log.Warning($"Version file not found: {versionFilePath}");
+                _logger.LogWarning($"Version file not found: {versionFilePath}");
                 return false;
             }
 
@@ -245,12 +247,12 @@ public class VersioningService : IDisposable
 
             await CopyFileAsync(versionFilePath, targetPath);
 
-            Log.Information($"Restored version {version.VersionId} of {version.RelativePath}");
+            _logger.LogInformation($"Restored version {version.VersionId} of {version.RelativePath}");
             return true;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"Failed to restore version: {ex.Message}");
+            _logger.LogError(ex, $"Failed to restore version: {ex.Message}");
             return false;
         }
     }
@@ -283,12 +285,12 @@ public class VersioningService : IDisposable
             SaveManifest();
             CleanupEmptyFolders();
 
-            Log.Information($"Deleted version {version.VersionId} of {version.RelativePath}");
+            _logger.LogInformation($"Deleted version {version.VersionId} of {version.RelativePath}");
             return true;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"Failed to delete version: {ex.Message}");
+            _logger.LogError(ex, $"Failed to delete version: {ex.Message}");
             return false;
         }
     }
@@ -322,7 +324,7 @@ public class VersioningService : IDisposable
 
         if (toDelete.Count > 0)
         {
-            Log.Information($"Pruned {toDelete.Count} old versions for {relativePath}");
+            _logger.LogInformation($"Pruned {toDelete.Count} old versions for {relativePath}");
         }
 
         await Task.CompletedTask;
@@ -381,7 +383,7 @@ public class VersioningService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, $"Failed to open versions folder: {ex.Message}");
+            _logger.LogWarning(ex, $"Failed to open versions folder: {ex.Message}");
         }
     }
 
@@ -419,7 +421,7 @@ public class VersioningService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, $"Failed to open version location: {ex.Message}");
+            _logger.LogWarning(ex, $"Failed to open version location: {ex.Message}");
         }
     }
 
@@ -443,7 +445,7 @@ public class VersioningService : IDisposable
             }
             catch (Exception ex)
             {
-                Log.Error(ex, $"Failed to load version manifest: {ex.Message}");
+                _logger.LogError(ex, $"Failed to load version manifest: {ex.Message}");
                 _versions = [];
             }
         }
@@ -461,7 +463,7 @@ public class VersioningService : IDisposable
             }
             catch (Exception ex)
             {
-                Log.Error(ex, $"Failed to save version manifest: {ex.Message}");
+                _logger.LogError(ex, $"Failed to save version manifest: {ex.Message}");
             }
         }
     }
@@ -504,7 +506,7 @@ public class VersioningService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, $"Failed to cleanup empty folders: {ex.Message}");
+            _logger.LogWarning(ex, $"Failed to cleanup empty folders: {ex.Message}");
         }
     }
 

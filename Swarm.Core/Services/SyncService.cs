@@ -3,10 +3,10 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Swarm.Core.Abstractions;
 using Swarm.Core.Helpers;
 using Swarm.Core.Models;
-using Serilog;
 
 namespace Swarm.Core.Services;
 
@@ -34,6 +34,7 @@ public class SyncService : IDisposable
     private readonly ConflictResolutionService? _conflictResolutionService;
     private readonly FolderEncryptionService _folderEncryptionService;
     private readonly FileWatcherService _fileWatcherService;
+    private readonly ILogger<SyncService> _logger;
     
     private CancellationTokenSource? _cts;
     
@@ -67,7 +68,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, $"Failed to enumerate sync folder files: {ex.Message}");
+            _logger.LogWarning(ex, $"Failed to enumerate sync folder files: {ex.Message}");
             return _fileStateRepository.Count; // Fallback to tracked state
         }
     }
@@ -107,7 +108,7 @@ public class SyncService : IDisposable
     // Track pending delta sync operations (relativePath -> peer awaiting delta)
     private readonly ConcurrentDictionary<string, (Peer peer, SyncedFile syncFile)> _pendingDeltaSyncs = new();
 
-    public SyncService(Settings settings, IDiscoveryService discoveryService, ITransferService transferService, VersioningService versioningService, IHashingService hashingService, IFileStateRepository fileStateRepository, FolderEncryptionService folderEncryptionService, ActivityLogService? activityLogService = null, ConflictResolutionService? conflictResolutionService = null)
+    public SyncService(Settings settings, IDiscoveryService discoveryService, ITransferService transferService, VersioningService versioningService, IHashingService hashingService, IFileStateRepository fileStateRepository, FolderEncryptionService folderEncryptionService, ILogger<SyncService> logger, ActivityLogService? activityLogService = null, ConflictResolutionService? conflictResolutionService = null)
     {
         _settings = settings;
         _discoveryService = discoveryService;
@@ -116,6 +117,7 @@ public class SyncService : IDisposable
         _hashingService = hashingService;
         _fileStateRepository = fileStateRepository;
         _folderEncryptionService = folderEncryptionService;
+        _logger = logger;
         _activityLogService = activityLogService;
         _conflictResolutionService = conflictResolutionService;
         _swarmIgnoreService = new SwarmIgnoreService(settings);
@@ -150,7 +152,7 @@ public class SyncService : IDisposable
         if (!peer.IsTrusted || !peer.IsSyncEnabled || !IsRunning)
             return;
             
-        Log.Information($"[SYNC] Trusted peer {peer.Name} connected, sending manifest...");
+        _logger.LogInformation($"[SYNC] Trusted peer {peer.Name} connected, sending manifest...");
         
         try
         {
@@ -160,7 +162,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"[SYNC] Failed to sync with {peer.Name}: {ex.Message}");
+            _logger.LogError(ex, $"[SYNC] Failed to sync with {peer.Name}: {ex.Message}");
         }
     }
 
@@ -193,11 +195,11 @@ public class SyncService : IDisposable
                 _fileWatcherService.Start();
 
                 SyncStatusChanged?.Invoke("Sync enabled - Watching for changes");
-                Log.Information($"SyncService started, watching: {_settings.SyncFolderPath}");
+                _logger.LogInformation($"SyncService started, watching: {_settings.SyncFolderPath}");
             }
             catch (Exception ex)
             {
-                Log.Error(ex, $"Failed to start SyncService: {ex.Message}");
+                _logger.LogError(ex, $"Failed to start SyncService: {ex.Message}");
                 SyncStatusChanged?.Invoke("Sync failed to start");
             }
         });
@@ -307,7 +309,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"Failed to handle sync file {syncFile.RelativePath}: {ex.Message}");
+            _logger.LogError(ex, $"Failed to handle sync file {syncFile.RelativePath}: {ex.Message}");
         }
     }
 
@@ -347,7 +349,7 @@ public class SyncService : IDisposable
                     // Check for future timestamp (Clock Drift Protection)
                     if (remoteFile.LastModified > DateTime.UtcNow.AddMinutes(10))
                     {
-                        Log.Warning($"[Warning] Peer {sourcePeer.Name} has file {remoteFile.RelativePath} from the future ({remoteFile.LastModified}). Ignoring to prevent corruption.");
+                        _logger.LogWarning($"[Warning] Peer {sourcePeer.Name} has file {remoteFile.RelativePath} from the future ({remoteFile.LastModified}). Ignoring to prevent corruption.");
                         TimeTravelDetected?.Invoke(remoteFile.RelativePath, remoteFile.LastModified);
                         continue;
                     }
@@ -385,7 +387,7 @@ public class SyncService : IDisposable
                     // Check for future timestamp on new files too
                     if (remoteFile.LastModified > DateTime.UtcNow.AddMinutes(10))
                     {
-                        Log.Warning($"[Warning] Peer {sourcePeer.Name} offering new file {remoteFile.RelativePath} from the future. Ignoring.");
+                        _logger.LogWarning($"[Warning] Peer {sourcePeer.Name} offering new file {remoteFile.RelativePath} from the future. Ignoring.");
                         TimeTravelDetected?.Invoke(remoteFile.RelativePath, remoteFile.LastModified);
                         continue;
                     }
@@ -468,11 +470,11 @@ public class SyncService : IDisposable
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, $"Failed to read file {filePath}: {ex.Message}");
+                _logger.LogWarning(ex, $"Failed to read file {filePath}: {ex.Message}");
             }
         }
 
-        Log.Information($"Built initial state. Cache hits: {cacheHits}, Misses/Updates: {cacheMisses}. Total tracked: {_fileStateRepository.Count}");
+        _logger.LogInformation($"Built initial state. Cache hits: {cacheHits}, Misses/Updates: {cacheMisses}. Total tracked: {_fileStateRepository.Count}");
         
         // Save updated cache immediately
         _fileStateRepository.SaveChanges();
@@ -494,7 +496,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"[SYNC] Error processing file change for {fullPath}: {ex.Message}");
+            _logger.LogError(ex, $"[SYNC] Error processing file change for {fullPath}: {ex.Message}");
         }
     }
 
@@ -510,7 +512,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"[SYNC] Error processing rename {oldPath} -> {newPath}: {ex.Message}");
+            _logger.LogError(ex, $"[SYNC] Error processing rename {oldPath} -> {newPath}: {ex.Message}");
         }
     }
 
@@ -520,14 +522,14 @@ public class SyncService : IDisposable
         {
             var oldRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, oldPath);
             var newRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, newPath);
-            Log.Information($"[SYNC] Directory renamed: {oldRelativePath} -> {newRelativePath}");
+            _logger.LogInformation($"[SYNC] Directory renamed: {oldRelativePath} -> {newRelativePath}");
             _activityLogService?.LogFileSync(newRelativePath, $"directory renamed from {oldRelativePath}");
             
             await ProcessFileRename(oldPath, newPath);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"[SYNC] Error processing directory rename {oldPath} -> {newPath}: {ex.Message}");
+            _logger.LogError(ex, $"[SYNC] Error processing directory rename {oldPath} -> {newPath}: {ex.Message}");
         }
     }
 
@@ -544,11 +546,11 @@ public class SyncService : IDisposable
                 
                 if (isBufferOverflow)
                 {
-                    Log.Warning("Triggering full sync to recover from buffer overflow");
+                    _logger.LogWarning("Triggering full sync to recover from buffer overflow");
                 }
                 else
                 {
-                    Log.Warning("Triggering full sync to recover from watcher error");
+                    _logger.LogWarning("Triggering full sync to recover from watcher error");
                 }
                 
                 await ForceSyncAsync();
@@ -560,7 +562,7 @@ public class SyncService : IDisposable
             }
             catch (Exception syncEx)
             {
-                Log.Error(syncEx, $"Failed to sync after watcher error: {syncEx.Message}");
+                _logger.LogError(syncEx, $"Failed to sync after watcher error: {syncEx.Message}");
             }
         });
     }
@@ -871,11 +873,11 @@ public class SyncService : IDisposable
                         switch (choice)
                         {
                             case ConflictChoice.KeepLocal:
-                                Log.Information($"[Conflict] Keeping local version of {syncFile.RelativePath}");
+                                _logger.LogInformation($"[Conflict] Keeping local version of {syncFile.RelativePath}");
                                 return; // Don't overwrite
                             
                             case ConflictChoice.Skip:
-                                Log.Information($"[Conflict] Skipped resolution for {syncFile.RelativePath}");
+                                _logger.LogInformation($"[Conflict] Skipped resolution for {syncFile.RelativePath}");
                                 return; // Don't overwrite
                             
                             case ConflictChoice.KeepBoth:
@@ -884,7 +886,7 @@ public class SyncService : IDisposable
                                     localPath, syncFile.SourcePeerName ?? "Remote");
                                 await WriteStreamToFile(syncFile, conflictPath, dataStream);
                                 FileConflictDetected?.Invoke(localPath, conflictPath);
-                                Log.Information($"[Conflict] Kept both: {syncFile.RelativePath} and conflict copy");
+                                _logger.LogInformation($"[Conflict] Kept both: {syncFile.RelativePath} and conflict copy");
                                 return; // We wrote the conflict copy, don't overwrite original
                             
                             case ConflictChoice.KeepRemote:
@@ -900,14 +902,14 @@ public class SyncService : IDisposable
                                         syncFile.RelativePath, localPath, "Conflict", syncFile.SourcePeerId);
                                 }
                                 FileConflictDetected?.Invoke(localPath, null);
-                                Log.Information($"[Conflict] Overwriting local with remote for {syncFile.RelativePath}");
+                                _logger.LogInformation($"[Conflict] Overwriting local with remote for {syncFile.RelativePath}");
                                 break; // Continue to write remote file
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning(ex, $"Failed to process conflict for {syncFile.RelativePath}: {ex.Message}");
+                    _logger.LogWarning(ex, $"Failed to process conflict for {syncFile.RelativePath}: {ex.Message}");
                 }
             }
 
@@ -1024,7 +1026,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"[SYNC] Error receiving file {syncFile.RelativePath}: {ex.Message}");
+            _logger.LogError(ex, $"[SYNC] Error receiving file {syncFile.RelativePath}: {ex.Message}");
         }
     }
 
@@ -1036,7 +1038,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"[SYNC] Error processing delete {syncFile.RelativePath}: {ex.Message}");
+            _logger.LogError(ex, $"[SYNC] Error processing delete {syncFile.RelativePath}: {ex.Message}");
         }
     }
 
@@ -1100,7 +1102,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"[SYNC] Error processing manifest from {peer.Name}: {ex.Message}");
+            _logger.LogError(ex, $"[SYNC] Error processing manifest from {peer.Name}: {ex.Message}");
         }
     }
 
@@ -1122,7 +1124,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"[SYNC] Error sending requested file {relativePath} to {peer.Name}: {ex.Message}");
+            _logger.LogError(ex, $"[SYNC] Error sending requested file {relativePath} to {peer.Name}: {ex.Message}");
         }
     }
 

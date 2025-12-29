@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Swarm.Core.Models;
 using Swarm.Core.Services;
 using Xunit;
@@ -23,7 +24,7 @@ public class DiscoveryServiceTests : IDisposable
         
         _cryptoService = new CryptoService();
         
-        _service = new DiscoveryService("test-local-id", _cryptoService, _settings, null);
+        _service = new DiscoveryService("test-local-id", _cryptoService, _settings, NullLogger<DiscoveryService>.Instance, null);
     }
 
     [Fact]

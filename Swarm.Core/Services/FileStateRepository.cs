@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
-using Serilog;
+using Microsoft.Extensions.Logging;
 using Swarm.Core.Abstractions;
 using Swarm.Core.Models;
 
@@ -13,12 +13,14 @@ public class FileStateRepository : IFileStateRepository
 {
     private const string CacheFileName = ".swarm-cache";
     private readonly ConcurrentDictionary<string, SyncedFile> _states;
+    private readonly ILogger<FileStateRepository> _logger;
     private readonly string _cachePath;
     private readonly object _persistLock = new();
 
-    public FileStateRepository(Settings settings)
+    public FileStateRepository(Settings settings, ILogger<FileStateRepository> logger)
     {
         _states = new ConcurrentDictionary<string, SyncedFile>(StringComparer.OrdinalIgnoreCase);
+        _logger = logger;
         _cachePath = Path.Combine(settings.SyncFolderPath, CacheFileName);
     }
 
@@ -67,7 +69,7 @@ public class FileStateRepository : IFileStateRepository
             {
                 if (!File.Exists(_cachePath))
                 {
-                    Log.Debug("No file state cache found, starting fresh");
+                    _logger.LogDebug("No file state cache found, starting fresh");
                     return;
                 }
 
@@ -80,12 +82,12 @@ public class FileStateRepository : IFileStateRepository
                     {
                         _states[kvp.Key] = kvp.Value;
                     }
-                    Log.Information("Loaded {Count} items from file state cache", cache.Count);
+                    _logger.LogInformation("Loaded {Count} items from file state cache", cache.Count);
                 }
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Failed to load file state cache");
+                _logger.LogWarning(ex, "Failed to load file state cache");
             }
         }
     }
@@ -113,11 +115,11 @@ public class FileStateRepository : IFileStateRepository
                     fileInfo.Attributes |= FileAttributes.Hidden;
                 }
 
-                Log.Debug("Saved {Count} items to file state cache", _states.Count);
+                _logger.LogDebug("Saved {Count} items to file state cache", _states.Count);
             }
             catch (Exception ex)
             {
-                Log.Warning(ex, "Failed to save file state cache");
+                _logger.LogWarning(ex, "Failed to save file state cache");
             }
         }
     }

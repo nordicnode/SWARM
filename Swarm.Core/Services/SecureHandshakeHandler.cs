@@ -1,7 +1,8 @@
 using System.Net.Sockets;
 using System.Text;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Swarm.Core.Models;
-using Serilog;
 
 namespace Swarm.Core.Services;
 
@@ -13,11 +14,13 @@ public class SecureHandshakeHandler
 {
     private readonly Settings _settings;
     private readonly CryptoService _cryptoService;
+    private readonly ILogger<SecureHandshakeHandler> _logger;
 
-    public SecureHandshakeHandler(Settings settings, CryptoService cryptoService)
+    public SecureHandshakeHandler(Settings settings, CryptoService cryptoService, ILogger<SecureHandshakeHandler>? logger = null)
     {
         _settings = settings;
         _cryptoService = cryptoService;
+        _logger = logger ?? NullLogger<SecureHandshakeHandler>.Instance;
     }
 
     /// <summary>
@@ -98,7 +101,7 @@ public class SecureHandshakeHandler
             
             if (!isTrusted)
             {
-                Log.Warning($"Handshake from untrusted peer: {peerName} ({peerId})");
+                _logger.LogWarning($"Handshake from untrusted peer: {peerName} ({peerId})");
                 // Still allow connection - trust is enforced at a higher level
             }
             
@@ -115,13 +118,13 @@ public class SecureHandshakeHandler
             var sessionKey = CryptoService.DeriveSessionKey(serverPrivateKey, clientPublicKey);
             serverPrivateKey.Dispose();
             
-            Log.Debug($"Secure handshake completed as server with {peerName}");
+            _logger.LogDebug($"Secure handshake completed as server with {peerName}");
             
             return HandshakeResult.Success(peerId, peerName, isTrusted, sessionKey);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"Handshake error: {ex.Message}");
+            _logger.LogError(ex, $"Handshake error: {ex.Message}");
             try { writer.Write($"{ProtocolConstants.HANDSHAKE_FAILED_PREFIX}GENERIC_ERROR"); } catch { }
             return HandshakeResult.Failed(ex.Message);
         }

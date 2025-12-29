@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using Serilog;
+using Microsoft.Extensions.Logging;
 using Swarm.Core.Abstractions;
 using Swarm.Core.Data;
 using Swarm.Core.Models;
@@ -18,12 +18,14 @@ public class SqliteFileStateRepository : IFileStateRepository, IDisposable
     private const string LegacyJsonFileName = ".swarm-cache";
     private readonly FileStateDbContext _context;
     private readonly string _syncFolderPath;
+    private readonly ILogger<SqliteFileStateRepository> _logger;
     private readonly object _lock = new();
     private bool _disposed;
 
-    public SqliteFileStateRepository(Settings settings)
+    public SqliteFileStateRepository(Settings settings, ILogger<SqliteFileStateRepository> logger)
     {
         _syncFolderPath = settings.SyncFolderPath;
+        _logger = logger;
         var dbPath = Path.Combine(settings.SyncFolderPath, DbFileName);
         _context = new FileStateDbContext(dbPath);
         
@@ -34,7 +36,7 @@ public class SqliteFileStateRepository : IFileStateRepository, IDisposable
         // Auto-migrate from legacy JSON cache if exists
         MigrateFromJsonIfNeeded();
         
-        Log.Information("Initialized SQLite file state repository: {Path}", dbPath);
+        _logger.LogInformation("Initialized SQLite file state repository: {Path}", dbPath);
     }
 
     /// <summary>
@@ -58,7 +60,7 @@ public class SqliteFileStateRepository : IFileStateRepository, IDisposable
         
         try
         {
-            Log.Information("Migrating from legacy JSON cache to SQLite...");
+            _logger.LogInformation("Migrating from legacy JSON cache to SQLite...");
             
             var json = File.ReadAllText(jsonCachePath);
             var legacyCache = JsonSerializer.Deserialize<Dictionary<string, SyncedFile>>(json);
@@ -71,26 +73,26 @@ public class SqliteFileStateRepository : IFileStateRepository, IDisposable
                 }
                 
                 _context.SaveChanges();
-                Log.Information("Migrated {Count} file states from JSON to SQLite", legacyCache.Count);
+                _logger.LogInformation("Migrated {Count} file states from JSON to SQLite", legacyCache.Count);
             }
             
             // Backup and delete the old JSON file
             var backupPath = jsonCachePath + ".migrated";
             File.Move(jsonCachePath, backupPath, overwrite: true);
-            Log.Information("Legacy JSON cache backed up to {Path}", backupPath);
+            _logger.LogInformation("Legacy JSON cache backed up to {Path}", backupPath);
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Failed to migrate from legacy JSON cache - starting fresh");
+            _logger.LogWarning(ex, "Failed to migrate from legacy JSON cache - starting fresh");
         }
     }
     
-    private static void TryDeleteLegacyCache(string path)
+    private void TryDeleteLegacyCache(string path)
     {
         try
         {
             File.Delete(path);
-            Log.Debug("Deleted legacy JSON cache");
+            _logger.LogDebug("Deleted legacy JSON cache");
         }
         catch
         {
@@ -200,11 +202,11 @@ public class SqliteFileStateRepository : IFileStateRepository, IDisposable
             try
             {
                 _context.SaveChanges();
-                Log.Debug("Saved {Count} file states to SQLite", _context.FileStates.Count());
+                _logger.LogDebug("Saved {Count} file states to SQLite", _context.FileStates.Count());
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Failed to save file states to SQLite");
+                _logger.LogError(ex, "Failed to save file states to SQLite");
             }
         }
     }
@@ -213,7 +215,7 @@ public class SqliteFileStateRepository : IFileStateRepository, IDisposable
     {
         // SQLite is always loaded - no-op
         // Data is persisted automatically
-        Log.Debug("SQLite repository ready with {Count} entries", Count);
+        _logger.LogDebug("SQLite repository ready with {Count} entries", Count);
     }
 
     public void Dispose()

@@ -1,4 +1,5 @@
 using Swarm.Core.Models;
+using Microsoft.Extensions.Logging.Abstractions;
 using Swarm.Core.Services;
 
 namespace Swarm.Core.Tests;
@@ -13,7 +14,7 @@ public class PairingServiceTests
     {
         // Arrange
         using var cryptoService = new CryptoService();
-        var pairingService = new PairingService(cryptoService);
+        var pairingService = new PairingService(cryptoService, NullLogger<PairingService>.Instance);
 
         // Act
         var code = pairingService.GenerateMyPairingCode();
@@ -29,7 +30,7 @@ public class PairingServiceTests
     {
         // Same crypto service should generate same code
         using var cryptoService = new CryptoService();
-        var pairingService = new PairingService(cryptoService);
+        var pairingService = new PairingService(cryptoService, NullLogger<PairingService>.Instance);
 
         var code1 = pairingService.GenerateMyPairingCode();
         var code2 = pairingService.GenerateMyPairingCode();
@@ -41,7 +42,7 @@ public class PairingServiceTests
     public void GetMyFingerprint_ReturnsValidFormat()
     {
         using var cryptoService = new CryptoService();
-        var pairingService = new PairingService(cryptoService);
+        var pairingService = new PairingService(cryptoService, NullLogger<PairingService>.Instance);
 
         var fingerprint = pairingService.GetMyFingerprint();
 
@@ -56,7 +57,7 @@ public class PairingServiceTests
     public void GeneratePeerPairingCode_WithValidPeer_ReturnsCode()
     {
         using var cryptoService = new CryptoService();
-        var pairingService = new PairingService(cryptoService);
+        var pairingService = new PairingService(cryptoService, NullLogger<PairingService>.Instance);
 
         // Create a peer with our own public key (for testing)
         var peer = new Peer
@@ -77,7 +78,7 @@ public class PairingServiceTests
     public void GeneratePeerPairingCode_MatchesMyCode_WhenSameKey()
     {
         using var cryptoService = new CryptoService();
-        var pairingService = new PairingService(cryptoService);
+        var pairingService = new PairingService(cryptoService, NullLogger<PairingService>.Instance);
 
         var myCode = pairingService.GenerateMyPairingCode();
 
@@ -98,7 +99,7 @@ public class PairingServiceTests
     public void GeneratePeerPairingCode_WithNullPublicKey_ReturnsPlaceholder()
     {
         using var cryptoService = new CryptoService();
-        var pairingService = new PairingService(cryptoService);
+        var pairingService = new PairingService(cryptoService, NullLogger<PairingService>.Instance);
 
         var peer = new Peer
         {
@@ -116,7 +117,7 @@ public class PairingServiceTests
     public void VerifyPairingCode_WithMatchingCode_ReturnsTrue()
     {
         using var cryptoService = new CryptoService();
-        var pairingService = new PairingService(cryptoService);
+        var pairingService = new PairingService(cryptoService, NullLogger<PairingService>.Instance);
 
         // Create peer with known public key
         var peer = new Peer
@@ -137,7 +138,7 @@ public class PairingServiceTests
     public void VerifyPairingCode_WithWrongCode_ReturnsFalse()
     {
         using var cryptoService = new CryptoService();
-        var pairingService = new PairingService(cryptoService);
+        var pairingService = new PairingService(cryptoService, NullLogger<PairingService>.Instance);
 
         var peer = new Peer
         {
@@ -151,3 +152,4 @@ public class PairingServiceTests
         Assert.False(result);
     }
 }
+

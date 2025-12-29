@@ -4,7 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Windows.Input;
 using Avalonia.Threading;
-using Serilog;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Swarm.Core.Models;
 using Swarm.Core.Services;
 using Swarm.Core.Helpers;
@@ -22,6 +23,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
     private readonly SyncService? _syncService;
     private readonly VersioningService? _versioningService;
     private readonly FolderEncryptionService? _folderEncryptionService;
+    private readonly ILogger<FilesViewModel> _logger;
     private readonly System.Timers.Timer _refreshDebounceTimer;
 
     private string _currentPath = "";
@@ -35,6 +37,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
 
     public FilesViewModel() {
         // Design-time
+        _logger = NullLogger<FilesViewModel>.Instance;
         _refreshDebounceTimer = new System.Timers.Timer(500) { AutoReset = false };
     }
 
@@ -255,7 +258,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Failed to load files from {Path}", CurrentPath);
+            _logger.LogWarning(ex, "Failed to load files from {Path}", CurrentPath);
         }
         finally
         {
@@ -386,7 +389,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Failed to show file in explorer: {Path}", SelectedFile?.Path);
+            _logger.LogWarning(ex, "Failed to show file in explorer: {Path}", SelectedFile?.Path);
         }
     }
 
@@ -424,7 +427,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Failed to open history for {Path}", SelectedFile.Path);
+                _logger.LogError(ex, "Failed to open history for {Path}", SelectedFile.Path);
             }
         });
     }
@@ -464,7 +467,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Failed to delete: {Path}", SelectedFile?.Path);
+                _logger.LogError(ex, "Failed to delete: {Path}", SelectedFile?.Path);
             }
         });
     }
@@ -526,7 +529,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to create encrypted folder");
+            _logger.LogError(ex, "Failed to create encrypted folder");
         }
     }
 
@@ -556,7 +559,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to unlock folder");
+            _logger.LogError(ex, "Failed to unlock folder");
         }
     }
 

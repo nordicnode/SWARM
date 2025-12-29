@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Swarm.Core.Abstractions;
 using Swarm.Core.Models;
@@ -38,9 +39,9 @@ public class SyncServiceTests : IDisposable
 
     private SyncService CreateSyncService()
     {
-        var versioningService = new VersioningService(_settings, _mockHashing.Object);
-        var fileStateRepository = new FileStateRepository(_settings);
-        var folderEncryptionService = new FolderEncryptionService(_settings);
+        var versioningService = new VersioningService(_settings, _mockHashing.Object, NullLogger<VersioningService>.Instance);
+        var fileStateRepository = new FileStateRepository(_settings, NullLogger<FileStateRepository>.Instance);
+        var folderEncryptionService = new FolderEncryptionService(_settings, NullLogger<FolderEncryptionService>.Instance);
 
         return new SyncService(
             _settings,
@@ -49,7 +50,8 @@ public class SyncServiceTests : IDisposable
             versioningService,
             _mockHashing.Object,
             fileStateRepository,
-            folderEncryptionService);
+            folderEncryptionService,
+            NullLogger<SyncService>.Instance);
     }
 
     [Fact]

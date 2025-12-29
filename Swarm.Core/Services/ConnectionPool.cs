@@ -1,6 +1,7 @@
 using System.Net.Sockets;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Swarm.Core.Models;
-using Serilog;
 
 namespace Swarm.Core.Services;
 
@@ -14,6 +15,7 @@ public class ConnectionPool : IDisposable
     private readonly Peer _peer;
     private readonly Func<Peer, PeerConnection, CancellationToken, Task> _performHandshakeAsync;
     private readonly Func<PeerConnection, CancellationToken, Task<int>> _measureRttAsync;
+    private readonly ILogger<ConnectionPool> _logger;
     private bool _disposed;
 
     public string PeerKey { get; }
@@ -22,11 +24,13 @@ public class ConnectionPool : IDisposable
     public ConnectionPool(
         Peer peer,
         Func<Peer, PeerConnection, CancellationToken, Task> performHandshakeAsync,
-        Func<PeerConnection, CancellationToken, Task<int>> measureRttAsync)
+        Func<PeerConnection, CancellationToken, Task<int>> measureRttAsync,
+        ILogger<ConnectionPool>? logger = null)
     {
         _peer = peer;
         _performHandshakeAsync = performHandshakeAsync;
         _measureRttAsync = measureRttAsync;
+        _logger = logger ?? NullLogger<ConnectionPool>.Instance;
         PeerKey = $"{peer.IpAddress}:{peer.Port}";
     }
 
@@ -169,11 +173,11 @@ public class ConnectionPool : IDisposable
                 try
                 {
                     await _performHandshakeAsync(_peer, connection, ct);
-                    Log.Debug($"Secure handshake completed for pool connection to {_peer.Name}");
+                    _logger.LogDebug($"Secure handshake completed for pool connection to {_peer.Name}");
                 }
                 catch (Exception handshakeEx)
                 {
-                    Log.Warning(handshakeEx, $"Secure handshake failed for pool connection to {_peer.Name}: {handshakeEx.Message}");
+                    _logger.LogWarning(handshakeEx, $"Secure handshake failed for pool connection to {_peer.Name}: {handshakeEx.Message}");
                 }
 
                 // Measure RTT
@@ -183,7 +187,7 @@ public class ConnectionPool : IDisposable
                 }
                 catch { }
 
-                Log.Debug($"Created pool connection #{_connections.Count + 1} to {_peer.Name}");
+                _logger.LogDebug($"Created pool connection #{_connections.Count + 1} to {_peer.Name}");
                 return connection;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -201,14 +205,14 @@ public class ConnectionPool : IDisposable
             }
         }
 
-        Log.Warning(lastException, $"Failed to create pool connection to {_peer.Name}: {lastException?.Message}");
+        _logger.LogWarning(lastException, $"Failed to create pool connection to {_peer.Name}: {lastException?.Message}");
         return null;
     }
 
     /// <summary>
     /// Configures TCP socket options for better connection management.
     /// </summary>
-    private static void ConfigureTcpClient(TcpClient client)
+    private void ConfigureTcpClient(TcpClient client)
     {
         try
         {
@@ -226,7 +230,7 @@ public class ConnectionPool : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, $"Failed to configure TCP options: {ex.Message}");
+            _logger.LogWarning(ex, $"Failed to configure TCP options: {ex.Message}");
         }
     }
 

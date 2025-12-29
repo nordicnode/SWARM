@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Swarm.Core.Abstractions;
 using Swarm.Core.Models;
@@ -29,7 +30,7 @@ public class TransferServiceTests : IDisposable
     public void Constructor_InitializesWithDefaults()
     {
         // Arrange & Act
-        using var service = new TransferService(_settings, new CryptoService());
+        using var service = new TransferService(_settings, new CryptoService(), NullLogger<TransferService>.Instance);
 
         // Assert
         Assert.NotNull(service.Transfers);
@@ -40,7 +41,7 @@ public class TransferServiceTests : IDisposable
     public void ListenPort_ReturnsValidPort_WhenStarted()
     {
         // Arrange
-        using var service = new TransferService(_settings, new CryptoService());
+        using var service = new TransferService(_settings, new CryptoService(), NullLogger<TransferService>.Instance);
         
         // Act
         service.Start();
@@ -54,7 +55,7 @@ public class TransferServiceTests : IDisposable
     public void SetDownloadPath_UpdatesPath()
     {
         // Arrange
-        using var service = new TransferService(_settings, new CryptoService());
+        using var service = new TransferService(_settings, new CryptoService(), NullLogger<TransferService>.Instance);
         var newPath = Path.Combine(Path.GetTempPath(), "TestDownload");
         
         // Act
@@ -68,7 +69,7 @@ public class TransferServiceTests : IDisposable
     public void Start_CreatesListener()
     {
         // Arrange
-        using var service = new TransferService(_settings, new CryptoService());
+        using var service = new TransferService(_settings, new CryptoService(), NullLogger<TransferService>.Instance);
         
         // Act
         service.Start();
@@ -81,7 +82,7 @@ public class TransferServiceTests : IDisposable
     public void Transfers_IsObservableCollection()
     {
         // Arrange
-        using var service = new TransferService(_settings, new CryptoService());
+        using var service = new TransferService(_settings, new CryptoService(), NullLogger<TransferService>.Instance);
         
         // Act & Assert
         Assert.IsType<System.Collections.ObjectModel.ObservableCollection<FileTransfer>>(service.Transfers);
@@ -105,7 +106,7 @@ public class TransferServiceTests : IDisposable
     public void Dispose_CleansUpResources()
     {
         // Arrange
-        var service = new TransferService(_settings, new CryptoService());
+        var service = new TransferService(_settings, new CryptoService(), NullLogger<TransferService>.Instance);
         service.Start();
         
         // Act - Should not throw
@@ -119,7 +120,7 @@ public class TransferServiceTests : IDisposable
     public void Events_AreInitiallyNull()
     {
         // Arrange
-        using var service = new TransferService(_settings, new CryptoService());
+        using var service = new TransferService(_settings, new CryptoService(), NullLogger<TransferService>.Instance);
         
         // Assert - Events should be subscribable
         // Test by assigning handlers (no null reference exception)
@@ -142,3 +143,4 @@ public class TransferServiceTests : IDisposable
         catch { /* Ignore cleanup errors */ }
     }
 }
+

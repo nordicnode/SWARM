@@ -1,4 +1,4 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Threading;
@@ -9,11 +9,11 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Swarm.Core.Helpers;
 using Swarm.Core.Models;
 
 using Swarm.Core.Abstractions;
-using Serilog;
 
 namespace Swarm.Core.Services;
 
@@ -32,6 +32,7 @@ public class TransferService : ITransferService
     private readonly SemaphoreSlim _connectionLimiter = new(MAX_CONCURRENT_CONNECTIONS, MAX_CONCURRENT_CONNECTIONS);
     private readonly ConnectionManager _connectionManager;
     private readonly SecureHandshakeHandler _handshakeHandler;
+    private readonly ILogger<TransferService> _logger;
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
     private string _downloadPath;
@@ -39,10 +40,11 @@ public class TransferService : ITransferService
     public int ListenPort { get; private set; }
     public ObservableCollection<FileTransfer> Transfers { get; } = [];
     
-    public TransferService(Settings settings, CryptoService cryptoService, Abstractions.IDispatcher? dispatcher = null)
+    public TransferService(Settings settings, CryptoService cryptoService, ILogger<TransferService> logger, Abstractions.IDispatcher? dispatcher = null)
     {
         _settings = settings;
         _cryptoService = cryptoService;
+        _logger = logger;
         _dispatcher = dispatcher;
         _downloadPath = _settings.DownloadPath;
         
@@ -150,7 +152,7 @@ public class TransferService : ITransferService
                 // DoS prevention: limit concurrent incoming connections
                 if (!await _connectionLimiter.WaitAsync(0, ct))
                 {
-                    Log.Warning($"Connection limit reached ({MAX_CONCURRENT_CONNECTIONS}), rejecting new connection");
+                    _logger.LogWarning($"Connection limit reached ({MAX_CONCURRENT_CONNECTIONS}), rejecting new connection");
                     client.Dispose();
                     continue;
                 }
@@ -160,7 +162,7 @@ public class TransferService : ITransferService
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                Log.Error(ex, $"Accept error: {ex.Message}");
+                _logger.LogError(ex, $"Accept error: {ex.Message}");
             }
         }
     }
@@ -276,7 +278,7 @@ public class TransferService : ITransferService
             }
             catch (Exception ex)
             {
-                Log.Error(ex, $"Receive error: {ex.Message}");
+                _logger.LogError(ex, $"Receive error: {ex.Message}");
             }
         }
     }
@@ -337,7 +339,7 @@ public class TransferService : ITransferService
                 break;
 
             default:
-                Log.Warning($"Unknown sync message type: {messageType}");
+                _logger.LogWarning($"Unknown sync message type: {messageType}");
                 break;
         }
     }
@@ -362,7 +364,7 @@ public class TransferService : ITransferService
             SourcePeerId = remotePeer.Id
         };
 
-        Log.Information($"Sync file received: {relativePath} ({fileSize} bytes)");
+        _logger.LogInformation($"Sync file received: {relativePath} ({fileSize} bytes)");
         
         // Raise event for SyncService to handle - pass the stream for reading file data
         SyncFileReceived?.Invoke(syncFile, stream, remotePeer);
@@ -381,7 +383,7 @@ public class TransferService : ITransferService
             SourcePeerId = remotePeer.Id
         };
 
-        Log.Information($"Sync delete received: {relativePath}");
+        _logger.LogInformation($"Sync delete received: {relativePath}");
         SyncDeleteReceived?.Invoke(syncFile, remotePeer);
     }
 
@@ -397,7 +399,7 @@ public class TransferService : ITransferService
             SourcePeerId = remotePeer.Id
         };
 
-        Log.Information($"Sync dir created received: {relativePath}");
+        _logger.LogInformation($"Sync dir created received: {relativePath}");
         SyncFileReceived?.Invoke(syncFile, Stream.Null, remotePeer);
     }
 
@@ -413,7 +415,7 @@ public class TransferService : ITransferService
             SourcePeerId = remotePeer.Id
         };
 
-        Log.Information($"Sync dir deleted received: {relativePath}");
+        _logger.LogInformation($"Sync dir deleted received: {relativePath}");
         SyncDeleteReceived?.Invoke(syncFile, remotePeer);
     }
 
@@ -432,7 +434,7 @@ public class TransferService : ITransferService
             SourcePeerId = remotePeer.Id
         };
 
-        Log.Information($"Sync rename received: {oldRelativePath} -> {newRelativePath}");
+        _logger.LogInformation($"Sync rename received: {oldRelativePath} -> {newRelativePath}");
         SyncRenameReceived?.Invoke(syncFile, remotePeer);
     }
 
@@ -462,7 +464,7 @@ public class TransferService : ITransferService
             SourcePeerId = remotePeer.Id
         };
 
-        Log.Information($"Sync file received (compressed): {relativePath} ({compressedSize} -> {fileSize} bytes)");
+        _logger.LogInformation($"Sync file received (compressed): {relativePath} ({compressedSize} -> {fileSize} bytes)");
         
         if (compressedSize > STREAMING_THRESHOLD)
         {
@@ -536,7 +538,7 @@ public class TransferService : ITransferService
         var json = reader.ReadString();
         var manifest = JsonSerializer.Deserialize<List<SyncedFile>>(json) ?? [];
 
-        Log.Information($"Sync manifest received: {manifest.Count} files");
+        _logger.LogInformation($"Sync manifest received: {manifest.Count} files");
         SyncManifestReceived?.Invoke(manifest, remotePeer);
     }
 
@@ -544,7 +546,7 @@ public class TransferService : ITransferService
     {
         var relativePath = reader.ReadString();
 
-        Log.Information($"Sync file requested: {relativePath}");
+        _logger.LogInformation($"Sync file requested: {relativePath}");
         SyncFileRequested?.Invoke(relativePath, remotePeer);
     }
 
@@ -553,7 +555,7 @@ public class TransferService : ITransferService
     private Task HandleRequestSignatures(BinaryReader reader, Peer remotePeer)
     {
         var relativePath = reader.ReadString();
-        Log.Debug($"Signature request received for: {relativePath}");
+        _logger.LogDebug($"Signature request received for: {relativePath}");
         SignaturesRequested?.Invoke(relativePath, remotePeer);
         return Task.CompletedTask;
     }
@@ -575,7 +577,7 @@ public class TransferService : ITransferService
             });
         }
 
-        Log.Debug($"Block signatures received for {relativePath}: {signatureCount} blocks");
+        _logger.LogDebug($"Block signatures received for {relativePath}: {signatureCount} blocks");
         BlockSignaturesReceived?.Invoke(relativePath, signatures, remotePeer);
         return Task.CompletedTask;
     }
@@ -618,7 +620,7 @@ public class TransferService : ITransferService
             SourcePeerId = remotePeer.Id
         };
 
-        Log.Debug($"Delta data received for {relativePath}: {instructionCount} instructions");
+        _logger.LogDebug($"Delta data received for {relativePath}: {instructionCount} instructions");
         DeltaDataReceived?.Invoke(syncFile, instructions, remotePeer);
         return Task.CompletedTask;
     }
@@ -777,7 +779,7 @@ public class TransferService : ITransferService
         catch (Exception ex)
         {
             transfer.Status = TransferStatus.Failed;
-            Log.Error(ex, $"Send error: {ex.Message}");
+            _logger.LogError(ex, $"Send error: {ex.Message}");
             throw;
         }
     }
@@ -821,7 +823,7 @@ public class TransferService : ITransferService
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, $"Error scanning for existing files: {ex.Message}");
+            _logger.LogWarning(ex, $"Error scanning for existing files: {ex.Message}");
             // Fallback to old behavior on error
             var counter = 1;
             var result = safe;
@@ -851,7 +853,7 @@ public class TransferService : ITransferService
         var fileList = files.ToList();
         if (fileList.Count == 0) return;
 
-        Log.Information($"Starting parallel transfer of {fileList.Count} files to {peer.Name}");
+        _logger.LogInformation($"Starting parallel transfer of {fileList.Count} files to {peer.Name}");
 
         // Use SemaphoreSlim to limit concurrent transfers to pool size
         var semaphore = new SemaphoreSlim(ProtocolConstants.MAX_PARALLEL_CONNECTIONS);
@@ -872,7 +874,7 @@ public class TransferService : ITransferService
                     }, ct);
                     
                     Interlocked.Increment(ref completedCount);
-                    Log.Debug($"Parallel transfer [{completedCount}/{fileList.Count}]: {syncFile.RelativePath}");
+                    _logger.LogDebug($"Parallel transfer [{completedCount}/{fileList.Count}]: {syncFile.RelativePath}");
                 }
                 finally
                 {
@@ -886,7 +888,7 @@ public class TransferService : ITransferService
         await Task.WhenAll(tasks);
         semaphore.Dispose();
 
-        Log.Information($"Completed parallel transfer of {fileList.Count} files to {peer.Name}");
+        _logger.LogInformation($"Completed parallel transfer of {fileList.Count} files to {peer.Name}");
     }
 
     /// <summary>
@@ -939,7 +941,7 @@ public class TransferService : ITransferService
         }
         catch (Exception ex)
         {
-            Log.Error(ex, $"Parallel send error for {syncFile.RelativePath}: {ex.Message}");
+            _logger.LogError(ex, $"Parallel send error for {syncFile.RelativePath}: {ex.Message}");
             RemoveConnectionPool(peer);
             throw;
         }
@@ -990,7 +992,7 @@ public class TransferService : ITransferService
                 var compressedData = compressedBuffer.ToArray();
                 var compressionRatio = fileInfo.Length > 0 ? (1.0 - (double)compressedData.Length / fileInfo.Length) * 100 : 0;
                 
-                Log.Debug($"Compression: {syncFile.RelativePath} - {fileInfo.Length} -> {compressedData.Length} bytes ({compressionRatio:F1}% saved)");
+                _logger.LogDebug($"Compression: {syncFile.RelativePath} - {fileInfo.Length} -> {compressedData.Length} bytes ({compressionRatio:F1}% saved)");
 
                 // Send sync header and metadata with compressed flag
                 connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
@@ -1018,7 +1020,7 @@ public class TransferService : ITransferService
                     progressCallback?.Invoke(totalSent, compressedData.Length);
                 }
 
-                Log.Information($"Sync sent (compressed): {syncFile.RelativePath} to {peer.Name}");
+                _logger.LogInformation($"Sync sent (compressed): {syncFile.RelativePath} to {peer.Name}");
             }
             finally
             {
@@ -1030,7 +1032,7 @@ public class TransferService : ITransferService
             // If connection failed, remove it so we retry next time
             // Connection pool handles disposal of bad connections on next access
             
-            Log.Error(ex, $"Sync send error: {ex.Message}");
+            _logger.LogError(ex, $"Sync send error: {ex.Message}");
         }
     }
 
@@ -1050,7 +1052,7 @@ public class TransferService : ITransferService
                 connection.Writer.Write(syncFile.RelativePath);
                 connection.Writer.Write(syncFile.IsDirectory);
 
-                Log.Information($"Sync delete sent: {syncFile.RelativePath} to {peer.Name}");
+                _logger.LogInformation($"Sync delete sent: {syncFile.RelativePath} to {peer.Name}");
             }
             finally
             {
@@ -1060,7 +1062,7 @@ public class TransferService : ITransferService
         catch (Exception ex)
         {
 
-            Log.Error(ex, $"Sync delete error: {ex.Message}");
+            _logger.LogError(ex, $"Sync delete error: {ex.Message}");
         }
     }
 
@@ -1081,7 +1083,7 @@ public class TransferService : ITransferService
                 connection.Writer.Write(syncFile.RelativePath);
                 connection.Writer.Write(syncFile.IsDirectory);
 
-                Log.Information($"Sync rename sent: {syncFile.OldRelativePath} -> {syncFile.RelativePath} to {peer.Name}");
+                _logger.LogInformation($"Sync rename sent: {syncFile.OldRelativePath} -> {syncFile.RelativePath} to {peer.Name}");
             }
             finally
             {
@@ -1091,7 +1093,7 @@ public class TransferService : ITransferService
         catch (Exception ex)
         {
 
-            Log.Error(ex, $"Sync rename error: {ex.Message}");
+            _logger.LogError(ex, $"Sync rename error: {ex.Message}");
         }
     }
 
@@ -1110,7 +1112,7 @@ public class TransferService : ITransferService
                 connection.Writer.Write(ProtocolConstants.MSG_DIR_CREATED);
                 connection.Writer.Write(syncFile.RelativePath);
 
-                Log.Information($"Sync dir sent: {syncFile.RelativePath} to {peer.Name}");
+                _logger.LogInformation($"Sync dir sent: {syncFile.RelativePath} to {peer.Name}");
             }
             finally 
             {
@@ -1120,7 +1122,7 @@ public class TransferService : ITransferService
         catch (Exception ex)
         {
 
-            Log.Error(ex, $"Sync dir error: {ex.Message}");
+            _logger.LogError(ex, $"Sync dir error: {ex.Message}");
         }
     }
 
@@ -1141,7 +1143,7 @@ public class TransferService : ITransferService
                 var json = JsonSerializer.Serialize(manifest);
                 connection.Writer.Write(json);
 
-                Log.Information($"Sync manifest sent to {peer.Name}: {manifest.Count()} files");
+                _logger.LogInformation($"Sync manifest sent to {peer.Name}: {manifest.Count()} files");
             }
             finally
             {
@@ -1151,7 +1153,7 @@ public class TransferService : ITransferService
         catch (Exception ex)
         {
 
-            Log.Error(ex, $"Sync manifest error: {ex.Message}");
+            _logger.LogError(ex, $"Sync manifest error: {ex.Message}");
         }
     }
 
@@ -1170,7 +1172,7 @@ public class TransferService : ITransferService
                 connection.Writer.Write(ProtocolConstants.MSG_REQUEST_FILE);
                 connection.Writer.Write(relativePath);
 
-                Log.Information($"Sync file requested: {relativePath} from {peer.Name}");
+                _logger.LogInformation($"Sync file requested: {relativePath} from {peer.Name}");
             }
             finally
             {
@@ -1180,7 +1182,7 @@ public class TransferService : ITransferService
         catch (Exception ex)
         {
 
-            Log.Error(ex, $"Sync request error: {ex.Message}");
+            _logger.LogError(ex, $"Sync request error: {ex.Message}");
         }
     }
 
@@ -1201,7 +1203,7 @@ public class TransferService : ITransferService
                 connection.Writer.Write(ProtocolConstants.MSG_REQUEST_SIGNATURES);
                 connection.Writer.Write(relativePath);
 
-                Log.Debug($"Requested signatures for: {relativePath} from {peer.Name}");
+                _logger.LogDebug($"Requested signatures for: {relativePath} from {peer.Name}");
             }
             finally
             {
@@ -1211,7 +1213,7 @@ public class TransferService : ITransferService
         catch (Exception ex)
         {
 
-            Log.Error(ex, $"Request signatures error: {ex.Message}");
+            _logger.LogError(ex, $"Request signatures error: {ex.Message}");
         }
     }
 
@@ -1238,7 +1240,7 @@ public class TransferService : ITransferService
                     connection.Writer.Write(sig.StrongChecksum);
                 }
 
-                Log.Debug($"Sent {signatures.Count} block signatures for: {relativePath} to {peer.Name}");
+                _logger.LogDebug($"Sent {signatures.Count} block signatures for: {relativePath} to {peer.Name}");
             }
             finally
             {
@@ -1248,7 +1250,7 @@ public class TransferService : ITransferService
         catch (Exception ex)
         {
 
-            Log.Error(ex, $"Send signatures error: {ex.Message}");
+            _logger.LogError(ex, $"Send signatures error: {ex.Message}");
         }
     }
 
@@ -1291,7 +1293,7 @@ public class TransferService : ITransferService
                 }
 
                 var deltaSize = DeltaSyncService.EstimateDeltaSize(instructions);
-                Log.Debug($"Sent delta for {syncFile.RelativePath} to {peer.Name}: {instructions.Count} instructions, ~{FileHelpers.FormatBytes(deltaSize)}");
+                _logger.LogDebug($"Sent delta for {syncFile.RelativePath} to {peer.Name}: {instructions.Count} instructions, ~{FileHelpers.FormatBytes(deltaSize)}");
             }
             finally
             {
@@ -1301,7 +1303,7 @@ public class TransferService : ITransferService
         catch (Exception ex)
         {
 
-            Log.Error(ex, $"Send delta error: {ex.Message}");
+            _logger.LogError(ex, $"Send delta error: {ex.Message}");
         }
     }
 
@@ -1345,7 +1347,7 @@ public class TransferService : ITransferService
             return false;
 
         transfer.Cancel();
-        Log.Information("Transfer cancelled: {FileName}", transfer.FileName);
+        _logger.LogInformation("Transfer cancelled: {FileName}", transfer.FileName);
         
         InvokeOnUI(() => TransferFailed?.Invoke(transfer));
         return true;
@@ -1375,7 +1377,7 @@ public class TransferService : ITransferService
         transfer.ErrorMessage = null;
         transfer.CancellationTokenSource = new CancellationTokenSource();
         
-        Log.Information("Retrying transfer: {FileName} (attempt {RetryCount})", transfer.FileName, transfer.RetryCount);
+        _logger.LogInformation("Retrying transfer: {FileName} (attempt {RetryCount})", transfer.FileName, transfer.RetryCount);
 
         try
         {
@@ -1392,7 +1394,7 @@ public class TransferService : ITransferService
             transfer.Status = TransferStatus.Failed;
             transfer.ErrorMessage = ex.Message;
             transfer.EndTime = DateTime.Now;
-            Log.Warning(ex, "Retry failed for {FileName}", transfer.FileName);
+            _logger.LogWarning(ex, "Retry failed for {FileName}", transfer.FileName);
             InvokeOnUI(() => TransferFailed?.Invoke(transfer));
             return false;
         }

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using Serilog;
+using Microsoft.Extensions.Logging;
 using Swarm.Core.Models;
 
 namespace Swarm.Core.Services;
@@ -32,6 +32,7 @@ public record TransferRecord(
 public class BandwidthTrackingService : IDisposable
 {
     private readonly TransferService _transferService;
+    private readonly ILogger<BandwidthTrackingService> _logger;
     private readonly System.Timers.Timer _sampleTimer;
     private readonly object _lock = new();
     
@@ -139,9 +140,10 @@ public class BandwidthTrackingService : IDisposable
         }
     }
 
-    public BandwidthTrackingService(TransferService transferService)
+    public BandwidthTrackingService(TransferService transferService, ILogger<BandwidthTrackingService> logger)
     {
         _transferService = transferService;
+        _logger = logger;
         
         // Subscribe to transfer progress events
         _transferService.TransferProgress += OnTransferProgress;
@@ -152,7 +154,7 @@ public class BandwidthTrackingService : IDisposable
         _sampleTimer.AutoReset = true;
         _sampleTimer.Start();
         
-        Log.Information("BandwidthTrackingService initialized");
+        _logger.LogInformation("BandwidthTrackingService initialized");
     }
 
     private void OnTransferProgress(FileTransfer transfer)
@@ -286,7 +288,7 @@ public class BandwidthTrackingService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Error in SpeedUpdated handler");
+            _logger.LogWarning(ex, "Error in SpeedUpdated handler");
         }
     }
 
@@ -330,6 +332,6 @@ public class BandwidthTrackingService : IDisposable
         _sampleTimer.Stop();
         _sampleTimer.Dispose();
         _transferService.TransferProgress -= OnTransferProgress;
-        Log.Information("BandwidthTrackingService disposed");
+        _logger.LogInformation("BandwidthTrackingService disposed");
     }
 }

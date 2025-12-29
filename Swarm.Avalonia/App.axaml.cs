@@ -10,6 +10,7 @@ using Swarm.Core.ViewModels;
 using System.Windows.Input;
 using Serilog;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Swarm.Core.Services;
 using Swarm.Core.Abstractions;
 using Swarm.Avalonia.Services;
@@ -82,6 +83,13 @@ public partial class App : Application
     {
         var services = new ServiceCollection();
 
+        // Logging - Use Serilog through ILogger<T>
+        services.AddLogging(builder =>
+        {
+            builder.ClearProviders();
+            builder.AddSerilog(dispose: true);
+        });
+
         // Core Services
         services.AddSingleton<Settings>(sp => Settings.Load());
         services.AddSingleton<CryptoService>();
@@ -97,8 +105,9 @@ public partial class App : Application
         services.AddSingleton<DiscoveryService>(sp => {
             var settings = sp.GetRequiredService<Settings>();
             var crypto = sp.GetRequiredService<CryptoService>();
+            var logger = sp.GetRequiredService<ILogger<DiscoveryService>>();
             var dispatcher = sp.GetRequiredService<Swarm.Core.Abstractions.IDispatcher>();
-            return new DiscoveryService(settings.LocalId, crypto, settings, dispatcher);
+            return new DiscoveryService(settings.LocalId, crypto, settings, logger, dispatcher);
         });
         services.AddSingleton<IDiscoveryService>(sp => sp.GetRequiredService<DiscoveryService>());
         services.AddSingleton<TransferService>();

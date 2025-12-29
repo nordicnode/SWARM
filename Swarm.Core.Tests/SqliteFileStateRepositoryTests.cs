@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Swarm.Core.Abstractions;
 using Swarm.Core.Models;
 using Swarm.Core.Services;
@@ -20,7 +21,7 @@ public class SqliteFileStateRepositoryTests : IDisposable
         _testSyncFolder = Path.Combine(Path.GetTempPath(), $"SwarmSqliteTest_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_testSyncFolder);
         _settings = new Settings { SyncFolderPath = _testSyncFolder };
-        _repository = new SqliteFileStateRepository(_settings);
+        _repository = new SqliteFileStateRepository(_settings, NullLogger<SqliteFileStateRepository>.Instance);
     }
 
     [Fact]
@@ -195,7 +196,7 @@ public class SqliteFileStateRepositoryTests : IDisposable
         _repository.Dispose();
 
         // Act - Create new instance
-        var newRepository = new SqliteFileStateRepository(_settings);
+        var newRepository = new SqliteFileStateRepository(_settings, NullLogger<SqliteFileStateRepository>.Instance);
 
         // Assert
         Assert.Equal(1, newRepository.Count);

@@ -2,7 +2,7 @@ using System.Buffers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Serilog;
+using Microsoft.Extensions.Logging;
 using Swarm.Core.Models;
 
 namespace Swarm.Core.Services;
@@ -26,6 +26,7 @@ public class FolderEncryptionService : IDisposable
     private const string VerifierPlaintext = "SWARM-VAULT-VERIFY-2024";
 
     private readonly Settings _settings;
+    private readonly ILogger<FolderEncryptionService> _logger;
     private readonly string _syncRoot;
     private readonly System.Timers.Timer _autoLockTimer;
     private readonly object _lockObj = new();
@@ -35,9 +36,10 @@ public class FolderEncryptionService : IDisposable
     /// </summary>
     public event Action<string>? FolderAutoLocked;
 
-    public FolderEncryptionService(Settings settings)
+    public FolderEncryptionService(Settings settings, ILogger<FolderEncryptionService> logger)
     {
         _settings = settings;
+        _logger = logger;
         _syncRoot = settings.SyncFolderPath;
 
         // Auto-lock timer: check every 60 seconds
@@ -106,12 +108,12 @@ public class FolderEncryptionService : IDisposable
             }
             _settings.Save();
 
-            Log.Information("Created encrypted folder: {Path}", relativePath);
+            _logger.LogInformation("Created encrypted folder: {Path}", relativePath);
             return true;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to create encrypted folder: {Path}", relativePath);
+            _logger.LogError(ex, "Failed to create encrypted folder: {Path}", relativePath);
             return false;
         }
     }
@@ -154,12 +156,12 @@ public class FolderEncryptionService : IDisposable
             folder.CachedKey = key;
             folder.LastAccessed = DateTime.Now;
 
-            Log.Information("Unlocked encrypted folder: {Path}", relativePath);
+            _logger.LogInformation("Unlocked encrypted folder: {Path}", relativePath);
             return true;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to unlock folder: {Path}", relativePath);
+            _logger.LogError(ex, "Failed to unlock folder: {Path}", relativePath);
             return false;
         }
     }
@@ -180,7 +182,7 @@ public class FolderEncryptionService : IDisposable
                     folder.CachedKey = null;
                 }
                 folder.IsLocked = true;
-                Log.Information("Locked encrypted folder: {Path}", relativePath);
+                _logger.LogInformation("Locked encrypted folder: {Path}", relativePath);
             }
         }
     }
@@ -202,7 +204,7 @@ public class FolderEncryptionService : IDisposable
                 folder.IsLocked = true;
             }
         }
-        Log.Information("Locked all encrypted folders");
+        _logger.LogInformation("Locked all encrypted folders");
     }
 
     /// <summary>
@@ -299,12 +301,12 @@ public class FolderEncryptionService : IDisposable
             File.Delete(fullPath);
 
             folder.LastAccessed = DateTime.Now;
-            Log.Debug("Encrypted file: {Original} -> {Obfuscated}", originalName, obfuscatedName);
+            _logger.LogDebug("Encrypted file: {Original} -> {Obfuscated}", originalName, obfuscatedName);
             return obfuscatedName;
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to encrypt file: {Path}", relativePath);
+            _logger.LogError(ex, "Failed to encrypt file: {Path}", relativePath);
             return null;
         }
     }
@@ -361,7 +363,7 @@ public class FolderEncryptionService : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to decrypt file: {Path}", obfuscatedPath);
+            _logger.LogError(ex, "Failed to decrypt file: {Path}", obfuscatedPath);
             return null;
         }
     }
@@ -488,7 +490,7 @@ public class FolderEncryptionService : IDisposable
                     }
                     folder.IsLocked = true;
                     
-                    Log.Information("Auto-locked folder due to inactivity: {Path}", folder.FolderPath);
+                    _logger.LogInformation("Auto-locked folder due to inactivity: {Path}", folder.FolderPath);
                     FolderAutoLocked?.Invoke(folder.FolderPath);
                 }
             }

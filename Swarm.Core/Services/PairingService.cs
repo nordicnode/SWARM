@@ -1,5 +1,5 @@
 using System.Security.Cryptography;
-using Serilog;
+using Microsoft.Extensions.Logging;
 using Swarm.Core.Models;
 
 namespace Swarm.Core.Services;
@@ -10,10 +10,12 @@ namespace Swarm.Core.Services;
 public class PairingService
 {
     private readonly CryptoService _cryptoService;
+    private readonly ILogger<PairingService> _logger;
 
-    public PairingService(CryptoService cryptoService)
+    public PairingService(CryptoService cryptoService, ILogger<PairingService> logger)
     {
         _cryptoService = cryptoService;
+        _logger = logger;
     }
 
     /// <summary>
@@ -41,7 +43,7 @@ public class PairingService
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Failed to generate pairing code for peer {PeerId}", peer.Id);
+            _logger.LogWarning(ex, "Failed to generate pairing code for peer {PeerId}", peer.Id);
             return "------";
         }
     }
@@ -79,7 +81,7 @@ public class PairingService
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "Failed to get fingerprint for peer {PeerId}", peer.Id);
+            _logger.LogWarning(ex, "Failed to get fingerprint for peer {PeerId}", peer.Id);
             return "Invalid";
         }
     }
