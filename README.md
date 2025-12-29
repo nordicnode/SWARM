@@ -31,6 +31,8 @@ SWARM automatically discovers other instances on your local network—even acros
 
 ### 🛡️ Enterprise-Grade Security
 
+> **[Read the Security Whitepaper](SECURITY.md)** for full technical details on our cryptographic implementation.
+
 *   **End-to-End Encryption:** All traffic uses AES-256-GCM authenticated encryption.
 *   **Forward Secrecy:** Sessions use ephemeral ECDH key exchange.
 *   **Trust-On-First-Use (TOFU):** Devices are identified by ECDSA identity keys.
