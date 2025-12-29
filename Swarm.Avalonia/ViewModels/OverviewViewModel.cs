@@ -60,6 +60,7 @@ public class OverviewViewModel : ViewModelBase, IDisposable
         _discoveryService = discoveryService;
         _settings = settings;
         _activityLogService = activityLogService;
+        _logger = NullLogger<OverviewViewModel>.Instance;
 
         // Initialize debounce timer (2 seconds)
         _debounceTimer = new System.Timers.Timer(2000);
@@ -138,8 +139,18 @@ public class OverviewViewModel : ViewModelBase, IDisposable
                 return;
             }
 
-            // Calculate stats off UI thread
-            var files = Directory.GetFiles(path, "*", SearchOption.AllDirectories);
+            // Calculate stats off UI thread (exclude internal .swarm files)
+            var allFiles = Directory.GetFiles(path, "*", SearchOption.AllDirectories);
+            var files = allFiles.Where(f => 
+            {
+                var fileName = Path.GetFileName(f);
+                var relativePath = f.Substring(path.Length).TrimStart(Path.DirectorySeparatorChar);
+                
+                // Skip .swarm internal files and directories
+                return !fileName.StartsWith(".swarm", StringComparison.OrdinalIgnoreCase) &&
+                       !relativePath.StartsWith(".swarm", StringComparison.OrdinalIgnoreCase);
+            }).ToArray();
+            
             var count = files.Length;
 
             long size = 0;

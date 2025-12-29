@@ -137,6 +137,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
         _syncService = syncService;
         _versioningService = versioningService;
         _folderEncryptionService = folderEncryptionService;
+        _logger = NullLogger<FilesViewModel>.Instance;
 
         // Initialize debounce timer for auto-refresh (500ms)
         _refreshDebounceTimer = new System.Timers.Timer(500) { AutoReset = false };
@@ -216,10 +217,15 @@ public class FilesViewModel : ViewModelBase, IDisposable
 
             var items = new List<FileItemViewModel>();
 
-            // Directories
+            // Directories (exclude internal .swarm folders)
             foreach (var dir in Directory.GetDirectories(CurrentPath))
             {
                 var info = new DirectoryInfo(dir);
+                
+                // Skip internal Swarm directories
+                if (info.Name.StartsWith(".swarm", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                    
                 items.Add(new FileItemViewModel
                 {
                     Name = info.Name,
@@ -232,10 +238,15 @@ public class FilesViewModel : ViewModelBase, IDisposable
                 });
             }
 
-            // Files
+            // Files (exclude internal .swarm files)
             foreach (var file in Directory.GetFiles(CurrentPath))
             {
                 var info = new FileInfo(file);
+                
+                // Skip internal Swarm files
+                if (info.Name.StartsWith(".swarm", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                    
                 items.Add(new FileItemViewModel
                 {
                     Name = info.Name,

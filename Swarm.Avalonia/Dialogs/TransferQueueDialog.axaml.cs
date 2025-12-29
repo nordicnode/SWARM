@@ -17,7 +17,7 @@ namespace Swarm.Avalonia.Dialogs;
 
 public partial class TransferQueueDialog : Window
 {
-    private readonly TransferQueueViewModel _viewModel;
+    private readonly TransferQueueViewModel? _viewModel;
 
     public TransferQueueDialog()
     {

@@ -33,6 +33,7 @@ public class PeersViewModel : ViewModelBase
         _discoveryService = discoveryService;
         _transferService = transferService;
         _settings = settings;
+        _logger = NullLogger<PeersViewModel>.Instance;
 
         _discoveryService.Peers.CollectionChanged += (s, e) => UpdatePeersList();
         UpdatePeersList();
