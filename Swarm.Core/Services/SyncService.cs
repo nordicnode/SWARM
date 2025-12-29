@@ -427,7 +427,9 @@ public class SyncService : IDisposable
             try
             {
                 // Skip hidden files/directories (like .swarm-cache and .swarm-versions)
-                if (filePath.Contains(Path.DirectorySeparatorChar + ".") || Path.GetFileName(filePath).StartsWith("."))
+                // BUT whitelist .swarm-vault so encryption metadata syncs to peers
+                bool isVaultMetadata = filePath.Contains(".swarm-vault");
+                if (!isVaultMetadata && (filePath.Contains(Path.DirectorySeparatorChar + ".") || Path.GetFileName(filePath).StartsWith(".")))
                     continue;
 
                 var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, filePath);

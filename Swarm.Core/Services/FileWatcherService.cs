@@ -185,9 +185,10 @@ public class FileWatcherService : IDisposable
             _ignoreList.TryRemove(normalizedPath, out _);
         }
 
-        // Ignore hidden files
+        // Ignore hidden files, BUT whitelist .swarm-vault so encryption metadata syncs
         var fileName = Path.GetFileName(path);
-        if (fileName.StartsWith('.') || fileName.StartsWith("~"))
+        bool isVaultMetadata = path.Contains(".swarm-vault");
+        if (!isVaultMetadata && (fileName.StartsWith('.') || fileName.StartsWith("~")))
             return true;
 
         // Check .swarmignore
