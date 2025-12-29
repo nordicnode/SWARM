@@ -12,8 +12,58 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        
+        // Register global keyboard shortcuts
+        KeyDown += OnKeyDown;
+    }
 
-        // Note: DataContext is set in App.axaml.cs to ensure service injection
+    private void OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm) return;
+
+        var ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+
+        switch (e.Key)
+        {
+            case Key.F5:
+                // Refresh - reload current view
+                if (vm.FilesVM != null && vm.IsFilesSelected)
+                {
+                    vm.FilesVM.RefreshCommand?.Execute(null);
+                }
+                else if (vm.OverviewVM != null && vm.IsOverviewSelected)
+                {
+                    // Trigger stats recalculation
+                    vm.RefreshOverviewCommand?.Execute(null);
+                }
+                e.Handled = true;
+                break;
+
+            case Key.OemComma when ctrl:
+                // Ctrl+, = Open Settings
+                vm.NavigateToSettingsCommand?.Execute(null);
+                e.Handled = true;
+                break;
+
+            case Key.Delete:
+                // Delete selected file (only in Files view)
+                if (vm.IsFilesSelected && vm.FilesVM?.SelectedFile != null)
+                {
+                    vm.FilesVM.DeleteCommand?.Execute(null);
+                    e.Handled = true;
+                }
+                break;
+
+            case Key.F when ctrl:
+                // Ctrl+F = Focus search (in Files view, navigate there first)
+                if (!vm.IsFilesSelected)
+                {
+                    vm.NavigateToFilesCommand?.Execute(null);
+                }
+                vm.FocusSearchCommand?.Execute(null);
+                e.Handled = true;
+                break;
+        }
     }
 
     private void TitleBar_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -63,3 +113,4 @@ public partial class MainWindow : Window
         Close();
     }
 }
+

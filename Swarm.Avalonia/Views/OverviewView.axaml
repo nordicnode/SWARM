@@ -3,10 +3,14 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Swarm.Avalonia.ViewModels"
+             xmlns:converters="clr-namespace:Swarm.Avalonia.Converters"
              mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="600"
              x:Class="Swarm.Avalonia.Views.OverviewView"
              x:DataType="vm:OverviewViewModel">
     
+    <UserControl.Resources>
+        <converters:StringToBrushConverter x:Key="StringToBrush"/>
+    </UserControl.Resources>
     <Grid Margin="28,20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -80,12 +84,27 @@
                                        FontWeight="Medium"
                                        VerticalAlignment="Center"
                                        Margin="10,0,0,0"/>
+                            <TextBlock Text="⟳"
+                                       FontSize="14"
+                                       Foreground="{StaticResource AccentPrimaryBrush}"
+                                       VerticalAlignment="Center"
+                                       Margin="8,0,0,0"
+                                       IsVisible="{Binding IsLoading}"/>
                         </StackPanel>
-                        <TextBlock Text="{Binding TotalFiles}"
-                                   FontSize="32"
-                                   FontWeight="Bold"
-                                   Foreground="{StaticResource TextPrimaryBrush}"
-                                   Margin="0,0,0,2"/>
+                        <Grid>
+                            <TextBlock Text="{Binding TotalFiles}"
+                                       FontSize="32"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                       Margin="0,0,0,2"
+                                       IsVisible="{Binding !IsLoading}"/>
+                            <TextBlock Text="..."
+                                       FontSize="32"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       Margin="0,0,0,2"
+                                       IsVisible="{Binding IsLoading}"/>
+                        </Grid>
                         <TextBlock Text="{Binding TotalSize, StringFormat='Total Size: {0}'}"
                                    Foreground="{StaticResource TextMutedBrush}"
                                    FontSize="12"/>
@@ -115,10 +134,10 @@
                                        VerticalAlignment="Center"
                                        Margin="10,0,0,0"/>
                         </StackPanel>
-                        <TextBlock Text="Active"
+                        <TextBlock Text="{Binding SyncStatus}"
                                    FontSize="32"
                                    FontWeight="Bold"
-                                   Foreground="{StaticResource StatusOnlineBrush}"
+                                   Foreground="{Binding SyncStatusColor, Converter={StaticResource StringToBrush}}"
                                    Margin="0,0,0,2"/>
                         <TextBlock Text="{Binding SyncFolderPath}"
                                    Foreground="{StaticResource TextMutedBrush}"
@@ -144,17 +163,63 @@
                        Margin="0,0,0,12"/>
 
             <Border Grid.Row="1" Classes="card-compact" MinHeight="150">
-                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <Border Background="#10ffffff" CornerRadius="10" Padding="12" Margin="0,0,0,12">
-                        <PathIcon Data="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"
-                                  Width="24" Height="24"
-                                  Foreground="{StaticResource TextMutedBrush}"/>
-                    </Border>
-                    <TextBlock Text="No recent activity to display"
-                               Foreground="{StaticResource TextMutedBrush}"
-                               FontSize="13"
-                               HorizontalAlignment="Center"/>
-                </StackPanel>
+                <Grid>
+                    <!-- Empty state (when no activities) -->
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                                IsVisible="{Binding !HasRecentActivities}">
+                        <Border Background="#10ffffff" CornerRadius="10" Padding="12" Margin="0,0,0,12">
+                            <PathIcon Data="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"
+                                      Width="24" Height="24"
+                                      Foreground="{StaticResource TextMutedBrush}"/>
+                        </Border>
+                        <TextBlock Text="No recent activity to display"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   FontSize="13"
+                                   HorizontalAlignment="Center"/>
+                    </StackPanel>
+                    
+                    <!-- Activity list (when activities exist) -->
+                    <ItemsControl ItemsSource="{Binding RecentActivities}"
+                                  IsVisible="{Binding HasRecentActivities}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Padding="8,6" Margin="0,0,0,4" 
+                                        Background="#08ffffff" CornerRadius="6">
+                                    <Grid ColumnDefinitions="Auto,*,Auto">
+                                        <!-- Icon indicator -->
+                                        <Ellipse Width="8" Height="8" 
+                                                 Margin="0,0,12,0"
+                                                 VerticalAlignment="Center">
+                                            <Ellipse.Fill>
+                                                <SolidColorBrush Color="{Binding IconColor}"/>
+                                            </Ellipse.Fill>
+                                        </Ellipse>
+                                        
+                                        <!-- Activity info -->
+                                        <StackPanel Grid.Column="1" Spacing="2">
+                                            <TextBlock Text="{Binding Title}"
+                                                       FontSize="13"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
+                                            <TextBlock Text="{Binding Description}"
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                        
+                                        <!-- Time ago -->
+                                        <TextBlock Grid.Column="2" 
+                                                   Text="{Binding TimeAgo}"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0,0,0"/>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
             </Border>
         </Grid>
     </Grid>

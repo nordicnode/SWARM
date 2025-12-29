@@ -30,6 +30,7 @@
     
     <!-- Additional controls -->
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.2.1" />
+    <PackageReference Include="LiveChartsCore.SkiaSharpView.Avalonia" Version="2.0.0-rc2" />
     <PackageReference Include="Material.Icons.Avalonia" Version="2.4.1" />
     
     <!-- MessageBox support -->

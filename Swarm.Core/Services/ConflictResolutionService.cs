@@ -75,6 +75,20 @@ public enum ConflictChoice
 }
 
 /// <summary>
+/// Record of a resolved conflict for history tracking.
+/// </summary>
+public record ConflictHistoryEntry(
+    string RelativePath,
+    string SourcePeerName,
+    ConflictChoice Resolution,
+    string ResolutionMethod,
+    DateTime LocalModified,
+    DateTime RemoteModified,
+    long LocalSize,
+    long RemoteSize,
+    DateTime ResolvedAt);
+
+/// <summary>
 /// Service for detecting and resolving file conflicts during sync.
 /// </summary>
 public class ConflictResolutionService
@@ -82,6 +96,9 @@ public class ConflictResolutionService
     private readonly Settings _settings;
     private readonly VersioningService? _versioningService;
     private readonly ActivityLogService? _activityLogService;
+    private readonly object _historyLock = new();
+    private readonly List<ConflictHistoryEntry> _conflictHistory = new();
+    private const int MaxHistoryEntries = 200;
     
     /// <summary>
     /// Raised when a conflict needs user resolution (only when mode is AskUser).
@@ -93,6 +110,30 @@ public class ConflictResolutionService
     /// Raised when a conflict is auto-resolved.
     /// </summary>
     public event Action<FileConflict, ConflictChoice>? ConflictAutoResolved;
+
+    /// <summary>
+    /// Raised when conflict history changes.
+    /// </summary>
+    public event Action? HistoryChanged;
+
+    /// <summary>
+    /// Gets the conflict history (most recent first).
+    /// </summary>
+    public IReadOnlyList<ConflictHistoryEntry> ConflictHistory
+    {
+        get
+        {
+            lock (_historyLock)
+            {
+                return _conflictHistory.ToList();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Total number of conflicts resolved this session.
+    /// </summary>
+    public int TotalConflictsResolved => _conflictHistory.Count;
 
     public ConflictResolutionService(Settings settings, VersioningService? versioningService = null, ActivityLogService? activityLogService = null)
     {
@@ -202,6 +243,43 @@ public class ConflictResolutionService
         System.Diagnostics.Debug.WriteLine($"[ConflictResolution] {message}");
         
         _activityLogService?.LogConflict(conflict.RelativePath, conflict.SourcePeerName, choice.ToString());
+
+        // Add to history
+        var entry = new ConflictHistoryEntry(
+            conflict.RelativePath,
+            conflict.SourcePeerName,
+            choice,
+            method,
+            conflict.LocalModified,
+            conflict.RemoteModified,
+            conflict.LocalSize,
+            conflict.RemoteSize,
+            DateTime.Now);
+
+        lock (_historyLock)
+        {
+            _conflictHistory.Insert(0, entry);
+            
+            // Trim history
+            while (_conflictHistory.Count > MaxHistoryEntries)
+            {
+                _conflictHistory.RemoveAt(_conflictHistory.Count - 1);
+            }
+        }
+
+        HistoryChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Clears the conflict history.
+    /// </summary>
+    public void ClearHistory()
+    {
+        lock (_historyLock)
+        {
+            _conflictHistory.Clear();
+        }
+        HistoryChanged?.Invoke();
     }
 }
 

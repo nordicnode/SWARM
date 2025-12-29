@@ -10,10 +10,38 @@ namespace Swarm.Core.Services;
 /// </summary>
 public class CryptoService : IDisposable
 {
-    private static readonly string KeyDirectory = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Swarm", "keys");
+    private const string PortableMarkerFile = "portable.marker";
+    
+    /// <summary>
+    /// Gets the keys directory, respecting portable mode.
+    /// In portable mode, keys are stored next to the executable.
+    /// Otherwise, they're in AppData/Roaming/Swarm/keys.
+    /// </summary>
+    private static string GetKeysDirectory()
+    {
+        var exeDir = GetExecutableDirectory();
+        var isPortable = File.Exists(Path.Combine(exeDir, PortableMarkerFile));
+        
+        if (isPortable)
+        {
+            return Path.Combine(exeDir, "keys");
+        }
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Swarm", "keys");
+    }
+    
+    private static string GetExecutableDirectory()
+    {
+        var processPath = Environment.ProcessPath;
+        if (!string.IsNullOrEmpty(processPath))
+        {
+            return Path.GetDirectoryName(processPath) ?? AppContext.BaseDirectory;
+        }
+        return AppContext.BaseDirectory;
+    }
 
+    private static readonly string KeyDirectory = GetKeysDirectory();
     private static readonly string IdentityKeyPath = Path.Combine(KeyDirectory, "identity.key");
 
     private ECDsa? _identityKey;

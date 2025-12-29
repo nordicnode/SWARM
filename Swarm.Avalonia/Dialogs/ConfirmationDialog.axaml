@@ -1,0 +1,52 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="200"
+        x:Class="Swarm.Avalonia.Dialogs.ConfirmationDialog"
+        Title="Confirm"
+        Width="400" Height="200"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="{StaticResource BackgroundDarkBrush}">
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title -->
+        <TextBlock Name="TitleText"
+                   Text="Confirm Action"
+                   FontSize="18"
+                   FontWeight="Bold"
+                   Foreground="{StaticResource TextPrimaryBrush}"
+                   Margin="0,0,0,16"/>
+
+        <!-- Message -->
+        <TextBlock Grid.Row="1"
+                   Name="MessageText"
+                   Text="Are you sure you want to proceed?"
+                   FontSize="14"
+                   Foreground="{StaticResource TextSecondaryBrush}"
+                   TextWrapping="Wrap"
+                   VerticalAlignment="Center"/>
+
+        <!-- Buttons -->
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="0,16,0,0">
+            <Button Grid.Column="1"
+                    Name="CancelButton"
+                    Content="Cancel"
+                    Classes="secondary"
+                    Width="90"
+                    Margin="0,0,12,0"/>
+            <Button Grid.Column="2"
+                    Name="ConfirmButton"
+                    Content="Confirm"
+                    Classes="primary"
+                    Width="90"/>
+        </Grid>
+    </Grid>
+</Window>

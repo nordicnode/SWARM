@@ -19,15 +19,19 @@
 
     <TrayIcon.Icons>
         <TrayIcons>
-            <TrayIcon Icon="/Assets/swarm.ico" ToolTipText="Swarm">
+            <TrayIcon Icon="/Assets/swarm.ico" ToolTipText="{ReflectionBinding StatusText}">
                 <TrayIcon.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="Show Swarm" Command="{ReflectionBinding ShowWindowCommand}" />
                         <NativeMenuItemSeparator />
                         <NativeMenuItem Header="Open Sync Folder" Command="{ReflectionBinding OpenSyncFolderCommand}" />
                         <NativeMenuItem Header="Toggle Sync" Command="{ReflectionBinding ToggleSyncCommand}" />
-                        <NativeMenuItem Header="Settings" Command="{ReflectionBinding OpenSettingsCommand}" />
                         <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Activity Log" Command="{ReflectionBinding OpenActivityLogCommand}" />
+                        <NativeMenuItem Header="Conflict History" Command="{ReflectionBinding OpenConflictHistoryCommand}" />
+                        <NativeMenuItem Header="Bandwidth Monitor" Command="{ReflectionBinding OpenBandwidthCommand}" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Settings" Command="{ReflectionBinding OpenSettingsCommand}" />
                         <NativeMenuItem Header="Exit" Command="{ReflectionBinding ExitCommand}" />
                     </NativeMenu>
                 </TrayIcon.Menu>

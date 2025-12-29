@@ -24,12 +24,14 @@ public class TransferService : ITransferService
 {
     private const int BUFFER_SIZE = ProtocolConstants.DEFAULT_BUFFER_SIZE;
     private const string PROTOCOL_HEADER = ProtocolConstants.TRANSFER_HEADER;
-    private const int MAX_CONCURRENT_CONNECTIONS = 50;
+    private const int MAX_CONCURRENT_CONNECTIONS = ProtocolConstants.MAX_CONCURRENT_CONNECTIONS;
 
     private readonly Settings _settings;
     private readonly CryptoService _cryptoService;
     private readonly Abstractions.IDispatcher? _dispatcher;
     private readonly SemaphoreSlim _connectionLimiter = new(MAX_CONCURRENT_CONNECTIONS, MAX_CONCURRENT_CONNECTIONS);
+    private readonly ConnectionManager _connectionManager;
+    private readonly SecureHandshakeHandler _handshakeHandler;
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
     private string _downloadPath;
@@ -43,6 +45,14 @@ public class TransferService : ITransferService
         _cryptoService = cryptoService;
         _dispatcher = dispatcher;
         _downloadPath = _settings.DownloadPath;
+        
+        // Initialize extracted handlers
+        _connectionManager = new ConnectionManager(settings, cryptoService);
+        _handshakeHandler = new SecureHandshakeHandler(settings, cryptoService);
+        
+        // Wire up handshake callback for connection pool
+        _connectionManager.HandshakeHandler = async (conn, peer, ct) =>
+            await _handshakeHandler.PerformHandshakeAsClient(conn, peer, ct);
     }
     
     private void InvokeOnUI(Action action)
@@ -57,199 +67,48 @@ public class TransferService : ITransferService
         }
     }
 
-    private readonly ConcurrentDictionary<string, ConnectionPool> _connectionPools = new();
+
 
     /// <summary>
-    /// Measures round-trip time to a peer for adaptive buffer sizing.
+    /// Gets or creates a connection pool for the specified peer (delegates to ConnectionManager).
     /// </summary>
-    private Task<int> MeasureRttAsync(PeerConnection connection, CancellationToken ct)
-    {
-        // Simple RTT measurement: time a small read/write operation
-        // If the connection has a network stream, we can measure based on socket stats
-        try
-        {
-            var socket = connection.Client.Client;
-            if (socket == null) return Task.FromResult(-1);
-
-            // Use socket round-trip time if available (Windows only)
-            // This gives us the actual TCP RTT without additional traffic
-            var rttInfo = socket.GetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval);
-            
-            // Fallback: Estimate RTT from connection time
-            // For now, use a simple heuristic based on whether we're on localhost
-            var remoteEndpoint = socket.RemoteEndPoint as IPEndPoint;
-            if (remoteEndpoint != null)
-            {
-                // Check if local network (private IP ranges typically have low latency)
-                var ip = remoteEndpoint.Address.ToString();
-                if (ip.StartsWith("127.") || ip.StartsWith("192.168.") || ip.StartsWith("10.") || ip.StartsWith("172."))
-                {
-                    // Likely LAN - assume fast
-                    return Task.FromResult(2);
-                }
-            }
-
-            // Default to medium speed assumption
-            return Task.FromResult(25);
-        }
-        catch
-        {
-            // If we can't measure, assume medium speed
-            return Task.FromResult(25);
-        }
-    }
+    private ConnectionPool GetOrCreateConnectionPool(Peer peer) 
+        => _connectionManager.GetOrCreateConnectionPool(peer);
 
     /// <summary>
-    /// Gets or creates a connection pool for the specified peer.
-    /// </summary>
-    private ConnectionPool GetOrCreateConnectionPool(Peer peer)
-    {
-        var key = $"{peer.IpAddress}:{peer.Port}";
-        return _connectionPools.GetOrAdd(key, _ => new ConnectionPool(
-            peer,
-            async (p, conn, ct) => await PerformSecureHandshakeAsClient(conn, p, ct),
-            MeasureRttAsync));
-    }
-
-    /// <summary>
-    /// Gets a connection to a peer (uses primary connection from pool for backward compatibility).
-    /// The caller must release the connection lock when done.
+    /// Gets a connection to a peer (delegates to ConnectionManager).
     /// </summary>
     private async Task<PeerConnection> GetOrCreatePeerConnection(Peer peer, CancellationToken ct)
-    {
-        var pool = GetOrCreateConnectionPool(peer);
-        return await pool.GetPrimaryConnectionAsync(ct);
-    }
+        => await _connectionManager.GetOrCreatePeerConnection(peer, ct);
 
     /// <summary>
-    /// Acquires a connection from the pool for parallel transfers.
-    /// The caller must release the connection lock when done.
+    /// Acquires a connection from the pool (delegates to ConnectionManager).
     /// </summary>
     private async Task<PeerConnection> AcquirePooledConnection(Peer peer, CancellationToken ct)
-    {
-        var pool = GetOrCreateConnectionPool(peer);
-        return await pool.AcquireAsync(ct);
-    }
+        => await _connectionManager.AcquirePooledConnection(peer, ct);
 
     /// <summary>
-    /// Removes a connection pool when it's no longer healthy.
+    /// Removes a connection pool (delegates to ConnectionManager).
     /// </summary>
     private void RemoveConnectionPool(Peer peer)
-    {
-        var key = $"{peer.IpAddress}:{peer.Port}";
-        if (_connectionPools.TryRemove(key, out var pool))
-        {
-            pool.Dispose();
-        }
-    }
+        => _connectionManager.RemoveConnectionPool(peer);
 
     /// <summary>
-    /// Performs a secure handshake as the client (initiator).
-    /// Exchanges ephemeral ECDH keys to derive a session key.
+    /// Performs a secure handshake as the client (delegates to SecureHandshakeHandler).
     /// </summary>
     private async Task PerformSecureHandshakeAsClient(PeerConnection connection, Peer peer, CancellationToken ct)
-    {
-        // Generate ephemeral ECDH key pair
-        var (localPublicKey, localPrivateKey) = CryptoService.GenerateEphemeralKeyPair();
-        
-        // Create signable data: LocalId + ephemeral public key
-        var signableData = Encoding.UTF8.GetBytes(_settings.LocalId + Convert.ToBase64String(localPublicKey));
-        var signature = _cryptoService.Sign(signableData);
-        
-        // Send secure handshake header
-        connection.Writer.Write(ProtocolConstants.SECURE_HANDSHAKE_HEADER);
-        connection.Writer.Write(_settings.LocalId);
-        connection.Writer.Write(_settings.DeviceName);
-        connection.Writer.Write(localPublicKey.Length);
-        connection.Writer.Write(localPublicKey);
-        connection.Writer.Write(_cryptoService.GetPublicKey().Length);
-        connection.Writer.Write(_cryptoService.GetPublicKey());
-        connection.Writer.Write(signature.Length);
-        connection.Writer.Write(signature);
-        connection.Writer.Flush();
-        
-        // Read server response
-        var response = connection.Reader.ReadString();
-        if (response != ProtocolConstants.HANDSHAKE_OK)
-        {
-            throw new InvalidOperationException($"Handshake failed: {response}");
-        }
-        
-        // Read server's ephemeral public key
-        var serverPubKeyLen = connection.Reader.ReadInt32();
-        var serverPublicKey = connection.Reader.ReadBytes(serverPubKeyLen);
-        
-        // Derive session key using ECDH
-        var sessionKey = CryptoService.DeriveSessionKey(localPrivateKey, serverPublicKey);
-        localPrivateKey.Dispose();
-        
-        // Enable encryption on the connection
-        connection.EnableEncryption(sessionKey);
-    }
+        => await _handshakeHandler.PerformHandshakeAsClient(connection, peer, ct);
 
     /// <summary>
-    /// Handles a secure handshake request as the server (responder).
+    /// Handles a secure handshake as the server (delegates to SecureHandshakeHandler).
     /// </summary>
     private async Task<bool> HandleSecureHandshakeAsServer(BinaryReader reader, BinaryWriter writer, NetworkStream stream, TcpClient client)
     {
-        try
-        {
-            var peerId = reader.ReadString();
-            var peerName = reader.ReadString();
-            
-            var clientPubKeyLen = reader.ReadInt32();
-            var clientPublicKey = reader.ReadBytes(clientPubKeyLen);
-            
-            var identityPubKeyLen = reader.ReadInt32();
-            var clientIdentityKey = reader.ReadBytes(identityPubKeyLen);
-            
-            var signatureLen = reader.ReadInt32();
-            var signature = reader.ReadBytes(signatureLen);
-            
-            // Verify signature
-            var signableData = Encoding.UTF8.GetBytes(peerId + Convert.ToBase64String(clientPublicKey));
-            if (!CryptoService.Verify(signableData, signature, clientIdentityKey))
-            {
-                writer.Write(ProtocolConstants.HANDSHAKE_FAILED_PREFIX + "INVALID_SIGNATURE");
-                return false;
-            }
-            
-            // Check if peer is trusted (optional - can still proceed but warn)
-            var clientKeyBase64 = Convert.ToBase64String(clientIdentityKey);
-            var isTrusted = _settings.TrustedPeerPublicKeys.TryGetValue(peerId, out var storedKey) && storedKey == clientKeyBase64;
-            
-            if (!isTrusted)
-            {
-                Log.Warning($"Handshake from untrusted peer: {peerName} ({peerId})");
-                // Still allow connection - trust is enforced at a higher level
-            }
-            
-            // Generate our ephemeral key pair
-            var (serverPublicKey, serverPrivateKey) = CryptoService.GenerateEphemeralKeyPair();
-            
-            // Send response
-            writer.Write(ProtocolConstants.HANDSHAKE_OK);
-            writer.Write(serverPublicKey.Length);
-            writer.Write(serverPublicKey);
-            writer.Flush();
-            
-            // Derive session key
-            var sessionKey = CryptoService.DeriveSessionKey(serverPrivateKey, clientPublicKey);
-            serverPrivateKey.Dispose();
-            
-            // Store session info (the caller will need to use this)
-            // For now, we return true and let the caller handle the session key
-            Log.Debug($"Secure handshake completed as server with {peerName}");
-            
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, $"Handshake error: {ex.Message}");
-            try { writer.Write($"{ProtocolConstants.HANDSHAKE_FAILED_PREFIX}GENERIC_ERROR"); } catch { }
-            return false;
-        }
+        var result = await _handshakeHandler.HandleHandshakeAsServer(reader, writer, stream, client);
+        return result.Succeeded;
     }
+
+
 
     public event Action<FileTransfer>? TransferStarted;
     public event Action<FileTransfer>? TransferProgress;
@@ -1480,11 +1339,7 @@ public class TransferService : ITransferService
             _listener = null;
         }
         
-        foreach (var pool in _connectionPools.Values)
-        {
-            pool.Dispose();
-        }
-        _connectionPools.Clear();
+        _connectionManager.Dispose();
     }
 }
 

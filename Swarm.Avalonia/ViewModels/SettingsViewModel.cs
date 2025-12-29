@@ -56,6 +56,9 @@ public class SettingsViewModel : ViewModelBase
     private string? _selectedExcludedFolder;
     private string? _excludedFolderError;
 
+    // Change tracking
+    private bool _hasUnsavedChanges;
+
     public SettingsViewModel() {
         // Design-time
     }
@@ -83,6 +86,7 @@ public class SettingsViewModel : ViewModelBase
         BrowseSyncFolderCommand = new RelayCommand(BrowseSyncFolder);
         BrowseDownloadPathCommand = new RelayCommand(BrowseDownloadPath);
         SaveSettingsCommand = new RelayCommand(SaveSettings);
+        ResetSettingsCommand = new RelayCommand(ResetSettings);
         RemoveTrustedPeerCommand = new RelayCommand(RemoveSelectedPeer, CanRemoveSelectedPeer);
         AddExcludedFolderCommand = new RelayCommand(AddExcludedFolder);
         RemoveExcludedFolderCommand = new RelayCommand(RemoveExcludedFolder, CanRemoveExcludedFolder);
@@ -288,9 +292,16 @@ public class SettingsViewModel : ViewModelBase
     public ICommand BrowseSyncFolderCommand { get; } = null!;
     public ICommand BrowseDownloadPathCommand { get; } = null!;
     public ICommand SaveSettingsCommand { get; } = null!;
+    public ICommand ResetSettingsCommand { get; } = null!;
     public ICommand RemoveTrustedPeerCommand { get; } = null!;
     public ICommand AddExcludedFolderCommand { get; } = null!;
     public ICommand RemoveExcludedFolderCommand { get; } = null!;
+
+    public bool HasUnsavedChanges
+    {
+        get => _hasUnsavedChanges;
+        private set => SetProperty(ref _hasUnsavedChanges, value);
+    }
 
     #endregion
 
@@ -385,7 +396,17 @@ public class SettingsViewModel : ViewModelBase
 
         _settings.Save();
 
+        HasUnsavedChanges = false;
         SettingsChanged?.Invoke(_settings);
+    }
+
+    /// <summary>
+    /// Resets all settings to their last saved values (discards changes).
+    /// </summary>
+    private void ResetSettings()
+    {
+        LoadSettings();
+        HasUnsavedChanges = false;
     }
 
     private async void AddExcludedFolder()

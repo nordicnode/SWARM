@@ -30,6 +30,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
     private FileSortColumn _sortColumn = FileSortColumn.Name;
     private bool _sortDescending = false;
     private string _searchFilter = "";
+    private bool _isLoading;
 
     public FilesViewModel() {
         // Design-time
@@ -60,7 +61,19 @@ public class FilesViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _files, value);
     }
 
-    public bool IsEmpty => Files.Count == 0;
+    public bool IsEmpty => Files.Count == 0 && !IsLoading;
+
+    public bool IsLoading
+    {
+        get => _isLoading;
+        private set
+        {
+            if (SetProperty(ref _isLoading, value))
+            {
+                OnPropertyChanged(nameof(IsEmpty));
+            }
+        }
+    }
 
     public string SearchFilter
     {
@@ -85,6 +98,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
     public ICommand OpenCommand { get; } = null!;
     public ICommand ShowInExplorerCommand { get; } = null!;
     public ICommand DeleteCommand { get; } = null!;
+    public ICommand RefreshCommand { get; } = null!;
     public ICommand NavigateToPathCommand { get; } = null!;
     public ICommand SortByCommand { get; } = null!;
     public ICommand ViewHistoryCommand { get; } = null!;
@@ -149,6 +163,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
         OpenCommand = new RelayCommand(Open, CanOpen);
         ShowInExplorerCommand = new RelayCommand(ShowInExplorer, CanFileAction);
         DeleteCommand = new RelayCommand(DeleteFile, CanFileAction);
+        RefreshCommand = new RelayCommand(Refresh);
         ViewHistoryCommand = new RelayCommand(ViewHistory, CanViewHistory);
         SortByCommand = new RelayCommand<string>(column =>
         {
@@ -174,11 +189,20 @@ public class FilesViewModel : ViewModelBase, IDisposable
         _refreshDebounceTimer.Start();
     }
 
+    /// <summary>
+    /// Refreshes the file list (called via F5).
+    /// </summary>
+    private void Refresh()
+    {
+        LoadFiles();
+    }
+
 
     private void LoadFiles()
     {
         try
         {
+            IsLoading = true;
             if (!Directory.Exists(CurrentPath)) return;
 
             var items = new List<FileItemViewModel>();
@@ -226,6 +250,10 @@ public class FilesViewModel : ViewModelBase, IDisposable
         catch (Exception ex)
         {
             Log.Warning(ex, "Failed to load files from {Path}", CurrentPath);
+        }
+        finally
+        {
+            IsLoading = false;
         }
     }
 
@@ -399,20 +427,40 @@ public class FilesViewModel : ViewModelBase, IDisposable
     {
         if (SelectedFile == null) return;
 
-        try
+        // Use Dispatcher to show async dialog from sync command
+        Dispatcher.UIThread.Post(async () =>
         {
-            if (SelectedFile.IsDirectory)
-                Directory.Delete(SelectedFile.Path, true);
-            else
-                File.Delete(SelectedFile.Path);
+            try
+            {
+                var mainWindow = global::Avalonia.Application.Current?.ApplicationLifetime is 
+                    global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                    ? desktop.MainWindow
+                    : null;
+                    
+                if (mainWindow == null) return;
 
-            LoadFiles(); // Refresh
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Failed to delete: {Path}", SelectedFile?.Path);
-            // TODO: Show error notification to user
-        }
+                var itemType = SelectedFile.IsDirectory ? "folder" : "file";
+                var dialog = new Swarm.Avalonia.Dialogs.ConfirmationDialog();
+                dialog.SetTitle($"Delete {itemType}?");
+                dialog.SetMessage($"Are you sure you want to delete \"{SelectedFile.Name}\"?\n\nThis action cannot be undone.");
+                dialog.SetConfirmButton("Delete", isDestructive: true);
+                
+                var result = await dialog.ShowDialog<bool>(mainWindow);
+                if (!result) return;
+
+                // Proceed with deletion
+                if (SelectedFile.IsDirectory)
+                    Directory.Delete(SelectedFile.Path, true);
+                else
+                    File.Delete(SelectedFile.Path);
+
+                LoadFiles(); // Refresh
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to delete: {Path}", SelectedFile?.Path);
+            }
+        });
     }
 
     public void Dispose()

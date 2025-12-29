@@ -31,10 +31,10 @@ public class FileWatcherService : IDisposable
         _directoryRenameCandidates = new();
     private readonly ConcurrentDictionary<string, DateTime> _recentDirectoryRenames = new();
     
-    private const int DIRECTORY_RENAME_DEBOUNCE_MS = 500;
-    private const int DIRECTORY_RENAME_THRESHOLD = 5;
-    private const int DIRECTORY_RENAME_MEMORY_MS = 2000;
-    private const int RENAME_BATCH_DELAY_MS = 1000;
+    private const int DIRECTORY_RENAME_DEBOUNCE_MS = ProtocolConstants.DIRECTORY_RENAME_DEBOUNCE_MS;
+    private const int DIRECTORY_RENAME_THRESHOLD = ProtocolConstants.DIRECTORY_RENAME_THRESHOLD;
+    private const int DIRECTORY_RENAME_MEMORY_MS = ProtocolConstants.DIRECTORY_RENAME_MEMORY_MS;
+    private const int RENAME_BATCH_DELAY_MS = ProtocolConstants.RENAME_BATCH_DELAY_MS;
     
     private DateTime _lastRenameEventTime = DateTime.MinValue;
 

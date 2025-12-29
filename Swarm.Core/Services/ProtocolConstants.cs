@@ -304,6 +304,60 @@ public static class ProtocolConstants
     /// Response indicating file transfer was rejected.
     /// </summary>
     public const string TRANSFER_REJECTED = "REJECTED";
+
+
+    // --- Connection Limits ---
+
+    /// <summary>
+    /// Maximum concurrent incoming TCP connections to prevent DoS.
+    /// </summary>
+    public const int MAX_CONCURRENT_CONNECTIONS = 50;
+
+    /// <summary>
+    /// Threshold (bytes) above which files are streamed to temp file during compression (50MB).
+    /// </summary>
+    public const long STREAMING_THRESHOLD = 50 * 1024 * 1024;
+
+
+    // --- Activity Logging ---
+
+    /// <summary>
+    /// Debounce time for activity log entries to prevent duplicates (ms).
+    /// </summary>
+    public const int ACTIVITY_DEBOUNCE_MS = 2000;
+
+    /// <summary>
+    /// Maximum number of activity log entries kept in memory.
+    /// </summary>
+    public const int ACTIVITY_LOG_MAX_MEMORY = 1000;
+
+    /// <summary>
+    /// Maximum number of activity log entries kept on disk.
+    /// </summary>
+    public const int ACTIVITY_LOG_MAX_DISK = 10000;
+
+
+    // --- Directory Rename Detection ---
+
+    /// <summary>
+    /// Debounce time for directory rename detection (ms).
+    /// </summary>
+    public const int DIRECTORY_RENAME_DEBOUNCE_MS = 500;
+
+    /// <summary>
+    /// Minimum number of files to consider it a directory rename.
+    /// </summary>
+    public const int DIRECTORY_RENAME_THRESHOLD = 5;
+
+    /// <summary>
+    /// Time to remember a directory rename to suppress file rename events (ms).
+    /// </summary>
+    public const int DIRECTORY_RENAME_MEMORY_MS = 2000;
+
+    /// <summary>
+    /// Delay before processing rename batch to allow more events to arrive (ms).
+    /// </summary>
+    public const int RENAME_BATCH_DELAY_MS = 1000;
 }
 
 

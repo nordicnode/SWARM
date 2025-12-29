@@ -3,7 +3,11 @@
 
 param(
     [Parameter(Mandatory = $false)]
-    [switch]$IncludePublish = $false
+    [switch]$IncludePublish = $false,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateSet("all", "win-x64", "linux-x64")]
+    [string]$Platform = "all"
 )
 
 $ErrorActionPreference = "Continue"
@@ -29,14 +33,32 @@ else {
 }
 
 # Optionally clean publish directory
-if ($IncludePublish -and (Test-Path "publish")) {
-    Write-Host "Removing: publish directory" -ForegroundColor Gray
-    try {
-        Remove-Item -Path "publish" -Recurse -Force
-        Write-Host "Removed publish directory." -ForegroundColor Green
+if ($IncludePublish) {
+    if ($Platform -eq "all" -and (Test-Path "publish")) {
+        Write-Host "Removing: entire publish directory" -ForegroundColor Gray
+        try {
+            Remove-Item -Path "publish" -Recurse -Force
+            Write-Host "Removed publish directory." -ForegroundColor Green
+        }
+        catch {
+            Write-Warning "Could not remove publish directory: $($_.Exception.Message)"
+        }
     }
-    catch {
-        Write-Warning "Could not remove publish directory: $($_.Exception.Message)"
+    elseif ($Platform -ne "all") {
+        $PlatformDir = "publish/$Platform"
+        if (Test-Path $PlatformDir) {
+            Write-Host "Removing: $PlatformDir" -ForegroundColor Gray
+            try {
+                Remove-Item -Path $PlatformDir -Recurse -Force
+                Write-Host "Removed $Platform publish directory." -ForegroundColor Green
+            }
+            catch {
+                Write-Warning "Could not remove ${PlatformDir}: $($_.Exception.Message)"
+            }
+        }
+        else {
+            Write-Host "No publish directory for $Platform found." -ForegroundColor Yellow
+        }
     }
 }
 
@@ -44,5 +66,7 @@ Write-Host "Done cleaning build artifacts." -ForegroundColor Green
 
 # Usage hints
 Write-Host "`nUsage:" -ForegroundColor Yellow
-Write-Host "  .\Clean-Project.ps1                  # Clean bin/obj only" -ForegroundColor Gray
-Write-Host "  .\Clean-Project.ps1 -IncludePublish  # Clean bin/obj and publish directories" -ForegroundColor Gray
+Write-Host "  .\Clean-Project.ps1                              # Clean bin/obj only" -ForegroundColor Gray
+Write-Host "  .\Clean-Project.ps1 -IncludePublish              # Clean bin/obj and all publish dirs" -ForegroundColor Gray
+Write-Host "  .\Clean-Project.ps1 -IncludePublish -Platform win-x64  # Clean bin/obj + win-x64 publish" -ForegroundColor Gray
+Write-Host "  .\Clean-Project.ps1 -IncludePublish -Platform linux-x64  # Clean bin/obj + linux-x64 publish" -ForegroundColor Gray

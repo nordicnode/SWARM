@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.IO;
 using Avalonia;
 using Avalonia.Controls;
@@ -113,6 +114,7 @@ public partial class App : Application
         services.AddSingleton<ConflictResolutionService>();
         services.AddSingleton<ShareLinkService>();
         services.AddSingleton<PairingService>();
+        services.AddSingleton<BandwidthTrackingService>();
 
         // Facade
         services.AddSingleton<CoreServiceFacade>();
@@ -124,10 +126,15 @@ public partial class App : Application
     }
 }
 
-public class AppTrayViewModel
+public class AppTrayViewModel : INotifyPropertyChanged
 {
     private readonly IClassicDesktopStyleApplicationLifetime _desktop;
     private readonly MainViewModel _mainViewModel;
+    private string _statusText = "Swarm - Ready";
+    private string _syncStatusText = "Idle";
+    private int _connectedPeers;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public AppTrayViewModel(IClassicDesktopStyleApplicationLifetime desktop, MainViewModel mainViewModel)
     {
@@ -139,6 +146,13 @@ public class AppTrayViewModel
         OpenSyncFolderCommand = new RelayCommand(OpenSyncFolder);
         ToggleSyncCommand = _mainViewModel.ToggleSyncCommand;
         OpenSettingsCommand = new RelayCommand(OpenSettings);
+        OpenActivityLogCommand = new RelayCommand(OpenActivityLog);
+        OpenConflictHistoryCommand = new RelayCommand(OpenConflictHistory);
+        OpenBandwidthCommand = new RelayCommand(OpenBandwidth);
+
+        // Subscribe to status updates
+        _mainViewModel.PropertyChanged += OnMainViewModelPropertyChanged;
+        UpdateStatus();
     }
 
     public ICommand ShowWindowCommand { get; }
@@ -146,6 +160,53 @@ public class AppTrayViewModel
     public ICommand OpenSyncFolderCommand { get; }
     public ICommand ToggleSyncCommand { get; }
     public ICommand OpenSettingsCommand { get; }
+    public ICommand OpenActivityLogCommand { get; }
+    public ICommand OpenConflictHistoryCommand { get; }
+    public ICommand OpenBandwidthCommand { get; }
+
+    public string StatusText
+    {
+        get => _statusText;
+        set { _statusText = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusText))); }
+    }
+
+    public string SyncStatusText
+    {
+        get => _syncStatusText;
+        set { _syncStatusText = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SyncStatusText))); }
+    }
+
+    public int ConnectedPeers
+    {
+        get => _connectedPeers;
+        set { _connectedPeers = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ConnectedPeers))); }
+    }
+
+    private void OnMainViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.IsSyncing) || 
+            e.PropertyName == nameof(MainViewModel.StatusText) ||
+            e.PropertyName == nameof(MainViewModel.SyncingFileCountText))
+        {
+            UpdateStatus();
+        }
+    }
+
+    private void UpdateStatus()
+    {
+        if (_mainViewModel.IsSyncing)
+        {
+            SyncStatusText = $"Syncing: {_mainViewModel.SyncingFileCountText}";
+            StatusText = $"Swarm - {_mainViewModel.SyncingFileCountText}";
+        }
+        else
+        {
+            SyncStatusText = "Idle";
+            StatusText = "Swarm - Ready";
+        }
+
+        ConnectedPeers = _mainViewModel.OverviewVM.ConnectedPeers;
+    }
 
     private void ShowWindow()
     {
@@ -163,6 +224,33 @@ public class AppTrayViewModel
         if (_mainViewModel.NavigateToSettingsCommand.CanExecute(null))
         {
             _mainViewModel.NavigateToSettingsCommand.Execute(null);
+        }
+    }
+
+    private void OpenActivityLog()
+    {
+        ShowWindow();
+        if (_mainViewModel.OpenActivityLogCommand.CanExecute(null))
+        {
+            _mainViewModel.OpenActivityLogCommand.Execute(null);
+        }
+    }
+
+    private void OpenConflictHistory()
+    {
+        ShowWindow();
+        if (_mainViewModel.OpenConflictHistoryCommand.CanExecute(null))
+        {
+            _mainViewModel.OpenConflictHistoryCommand.Execute(null);
+        }
+    }
+
+    private void OpenBandwidth()
+    {
+        ShowWindow();
+        if (_mainViewModel.NavigateToBandwidthCommand.CanExecute(null))
+        {
+            _mainViewModel.NavigateToBandwidthCommand.Execute(null);
         }
     }
 

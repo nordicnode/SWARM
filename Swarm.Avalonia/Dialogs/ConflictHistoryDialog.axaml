@@ -1,0 +1,153 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Swarm.Avalonia.Dialogs"
+        mc:Ignorable="d" d:DesignWidth="700" d:DesignHeight="500"
+        x:Class="Swarm.Avalonia.Dialogs.ConflictHistoryDialog"
+        x:DataType="local:ConflictHistoryViewModel"
+        Title="Conflict History"
+        Width="700" Height="500"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BackgroundDarkBrush}"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome">
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Header -->
+        <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="16">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel>
+                    <TextBlock Text="Conflict History" 
+                               FontSize="18" 
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="{Binding SummaryText}"
+                               FontSize="12"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+                <Button Grid.Column="1" 
+                        Click="CloseButton_Click"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Cursor="Hand">
+                    <PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                              Width="16" Height="16"
+                              Foreground="{StaticResource TextSecondaryBrush}"/>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Content -->
+        <Border Grid.Row="1" 
+                Background="{StaticResource BackgroundDarkBrush}"
+                Padding="16">
+            <Grid>
+                <!-- Header Row -->
+                <Grid RowDefinitions="Auto,*" IsVisible="{Binding HasConflicts}">
+                    <Border Background="{StaticResource SurfaceBrush}" 
+                            CornerRadius="8,8,0,0"
+                            BorderBrush="{StaticResource BorderLightBrush}"
+                            BorderThickness="1,1,1,0"
+                            Padding="12,8">
+                        <Grid ColumnDefinitions="2*,*,*,*,80">
+                            <TextBlock Text="File" FontWeight="SemiBold" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBlock Grid.Column="1" Text="Resolution" FontWeight="SemiBold" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBlock Grid.Column="2" Text="Source Peer" FontWeight="SemiBold" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBlock Grid.Column="3" Text="Method" FontWeight="SemiBold" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <TextBlock Grid.Column="4" Text="Time" FontWeight="SemiBold" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Conflict List -->
+                    <ScrollViewer Grid.Row="1" 
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Conflicts}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="local:ConflictHistoryItemViewModel">
+                                    <Border Background="{StaticResource SurfaceBrush}"
+                                            BorderBrush="{StaticResource BorderLightBrush}"
+                                            BorderThickness="1,0,1,1"
+                                            Padding="12,10">
+                                        <Grid ColumnDefinitions="2*,*,*,*,80">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding FileName}"
+                                                           FontSize="13"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding FullPath}"
+                                                           FontSize="10"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" 
+                                                       Text="{Binding ResolutionDisplay}"
+                                                       FontSize="12"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{StaticResource AccentPrimaryBrush}"/>
+                                            <TextBlock Grid.Column="2" 
+                                                       Text="{Binding SourcePeerName}"
+                                                       FontSize="12"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            <TextBlock Grid.Column="3" 
+                                                       Text="{Binding ResolutionMethod}"
+                                                       FontSize="12"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextMutedBrush}"/>
+                                            <TextBlock Grid.Column="4" 
+                                                       Text="{Binding TimeAgo}"
+                                                       FontSize="12"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextMutedBrush}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+
+                <!-- Empty State -->
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            IsVisible="{Binding !HasConflicts}">
+                    <TextBlock Text="✓"
+                               FontSize="48"
+                               Foreground="{StaticResource AccentPrimaryBrush}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="No conflicts detected"
+                               FontSize="16"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               HorizontalAlignment="Center"
+                               Margin="0,12,0,0"/>
+                    <TextBlock Text="Conflicts will appear here when files are modified on multiple peers"
+                               FontSize="12"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               HorizontalAlignment="Center"
+                               Margin="0,8,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Footer -->
+        <Border Grid.Row="2" 
+                Background="{StaticResource SurfaceBrush}" 
+                Padding="16"
+                BorderBrush="{StaticResource BorderLightBrush}"
+                BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Button Content="Clear History"
+                        Command="{Binding ClearHistoryCommand}"
+                        IsEnabled="{Binding HasConflicts}"
+                        Classes="secondary"/>
+                <Button Grid.Column="2" 
+                        Content="Close"
+                        Click="CloseButton_Click"
+                        Classes="primary"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

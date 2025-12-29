@@ -102,8 +102,8 @@ public class ActivityLogEntry
 public class ActivityLogService : IDisposable
 {
     private const string LogFileName = "activity.log";
-    private const int MaxEntriesInMemory = 1000;
-    private const int MaxEntriesOnDisk = 10000;
+    private const int MaxEntriesInMemory = ProtocolConstants.ACTIVITY_LOG_MAX_MEMORY;
+    private const int MaxEntriesOnDisk = ProtocolConstants.ACTIVITY_LOG_MAX_DISK;
     
     private readonly Settings _settings;
     private readonly ConcurrentQueue<ActivityLogEntry> _entries = new();

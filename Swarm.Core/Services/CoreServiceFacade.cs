@@ -18,6 +18,7 @@ public class CoreServiceFacade
     public ConflictResolutionService ConflictResolutionService { get; }
     public ShareLinkService ShareLinkService { get; }
     public PairingService PairingService { get; }
+    public BandwidthTrackingService BandwidthTrackingService { get; }
 
     public CoreServiceFacade(
         Settings settings,
@@ -31,7 +32,8 @@ public class CoreServiceFacade
         ActivityLogService activityLogService,
         ConflictResolutionService conflictResolutionService,
         ShareLinkService shareLinkService,
-        PairingService pairingService)
+        PairingService pairingService,
+        BandwidthTrackingService bandwidthTrackingService)
     {
         Settings = settings;
         CryptoService = cryptoService;
@@ -45,5 +47,6 @@ public class CoreServiceFacade
         ConflictResolutionService = conflictResolutionService;
         ShareLinkService = shareLinkService;
         PairingService = pairingService;
+        BandwidthTrackingService = bandwidthTrackingService;
     }
 }

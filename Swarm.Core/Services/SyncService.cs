@@ -41,7 +41,7 @@ public class SyncService : IDisposable
     
     // Activity log debounce to prevent duplicate entries
     private readonly ConcurrentDictionary<string, DateTime> _activityLogDebounce = new();
-    private const int ACTIVITY_DEBOUNCE_MS = 2000;
+    private const int ACTIVITY_DEBOUNCE_MS = ProtocolConstants.ACTIVITY_DEBOUNCE_MS;
 
     public string SyncFolderPath => _settings.SyncFolderPath;
     public bool IsEnabled => _settings.IsSyncEnabled;
@@ -481,29 +481,50 @@ public class SyncService : IDisposable
 
     private async void OnFileWatcherChange(string fullPath, SyncAction action)
     {
-        var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, fullPath);
-        LogActivityDebounced(relativePath, action.ToString().ToLower());
-        
-        await ProcessFileChange(fullPath);
+        try
+        {
+            var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, fullPath);
+            LogActivityDebounced(relativePath, action.ToString().ToLower());
+            
+            await ProcessFileChange(fullPath);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, $"[SYNC] Error processing file change for {fullPath}: {ex.Message}");
+        }
     }
 
     private async void OnFileWatcherRename(string oldPath, string newPath)
     {
-        var oldRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, oldPath);
-        var newRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, newPath);
-        _activityLogService?.LogFileSync(newRelativePath, $"renamed from {oldRelativePath}");
-        
-        await ProcessFileRename(oldPath, newPath);
+        try
+        {
+            var oldRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, oldPath);
+            var newRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, newPath);
+            _activityLogService?.LogFileSync(newRelativePath, $"renamed from {oldRelativePath}");
+            
+            await ProcessFileRename(oldPath, newPath);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, $"[SYNC] Error processing rename {oldPath} -> {newPath}: {ex.Message}");
+        }
     }
 
     private async void OnFileWatcherDirectoryRename(string oldPath, string newPath)
     {
-        var oldRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, oldPath);
-        var newRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, newPath);
-        Log.Information($"[SYNC] Directory renamed: {oldRelativePath} -> {newRelativePath}");
-        _activityLogService?.LogFileSync(newRelativePath, $"directory renamed from {oldRelativePath}");
-        
-        await ProcessFileRename(oldPath, newPath);
+        try
+        {
+            var oldRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, oldPath);
+            var newRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, newPath);
+            Log.Information($"[SYNC] Directory renamed: {oldRelativePath} -> {newRelativePath}");
+            _activityLogService?.LogFileSync(newRelativePath, $"directory renamed from {oldRelativePath}");
+            
+            await ProcessFileRename(oldPath, newPath);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, $"[SYNC] Error processing directory rename {oldPath} -> {newPath}: {ex.Message}");
+        }
     }
 
     private void OnFileWatcherError(Exception exception, bool isBufferOverflow)
@@ -981,12 +1002,26 @@ public class SyncService : IDisposable
 
     private async void OnSyncFileReceived(SyncedFile syncFile, Stream stream, Peer peer)
     {
-        await HandleIncomingSyncFile(syncFile, stream);
+        try
+        {
+            await HandleIncomingSyncFile(syncFile, stream);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, $"[SYNC] Error receiving file {syncFile.RelativePath}: {ex.Message}");
+        }
     }
 
     private async void OnSyncDeleteReceived(SyncedFile syncFile, Peer peer)
     {
-        await HandleIncomingSyncFile(syncFile, Stream.Null);
+        try
+        {
+            await HandleIncomingSyncFile(syncFile, Stream.Null);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, $"[SYNC] Error processing delete {syncFile.RelativePath}: {ex.Message}");
+        }
     }
 
     private void OnSyncRenameReceived(SyncedFile syncFile, Peer peer)
@@ -1041,21 +1076,35 @@ public class SyncService : IDisposable
 
     private async void OnSyncManifestReceived(List<SyncedFile> manifest, Peer peer)
     {
-        await ProcessIncomingManifest(manifest, peer);
+        try
+        {
+            await ProcessIncomingManifest(manifest, peer);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, $"[SYNC] Error processing manifest from {peer.Name}: {ex.Message}");
+        }
     }
 
     private async void OnSyncFileRequested(string relativePath, Peer peer)
     {
-        // Peer is requesting a file from us
-        var manifest = GetManifest();
-        var file = manifest.FirstOrDefault(f => f.RelativePath == relativePath);
-        if (file != null)
+        try
         {
-            var fullPath = Path.Combine(SyncFolderPath, relativePath);
-            if (File.Exists(fullPath))
+            // Peer is requesting a file from us
+            var manifest = GetManifest();
+            var file = manifest.FirstOrDefault(f => f.RelativePath == relativePath);
+            if (file != null)
             {
-                await _transferService.SendSyncFile(peer, fullPath, file);
+                var fullPath = Path.Combine(SyncFolderPath, relativePath);
+                if (File.Exists(fullPath))
+                {
+                    await _transferService.SendSyncFile(peer, fullPath, file);
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, $"[SYNC] Error sending requested file {relativePath} to {peer.Name}: {ex.Message}");
         }
     }
 

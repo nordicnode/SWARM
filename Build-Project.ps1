@@ -75,6 +75,13 @@ else {
     Write-Host "`nBuild Complete!" -ForegroundColor Green
     Write-Host "Output location: $(Get-Item "publish/$Platform").FullName" -ForegroundColor White
     if ($Portable) {
-        Write-Host "Portable mode enabled (portable.marker found)." -ForegroundColor Yellow
+        Write-Host "Portable mode enabled (portable.marker included)." -ForegroundColor Yellow
     }
 }
+
+# Usage hints
+Write-Host "`nUsage:" -ForegroundColor Yellow
+Write-Host "  .\Build-Project.ps1                  # Build for win-x64" -ForegroundColor Gray
+Write-Host "  .\Build-Project.ps1 -Platform linux-x64  # Build for linux-x64" -ForegroundColor Gray
+Write-Host "  .\Build-Project.ps1 -All             # Build for win-x64 AND linux-x64" -ForegroundColor Gray
+Write-Host "  .\Build-Project.ps1 -Portable        # Build with portable.marker" -ForegroundColor Gray

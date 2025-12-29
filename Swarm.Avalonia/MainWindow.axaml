@@ -30,6 +30,9 @@
         <DataTemplate DataType="{x:Type vm:PeersViewModel}">
             <views:PeersView/>
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:BandwidthViewModel}">
+            <views:BandwidthView/>
+        </DataTemplate>
         <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
             <views:SettingsView/>
         </DataTemplate>
@@ -163,6 +166,18 @@
                                               Foreground="{StaticResource TextSecondaryBrush}" 
                                               Width="18" Height="18"/>
                                     <TextBlock Grid.Column="1" Text="Peers" 
+                                               VerticalAlignment="Center" 
+                                               Margin="12,0,0,0"/>
+                                </Grid>
+                            </Button>
+                            <Button Classes="nav-button" 
+                                    Command="{Binding NavigateToBandwidthCommand}"
+                                    Classes.active="{Binding IsBandwidthSelected}">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <PathIcon Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" 
+                                              Foreground="{StaticResource TextSecondaryBrush}" 
+                                              Width="18" Height="18"/>
+                                    <TextBlock Grid.Column="1" Text="Bandwidth" 
                                                VerticalAlignment="Center" 
                                                Margin="12,0,0,0"/>
                                 </Grid>

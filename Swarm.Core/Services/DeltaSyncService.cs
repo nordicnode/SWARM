@@ -21,7 +21,7 @@ public static class DeltaSyncService
     /// <summary>
     /// Minimum file size to use delta sync. Smaller files are faster to re-transfer entirely.
     /// </summary>
-    public const long DeltaThreshold = 1024 * 1024; // 1MB
+    public static long DeltaThreshold => ProtocolConstants.DELTA_THRESHOLD;
 
     /// <summary>
     /// Maximum size for a single Insert instruction's data.

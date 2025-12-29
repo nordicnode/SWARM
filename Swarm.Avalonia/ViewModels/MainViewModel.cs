@@ -33,6 +33,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private readonly ConflictResolutionService _conflictResolutionService;
     private readonly ShareLinkService _shareLinkService;
     private readonly PairingService _pairingService;
+    private readonly BandwidthTrackingService _bandwidthTrackingService;
 
     // Services specific to Avalonia
     private readonly AvaloniaDispatcher _dispatcher;
@@ -49,12 +50,14 @@ public class MainViewModel : ViewModelBase, IDisposable
     private bool _isOverviewSelected = true;
     private bool _isFilesSelected;
     private bool _isPeersSelected;
+    private bool _isBandwidthSelected;
     private bool _isSettingsSelected;
 
     // Sub-ViewModels
     public OverviewViewModel OverviewVM { get; }
     public FilesViewModel FilesVM { get; }
     public PeersViewModel PeersVM { get; }
+    public BandwidthViewModel BandwidthVM { get; }
     public SettingsViewModel SettingsVM { get; }
 
     public MainViewModel(
@@ -75,6 +78,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         _conflictResolutionService = coreServices.ConflictResolutionService;
         _shareLinkService = coreServices.ShareLinkService;
         _pairingService = coreServices.PairingService;
+        _bandwidthTrackingService = coreServices.BandwidthTrackingService;
         
         // Avalonia services
         _dispatcher = dispatcher;
@@ -85,7 +89,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         Settings.RegisterPowerService(_powerService);
 
         // Initialize Sub-ViewModels
-        OverviewVM = new OverviewViewModel(_syncService, _discoveryService, _settings);
+        OverviewVM = new OverviewViewModel(_syncService, _discoveryService, _settings, _activityLogService);
         FilesVM = new FilesViewModel(_settings, _syncService, _versioningService);
         PeersVM = new PeersViewModel(_discoveryService, _transferService, _settings);
         SettingsVM = new SettingsViewModel(
@@ -97,6 +101,7 @@ public class MainViewModel : ViewModelBase, IDisposable
             _activityLogService,
             _versioningService
         );
+        BandwidthVM = new BandwidthViewModel(_bandwidthTrackingService);
 
         SettingsVM.SettingsChanged += ApplySettings;
 
@@ -104,9 +109,13 @@ public class MainViewModel : ViewModelBase, IDisposable
         NavigateToOverviewCommand = new RelayCommand(NavigateToOverview);
         NavigateToFilesCommand = new RelayCommand(NavigateToFiles);
         NavigateToPeersCommand = new RelayCommand(NavigateToPeers);
+        NavigateToBandwidthCommand = new RelayCommand(NavigateToBandwidth);
         NavigateToSettingsCommand = new RelayCommand(NavigateToSettings);
         ToggleSyncCommand = new RelayCommand(ToggleSync);
         OpenActivityLogCommand = new RelayCommand(OpenActivityLog);
+        OpenConflictHistoryCommand = new RelayCommand(OpenConflictHistory);
+        RefreshOverviewCommand = new RelayCommand(RefreshOverview);
+        FocusSearchCommand = new RelayCommand(() => FocusSearchRequested?.Invoke());
         
         // Start services
         InitializeServices();
@@ -378,6 +387,12 @@ public class MainViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _isSettingsSelected, value);
     }
 
+    public bool IsBandwidthSelected
+    {
+        get => _isBandwidthSelected;
+        set => SetProperty(ref _isBandwidthSelected, value);
+    }
+
     #endregion
 
     #region Commands
@@ -385,9 +400,18 @@ public class MainViewModel : ViewModelBase, IDisposable
     public ICommand NavigateToOverviewCommand { get; }
     public ICommand NavigateToFilesCommand { get; }
     public ICommand NavigateToPeersCommand { get; }
+    public ICommand NavigateToBandwidthCommand { get; }
     public ICommand NavigateToSettingsCommand { get; }
     public ICommand ToggleSyncCommand { get; }
     public ICommand OpenActivityLogCommand { get; }
+    public ICommand OpenConflictHistoryCommand { get; }
+    public ICommand RefreshOverviewCommand { get; }
+    public ICommand FocusSearchCommand { get; }
+
+    /// <summary>
+    /// Event raised when Ctrl+F is pressed to focus the search box.
+    /// </summary>
+    public event Action? FocusSearchRequested;
 
     #endregion
 
@@ -398,6 +422,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         IsOverviewSelected = false;
         IsFilesSelected = false;
         IsPeersSelected = false;
+        IsBandwidthSelected = false;
         IsSettingsSelected = false;
     }
 
@@ -422,12 +447,25 @@ public class MainViewModel : ViewModelBase, IDisposable
         CurrentView = PeersVM;
     }
 
+    private void NavigateToBandwidth()
+    {
+        ClearNavSelection();
+        IsBandwidthSelected = true;
+        CurrentView = BandwidthVM;
+    }
+
     private void NavigateToSettings()
     {
         ClearNavSelection();
         IsSettingsSelected = true;
         IsSettingsSelected = true;
         CurrentView = SettingsVM;
+    }
+
+    private void RefreshOverview()
+    {
+        // Trigger OverviewVM to recalculate stats
+        OverviewVM?.RequestRefresh();
     }
 
     private async void OpenActivityLog()
@@ -447,6 +485,26 @@ public class MainViewModel : ViewModelBase, IDisposable
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to open activity log: {ex.Message}");
+        }
+    }
+
+    private async void OpenConflictHistory()
+    {
+        try
+        {
+            var mainWindow = global::Avalonia.Application.Current?.ApplicationLifetime is 
+                global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                ? desktop.MainWindow
+                : null;
+
+            if (mainWindow == null) return;
+
+            var conflictDialog = new Swarm.Avalonia.Dialogs.ConflictHistoryDialog(_conflictResolutionService);
+            await conflictDialog.ShowDialog(mainWindow);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to open conflict history: {ex.Message}");
         }
     }
 
