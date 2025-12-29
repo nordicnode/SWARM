@@ -689,7 +689,7 @@ public class SyncService : IDisposable
         
         if (!isDirectory && !isFile)
         {
-            System.Diagnostics.Debug.WriteLine($"Rename target no longer exists: {newFullPath}");
+            _logger.LogDebug("Rename target no longer exists: {Path}", newFullPath);
             return;
         }
 
@@ -711,8 +711,9 @@ public class SyncService : IDisposable
                 _fileStateRepository.AddOrUpdate(file);
             }
             
-            System.Diagnostics.Debug.WriteLine(
-                $"[DirectoryRename] Updated {filesToUpdate.Count} child file states for {oldRelativePath} -> {newRelativePath}");
+            _logger.LogDebug(
+                "[DirectoryRename] Updated {Count} child file states for {OldRelativePath} -> {NewRelativePath}",
+                filesToUpdate.Count, oldRelativePath, newRelativePath);
         }
         else
         {
@@ -752,7 +753,7 @@ public class SyncService : IDisposable
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to sync to {peer.Name}: {ex.Message}");
+                _logger.LogDebug(ex, "Failed to sync to {PeerName}: {Message}", peer.Name, ex.Message);
             }
         }
     }
@@ -781,7 +782,7 @@ public class SyncService : IDisposable
                 if (fileInfo.Length >= ProtocolConstants.DELTA_THRESHOLD && 
                     !syncFile.RelativePath.EndsWith(".senc", StringComparison.OrdinalIgnoreCase))
                 {
-                    System.Diagnostics.Debug.WriteLine($"Using delta sync for large file: {syncFile.RelativePath} ({fileInfo.Length} bytes)");
+                    _logger.LogDebug("Using delta sync for large file: {RelativePath} ({Length} bytes)", syncFile.RelativePath, fileInfo.Length);
                     
                     // Store pending delta sync info and request signatures from peer
                     _pendingDeltaSyncs[syncFile.RelativePath] = (peer, syncFile);
@@ -953,7 +954,7 @@ public class SyncService : IDisposable
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to set timestamp for {localPath}: {ex.Message}");
+                _logger.LogDebug(ex, "Failed to set timestamp for {LocalPath}: {Message}", localPath, ex.Message);
             }
         }
     }
@@ -1015,7 +1016,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to delete {localPath}: {ex.Message}");
+            _logger.LogDebug(ex, "Failed to delete {LocalPath}: {Message}", localPath, ex.Message);
         }
     }
 
@@ -1069,7 +1070,7 @@ public class SyncService : IDisposable
                 if (Directory.Exists(oldLocalPath))
                 {
                     Directory.Move(oldLocalPath, newLocalPath);
-                    System.Diagnostics.Debug.WriteLine($"Directory renamed: {syncFile.OldRelativePath} -> {syncFile.RelativePath}");
+                    _logger.LogDebug("Directory renamed: {OldPath} -> {NewPath}", syncFile.OldRelativePath, syncFile.RelativePath);
                 }
             }
             else
@@ -1077,7 +1078,7 @@ public class SyncService : IDisposable
                 if (File.Exists(oldLocalPath))
                 {
                     File.Move(oldLocalPath, newLocalPath, overwrite: true);
-                    System.Diagnostics.Debug.WriteLine($"File renamed: {syncFile.OldRelativePath} -> {syncFile.RelativePath}");
+                    _logger.LogDebug("File renamed: {OldPath} -> {NewPath}", syncFile.OldRelativePath, syncFile.RelativePath);
                 }
             }
 
@@ -1094,7 +1095,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to process rename {syncFile.OldRelativePath} -> {syncFile.RelativePath}: {ex.Message}");
+            _logger.LogDebug(ex, "Failed to process rename {OldPath} -> {NewPath}: {Message}", syncFile.OldRelativePath, syncFile.RelativePath, ex.Message);
         }
     }
 
@@ -1144,11 +1145,11 @@ public class SyncService : IDisposable
             {
                 var signatures = await DeltaSyncService.ComputeBlockSignaturesAsync(fullPath);
                 await _transferService.SendBlockSignatures(peer, relativePath, signatures);
-                System.Diagnostics.Debug.WriteLine($"Sent {signatures.Count} block signatures for {relativePath}");
+                _logger.LogDebug("Sent {Count} block signatures for {RelativePath}", signatures.Count, relativePath);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to compute/send signatures for {relativePath}: {ex.Message}");
+                _logger.LogDebug(ex, "Failed to compute/send signatures for {RelativePath}: {Message}", relativePath, ex.Message);
             }
         }
         else
@@ -1163,14 +1164,14 @@ public class SyncService : IDisposable
         // We received signatures from peer, now compute delta and send it
         if (!_pendingDeltaSyncs.TryRemove(relativePath, out var pendingInfo))
         {
-            System.Diagnostics.Debug.WriteLine($"Received unexpected signatures for {relativePath}");
+            _logger.LogDebug("Received unexpected signatures for {RelativePath}", relativePath);
             return;
         }
 
         var fullPath = Path.Combine(SyncFolderPath, relativePath);
         if (!File.Exists(fullPath))
         {
-            System.Diagnostics.Debug.WriteLine($"File no longer exists for delta sync: {relativePath}");
+            _logger.LogDebug("File no longer exists for delta sync: {RelativePath}", relativePath);
             return;
         }
 
@@ -1179,7 +1180,7 @@ public class SyncService : IDisposable
             if (signatures.Count == 0)
             {
                 // Peer doesn't have the file - send full content
-                System.Diagnostics.Debug.WriteLine($"Peer has no signatures for {relativePath}, sending full file");
+                _logger.LogDebug("Peer has no signatures for {RelativePath}, sending full file", relativePath);
                 await _transferService.SendSyncFile(peer, fullPath, pendingInfo.syncFile, (sent, total) =>
                 {
                     ReportProgress(relativePath, (double)sent / total * 100);
@@ -1198,7 +1199,7 @@ public class SyncService : IDisposable
 
                 var deltaSize = DeltaSyncService.EstimateDeltaSize(instructions);
                 var savings = fileInfo.Length > 0 ? (1.0 - (double)deltaSize / fileInfo.Length) * 100 : 0;
-                System.Diagnostics.Debug.WriteLine($"Delta sync for {relativePath}: saved {savings:F1}% bandwidth");
+                _logger.LogDebug("Delta sync for {RelativePath}: saved {Savings:F1}% bandwidth", relativePath, savings);
             }
 
             lock (_progressLock)
@@ -1209,7 +1210,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to send delta for {relativePath}: {ex.Message}");
+            _logger.LogDebug(ex, "Failed to send delta for {RelativePath}: {Message}", relativePath, ex.Message);
         }
     }
 
@@ -1241,13 +1242,13 @@ public class SyncService : IDisposable
                 File.Delete(localPath);
                 File.Move(tempPath, localPath);
 
-                System.Diagnostics.Debug.WriteLine($"Applied delta for {syncFile.RelativePath}");
+                _logger.LogDebug("Applied delta for {RelativePath}", syncFile.RelativePath);
             }
             else
             {
                 // No base file - this shouldn't happen with delta sync
                 // The sender should have sent a full file instead
-                System.Diagnostics.Debug.WriteLine($"Warning: Received delta for non-existent file {syncFile.RelativePath}");
+                _logger.LogDebug("Warning: Received delta for non-existent file {RelativePath}", syncFile.RelativePath);
             }
 
             // Preserve modification time
@@ -1257,7 +1258,7 @@ public class SyncService : IDisposable
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to set timestamp for {localPath}: {ex.Message}");
+                _logger.LogDebug(ex, "Failed to set timestamp for {LocalPath}: {Message}", localPath, ex.Message);
             }
 
             // Update our state
@@ -1272,7 +1273,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to apply delta for {syncFile.RelativePath}: {ex.Message}");
+            _logger.LogDebug(ex, "Failed to apply delta for {RelativePath}: {Message}", syncFile.RelativePath, ex.Message);
         }
     }
 

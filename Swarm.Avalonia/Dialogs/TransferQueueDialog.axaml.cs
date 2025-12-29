@@ -19,6 +19,11 @@ public partial class TransferQueueDialog : Window
 {
     private readonly TransferQueueViewModel _viewModel;
 
+    public TransferQueueDialog()
+    {
+        InitializeComponent();
+    }
+
     public TransferQueueDialog(TransferService transferService)
     {
         InitializeComponent();
