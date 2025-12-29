@@ -35,6 +35,7 @@ SWARM automatically discovers other instances on your local network—even acros
 *   **Forward Secrecy:** Sessions use ephemeral ECDH key exchange.
 *   **Trust-On-First-Use (TOFU):** Devices are identified by ECDSA identity keys.
 *   **Secure Pairing:** 6-digit pairing codes with automatic key exchange.
+*   **Encrypted Folders (Vaults):** Create password-protected folders where files are encrypted at rest (AES-256-GCM) with filename obfuscation. Includes 15-minute auto-lock.
 
 ### 💾 Data Safety & Integrity
 
@@ -47,7 +48,8 @@ SWARM automatically discovers other instances on your local network—even acros
 ### 📊 Monitoring & Analytics
 
 *   **Bandwidth Dashboard:** Real-time upload/download speed graphs with 60-second history.
-*   **Transfer Tracking:** View active transfers with progress, peak speeds, and session totals.
+*   **Transfer Tracking:** View active transfers with progress, peak speeds, and session totals. Cancel or retry transfers on demand.
+*   **Scheduled Sync:** Define specific time windows (e.g., "Nights Only", "Business Hours") to restrict syncing to off-peak times.
 *   **Activity Log:** Comprehensive history of all sync events with filtering and export.
 
 ### 🖥️ Modern User Interface
@@ -204,6 +206,7 @@ swarm/
 | `BandwidthTrackingService` | Real-time speed monitoring |
 | `ActivityLogService` | Event logging and filtering |
 | `CryptoService` | Encryption/decryption operations |
+| `FolderEncryptionService` | Encrypted vault management and file locking |
 | `PairingService` | Secure device pairing |
 
 ## Technical Details
