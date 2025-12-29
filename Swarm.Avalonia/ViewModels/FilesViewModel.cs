@@ -21,6 +21,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
     private readonly Settings _settings = null!;
     private readonly SyncService? _syncService;
     private readonly VersioningService? _versioningService;
+    private readonly FolderEncryptionService? _folderEncryptionService;
     private readonly System.Timers.Timer _refreshDebounceTimer;
 
     private string _currentPath = "";
@@ -127,11 +128,12 @@ public class FilesViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public FilesViewModel(Settings settings, SyncService? syncService = null, VersioningService? versioningService = null)
+    public FilesViewModel(Settings settings, SyncService? syncService = null, VersioningService? versioningService = null, FolderEncryptionService? folderEncryptionService = null)
     {
         _settings = settings;
         _syncService = syncService;
         _versioningService = versioningService;
+        _folderEncryptionService = folderEncryptionService;
 
         // Initialize debounce timer for auto-refresh (500ms)
         _refreshDebounceTimer = new System.Timers.Timer(500) { AutoReset = false };
@@ -180,6 +182,10 @@ public class FilesViewModel : ViewModelBase, IDisposable
                 }
             }
         });
+        
+        CreateEncryptedFolderCommand = new RelayCommand(CreateEncryptedFolder);
+        UnlockFolderCommand = new RelayCommand(UnlockCurrentFolder, CanUnlockCurrentFolder);
+        LockFolderCommand = new RelayCommand(LockCurrentFolder, CanLockCurrentFolder);
     }
 
     private void OnSyncFileChanged(Swarm.Core.Models.SyncedFile syncedFile)
@@ -462,6 +468,120 @@ public class FilesViewModel : ViewModelBase, IDisposable
             }
         });
     }
+
+    #region Encrypted Folders
+
+    public ICommand CreateEncryptedFolderCommand { get; private set; } = null!;
+    public ICommand UnlockFolderCommand { get; private set; } = null!;
+    public ICommand LockFolderCommand { get; private set; } = null!;
+
+    /// <summary>
+    /// Gets whether the current folder is an encrypted folder.
+    /// </summary>
+    public bool IsCurrentFolderEncrypted => GetCurrentEncryptedFolder() != null;
+
+    /// <summary>
+    /// Gets whether the current encrypted folder is locked.
+    /// </summary>
+    public bool IsCurrentFolderLocked => GetCurrentEncryptedFolder()?.IsLocked ?? false;
+
+    private EncryptedFolder? GetCurrentEncryptedFolder()
+    {
+        if (_folderEncryptionService == null) return null;
+        
+        var relativePath = GetRelativePath(CurrentPath);
+        return _settings.EncryptedFolders.FirstOrDefault(f => 
+            relativePath.StartsWith(f.FolderPath, StringComparison.OrdinalIgnoreCase) ||
+            f.FolderPath.Equals(relativePath, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private string GetRelativePath(string fullPath)
+    {
+        if (fullPath.StartsWith(_settings.SyncFolderPath, StringComparison.OrdinalIgnoreCase))
+        {
+            var relative = fullPath.Substring(_settings.SyncFolderPath.Length).TrimStart(Path.DirectorySeparatorChar);
+            return string.IsNullOrEmpty(relative) ? "" : relative;
+        }
+        return fullPath;
+    }
+
+    private async void CreateEncryptedFolder()
+    {
+        if (_folderEncryptionService == null) return;
+
+        try
+        {
+            var mainWindow = GetMainWindow();
+            if (mainWindow == null) return;
+
+            var dialog = new Dialogs.EncryptedFolderDialog(_folderEncryptionService);
+            await dialog.ShowDialog(mainWindow);
+            
+            if (dialog.Success)
+            {
+                LoadFiles();
+                OnPropertyChanged(nameof(IsCurrentFolderEncrypted));
+                OnPropertyChanged(nameof(IsCurrentFolderLocked));
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to create encrypted folder");
+        }
+    }
+
+    private bool CanUnlockCurrentFolder() => GetCurrentEncryptedFolder()?.IsLocked == true;
+
+    private async void UnlockCurrentFolder()
+    {
+        if (_folderEncryptionService == null) return;
+        
+        var folder = GetCurrentEncryptedFolder();
+        if (folder == null || !folder.IsLocked) return;
+
+        try
+        {
+            var mainWindow = GetMainWindow();
+            if (mainWindow == null) return;
+
+            var dialog = new Dialogs.EncryptedFolderDialog(_folderEncryptionService, folder);
+            await dialog.ShowDialog(mainWindow);
+            
+            if (dialog.Success)
+            {
+                LoadFiles();
+                OnPropertyChanged(nameof(IsCurrentFolderLocked));
+                RelayCommand.RaiseGlobalCanExecuteChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Failed to unlock folder");
+        }
+    }
+
+    private bool CanLockCurrentFolder() => GetCurrentEncryptedFolder()?.IsLocked == false;
+
+    private void LockCurrentFolder()
+    {
+        var folder = GetCurrentEncryptedFolder();
+        if (folder == null || folder.IsLocked) return;
+
+        _folderEncryptionService?.LockFolder(folder.FolderPath);
+        LoadFiles();
+        OnPropertyChanged(nameof(IsCurrentFolderLocked));
+        RelayCommand.RaiseGlobalCanExecuteChanged();
+    }
+
+    private static global::Avalonia.Controls.Window? GetMainWindow()
+    {
+        return global::Avalonia.Application.Current?.ApplicationLifetime is 
+            global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+            ? desktop.MainWindow
+            : null;
+    }
+
+    #endregion
 
     public void Dispose()
     {

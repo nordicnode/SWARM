@@ -53,7 +53,7 @@
                 Margin="0,0,0,16"
                 BorderBrush="{StaticResource BorderLightBrush}"
                 BorderThickness="1">
-            <Grid ColumnDefinitions="Auto,*">
+            <Grid ColumnDefinitions="Auto,*,Auto">
                 <Button Grid.Column="0"
                         Command="{Binding NavigateUpCommand}"
                         Classes="icon"
@@ -92,6 +92,51 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </ScrollViewer>
+                
+                <!-- Encrypted Folder Actions -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                    <!-- Lock indicator for current folder -->
+                    <TextBlock Text="🔒" FontSize="16" VerticalAlignment="Center"
+                               IsVisible="{Binding IsCurrentFolderLocked}"
+                               ToolTip.Tip="This folder is encrypted and locked"/>
+                    <TextBlock Text="🔓" FontSize="16" VerticalAlignment="Center"
+                               IsVisible="{Binding IsCurrentFolderEncrypted}"
+                               ToolTip.Tip="This folder is encrypted and unlocked">
+                        <TextBlock.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="IsCurrentFolderEncrypted"/>
+                                <Binding Path="!IsCurrentFolderLocked"/>
+                            </MultiBinding>
+                        </TextBlock.IsVisible>
+                    </TextBlock>
+                    
+                    <Button Content="🔐 Create Vault"
+                            Command="{Binding CreateEncryptedFolderCommand}"
+                            Classes="secondary"
+                            Padding="10,6"
+                            FontSize="12"
+                            ToolTip.Tip="Create a new encrypted folder"/>
+                    <Button Content="🔑 Unlock"
+                            Command="{Binding UnlockFolderCommand}"
+                            Classes="primary"
+                            Padding="10,6"
+                            FontSize="12"
+                            IsVisible="{Binding IsCurrentFolderLocked}"
+                            ToolTip.Tip="Unlock this encrypted folder"/>
+                    <Button Content="🔒 Lock"
+                            Command="{Binding LockFolderCommand}"
+                            Classes="secondary"
+                            Padding="10,6"
+                            FontSize="12"
+                            ToolTip.Tip="Lock this encrypted folder">
+                        <Button.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="IsCurrentFolderEncrypted"/>
+                                <Binding Path="!IsCurrentFolderLocked"/>
+                            </MultiBinding>
+                        </Button.IsVisible>
+                    </Button>
+                </StackPanel>
             </Grid>
         </Border>
 

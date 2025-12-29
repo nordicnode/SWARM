@@ -34,6 +34,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private readonly ShareLinkService _shareLinkService;
     private readonly PairingService _pairingService;
     private readonly BandwidthTrackingService _bandwidthTrackingService;
+    private readonly FolderEncryptionService _folderEncryptionService;
 
     // Services specific to Avalonia
     private readonly AvaloniaDispatcher _dispatcher;
@@ -79,6 +80,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         _shareLinkService = coreServices.ShareLinkService;
         _pairingService = coreServices.PairingService;
         _bandwidthTrackingService = coreServices.BandwidthTrackingService;
+        _folderEncryptionService = coreServices.FolderEncryptionService;
         
         // Avalonia services
         _dispatcher = dispatcher;
@@ -90,7 +92,7 @@ public class MainViewModel : ViewModelBase, IDisposable
 
         // Initialize Sub-ViewModels
         OverviewVM = new OverviewViewModel(_syncService, _discoveryService, _settings, _activityLogService);
-        FilesVM = new FilesViewModel(_settings, _syncService, _versioningService);
+        FilesVM = new FilesViewModel(_settings, _syncService, _versioningService, _folderEncryptionService);
         PeersVM = new PeersViewModel(_discoveryService, _transferService, _settings);
         SettingsVM = new SettingsViewModel(
             _settings,

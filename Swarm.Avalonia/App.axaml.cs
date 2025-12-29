@@ -115,6 +115,7 @@ public partial class App : Application
         services.AddSingleton<ShareLinkService>();
         services.AddSingleton<PairingService>();
         services.AddSingleton<BandwidthTrackingService>();
+        services.AddSingleton<FolderEncryptionService>();
 
         // Facade
         services.AddSingleton<CoreServiceFacade>();

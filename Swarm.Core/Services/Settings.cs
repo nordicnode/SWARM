@@ -187,6 +187,16 @@ public class Settings
     public bool CloseToTray { get; set; } = true;
 
     /// <summary>
+    /// List of encrypted folders with their configuration.
+    /// </summary>
+    public List<Models.EncryptedFolder> EncryptedFolders { get; set; } = new();
+
+    /// <summary>
+    /// Auto-lock timeout in minutes for encrypted folders (0 = disabled).
+    /// </summary>
+    public int EncryptionAutoLockMinutes { get; set; } = 15;
+
+    /// <summary>
     /// Sync schedule configuration for time-based sync windows.
     /// </summary>
     public Models.SyncSchedule SyncSchedule { get; set; } = new();
@@ -366,6 +376,7 @@ public class Settings
             PauseOnBattery = PauseOnBattery,
             PauseOnMeteredNetwork = PauseOnMeteredNetwork,
             CloseToTray = CloseToTray,
+            EncryptionAutoLockMinutes = EncryptionAutoLockMinutes,
             SyncSchedule = new Models.SyncSchedule
             {
                 IsEnabled = SyncSchedule.IsEnabled,
@@ -379,6 +390,17 @@ public class Settings
                 }).ToList()
             }
         };
+
+        // Clone encrypted folders (without runtime state)
+        foreach (var folder in EncryptedFolders)
+        {
+            clone.EncryptedFolders.Add(new Models.EncryptedFolder
+            {
+                FolderPath = folder.FolderPath,
+                Salt = folder.Salt,
+                Verifier = folder.Verifier
+            });
+        }
 
         foreach (var peer in TrustedPeers)
         {
@@ -436,6 +458,18 @@ public class Settings
                 StartTime = window.StartTime,
                 EndTime = window.EndTime,
                 Days = new List<DayOfWeek>(window.Days)
+            });
+        }
+
+        EncryptionAutoLockMinutes = source.EncryptionAutoLockMinutes;
+        EncryptedFolders.Clear();
+        foreach (var folder in source.EncryptedFolders)
+        {
+            EncryptedFolders.Add(new Models.EncryptedFolder
+            {
+                FolderPath = folder.FolderPath,
+                Salt = folder.Salt,
+                Verifier = folder.Verifier
             });
         }
         
