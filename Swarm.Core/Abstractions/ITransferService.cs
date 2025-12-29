@@ -45,4 +45,10 @@ public interface ITransferService : IDisposable
     Task RequestBlockSignatures(Peer peer, string relativePath, CancellationToken ct = default);
     Task SendBlockSignatures(Peer peer, string relativePath, List<BlockSignature> signatures, CancellationToken ct = default);
     Task SendDeltaData(Peer peer, SyncedFile syncFile, List<DeltaInstruction> instructions, CancellationToken ct = default);
+    
+    // Transfer queue management
+    event Action<FileTransfer>? TransferFailed;
+    bool CancelTransfer(string transferId);
+    Task<bool> RetryTransferAsync(string transferId);
+    void ClearCompletedTransfers();
 }

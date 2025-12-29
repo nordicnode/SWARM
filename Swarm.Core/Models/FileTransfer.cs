@@ -19,6 +19,36 @@ public class FileTransfer
     public DateTime StartTime { get; set; }
     public DateTime? EndTime { get; set; }
     
+    /// <summary>
+    /// CancellationTokenSource for cancelling this transfer.
+    /// </summary>
+    public CancellationTokenSource? CancellationTokenSource { get; set; }
+    
+    /// <summary>
+    /// Error message if transfer failed.
+    /// </summary>
+    public string? ErrorMessage { get; set; }
+    
+    /// <summary>
+    /// Number of retry attempts made.
+    /// </summary>
+    public int RetryCount { get; set; }
+    
+    /// <summary>
+    /// Maximum retry attempts allowed.
+    /// </summary>
+    public const int MaxRetries = 3;
+    
+    /// <summary>
+    /// Whether this transfer can be cancelled.
+    /// </summary>
+    public bool CanCancel => Status == TransferStatus.Pending || Status == TransferStatus.InProgress;
+    
+    /// <summary>
+    /// Whether this transfer can be retried.
+    /// </summary>
+    public bool CanRetry => Status == TransferStatus.Failed && RetryCount < MaxRetries;
+    
     public string SpeedDisplay
     {
         get
@@ -30,8 +60,19 @@ public class FileTransfer
             return FileHelpers.FormatBytes(bytesPerSecond) + "/s";
         }
     }
-
-
+    
+    /// <summary>
+    /// Cancel this transfer if possible.
+    /// </summary>
+    public void Cancel()
+    {
+        if (CanCancel)
+        {
+            CancellationTokenSource?.Cancel();
+            Status = TransferStatus.Cancelled;
+            EndTime = DateTime.Now;
+        }
+    }
 }
 
 public enum TransferDirection

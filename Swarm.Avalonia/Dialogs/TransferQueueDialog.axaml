@@ -1,0 +1,182 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Swarm.Avalonia.Dialogs"
+        mc:Ignorable="d" d:DesignWidth="650" d:DesignHeight="500"
+        x:Class="Swarm.Avalonia.Dialogs.TransferQueueDialog"
+        x:DataType="local:TransferQueueViewModel"
+        Title="Transfer Queue"
+        Width="650" Height="500"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource BackgroundDarkBrush}"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome">
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Header -->
+        <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" Padding="16">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel>
+                    <TextBlock Text="Transfer Queue" 
+                               FontSize="18" 
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="{Binding SummaryText}"
+                               FontSize="12"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+                <Button Grid.Column="1" 
+                        Click="CloseButton_Click"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Cursor="Hand">
+                    <PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                              Width="16" Height="16"
+                              Foreground="{StaticResource TextSecondaryBrush}"/>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Content -->
+        <Border Grid.Row="1" 
+                Background="{StaticResource BackgroundDarkBrush}"
+                Padding="16">
+            <Grid>
+                <!-- Transfer List -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              IsVisible="{Binding HasTransfers}">
+                    <ItemsControl ItemsSource="{Binding Transfers}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="local:TransferItemViewModel">
+                                <Border Background="{StaticResource SurfaceBrush}"
+                                        BorderBrush="{StaticResource BorderLightBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="12"
+                                        Margin="0,0,0,8">
+                                    <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto">
+                                        <!-- File info -->
+                                        <StackPanel Grid.Row="0" Grid.Column="0">
+                                            <TextBlock Text="{Binding FileName}"
+                                                       FontSize="14"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                <TextBlock Text="{Binding DirectionIcon}"
+                                                           FontSize="12"
+                                                           Margin="0,0,6,0"/>
+                                                <TextBlock Text="{Binding PeerName}"
+                                                           FontSize="12"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <TextBlock Text=" • "
+                                                           FontSize="12"
+                                                           Foreground="{StaticResource TextMutedBrush}"/>
+                                                <TextBlock Text="{Binding FileSizeDisplay}"
+                                                           FontSize="12"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"/>
+                                                <TextBlock Text=" • "
+                                                           FontSize="12"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           IsVisible="{Binding IsInProgress}"/>
+                                                <TextBlock Text="{Binding SpeedDisplay}"
+                                                           FontSize="12"
+                                                           Foreground="{StaticResource AccentPrimaryBrush}"
+                                                           IsVisible="{Binding IsInProgress}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- Actions -->
+                                        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                            <Button Content="Cancel"
+                                                    Command="{Binding CancelCommand}"
+                                                    IsVisible="{Binding CanCancel}"
+                                                    Classes="secondary"
+                                                    Padding="8,4"/>
+                                            <Button Content="Retry"
+                                                    Command="{Binding RetryCommand}"
+                                                    IsVisible="{Binding CanRetry}"
+                                                    Classes="primary"
+                                                    Padding="8,4"/>
+                                        </StackPanel>
+
+                                        <!-- Progress bar -->
+                                        <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,8,0,0"
+                                              IsVisible="{Binding ShowProgress}">
+                                            <ProgressBar Value="{Binding Progress}"
+                                                         Minimum="0"
+                                                         Maximum="100"
+                                                         Height="6"
+                                                         CornerRadius="3"
+                                                         Background="{StaticResource BackgroundLightBrush}"
+                                                         Foreground="{StaticResource AccentPrimaryBrush}"/>
+                                        </Grid>
+
+                                        <!-- Status -->
+                                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,6,0,0">
+                                            <TextBlock Text="{Binding StatusIcon}"
+                                                       FontSize="12"
+                                                       Margin="0,0,6,0"/>
+                                            <TextBlock Text="{Binding StatusText}"
+                                                       FontSize="12"
+                                                       Foreground="{Binding StatusColor}"/>
+                                            <TextBlock Text=" - "
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource TextMutedBrush}"
+                                                       IsVisible="{Binding HasError}"/>
+                                            <TextBlock Text="{Binding ErrorMessage}"
+                                                       FontSize="12"
+                                                       Foreground="{StaticResource ErrorBrush}"
+                                                       IsVisible="{Binding HasError}"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Empty State -->
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            IsVisible="{Binding !HasTransfers}">
+                    <TextBlock Text="📋"
+                               FontSize="48"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="No transfers"
+                               FontSize="16"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               HorizontalAlignment="Center"
+                               Margin="0,12,0,0"/>
+                    <TextBlock Text="File transfers will appear here"
+                               FontSize="12"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               HorizontalAlignment="Center"
+                               Margin="0,8,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Footer -->
+        <Border Grid.Row="2" 
+                Background="{StaticResource SurfaceBrush}" 
+                Padding="16"
+                BorderBrush="{StaticResource BorderLightBrush}"
+                BorderThickness="0,1,0,0">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Button Content="Clear Completed"
+                        Command="{Binding ClearCompletedCommand}"
+                        IsEnabled="{Binding HasCompletedTransfers}"
+                        Classes="secondary"/>
+                <Button Grid.Column="2" 
+                        Content="Close"
+                        Click="CloseButton_Click"
+                        Classes="primary"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

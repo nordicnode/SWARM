@@ -114,6 +114,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         ToggleSyncCommand = new RelayCommand(ToggleSync);
         OpenActivityLogCommand = new RelayCommand(OpenActivityLog);
         OpenConflictHistoryCommand = new RelayCommand(OpenConflictHistory);
+        OpenTransferQueueCommand = new RelayCommand(OpenTransferQueue);
         RefreshOverviewCommand = new RelayCommand(RefreshOverview);
         FocusSearchCommand = new RelayCommand(() => FocusSearchRequested?.Invoke());
         
@@ -405,6 +406,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     public ICommand ToggleSyncCommand { get; }
     public ICommand OpenActivityLogCommand { get; }
     public ICommand OpenConflictHistoryCommand { get; }
+    public ICommand OpenTransferQueueCommand { get; }
     public ICommand RefreshOverviewCommand { get; }
     public ICommand FocusSearchCommand { get; }
 
@@ -505,6 +507,26 @@ public class MainViewModel : ViewModelBase, IDisposable
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Failed to open conflict history: {ex.Message}");
+        }
+    }
+
+    private async void OpenTransferQueue()
+    {
+        try
+        {
+            var mainWindow = global::Avalonia.Application.Current?.ApplicationLifetime is 
+                global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                ? desktop.MainWindow
+                : null;
+
+            if (mainWindow == null) return;
+
+            var transferDialog = new Swarm.Avalonia.Dialogs.TransferQueueDialog(_transferService);
+            await transferDialog.ShowDialog(mainWindow);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to open transfer queue: {ex.Message}");
         }
     }
 

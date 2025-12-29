@@ -1323,6 +1323,105 @@ public class TransferService : ITransferService
 
     #endregion
 
+    #region Transfer Queue Management
+
+    /// <summary>
+    /// Event raised when a transfer fails.
+    /// </summary>
+    public event Action<FileTransfer>? TransferFailed;
+
+    /// <summary>
+    /// Cancels an active or pending transfer.
+    /// </summary>
+    public bool CancelTransfer(string transferId)
+    {
+        FileTransfer? transfer = null;
+        lock (_transferLock)
+        {
+            transfer = Transfers.FirstOrDefault(t => t.Id == transferId);
+        }
+
+        if (transfer == null || !transfer.CanCancel)
+            return false;
+
+        transfer.Cancel();
+        Log.Information("Transfer cancelled: {FileName}", transfer.FileName);
+        
+        InvokeOnUI(() => TransferFailed?.Invoke(transfer));
+        return true;
+    }
+
+    /// <summary>
+    /// Retries a failed transfer.
+    /// </summary>
+    public async Task<bool> RetryTransferAsync(string transferId)
+    {
+        FileTransfer? transfer = null;
+        lock (_transferLock)
+        {
+            transfer = Transfers.FirstOrDefault(t => t.Id == transferId);
+        }
+
+        if (transfer == null || !transfer.CanRetry)
+            return false;
+
+        if (transfer.RemotePeer == null || string.IsNullOrEmpty(transfer.LocalPath))
+            return false;
+
+        // Reset transfer state
+        transfer.RetryCount++;
+        transfer.Status = TransferStatus.Pending;
+        transfer.BytesTransferred = 0;
+        transfer.ErrorMessage = null;
+        transfer.CancellationTokenSource = new CancellationTokenSource();
+        
+        Log.Information("Retrying transfer: {FileName} (attempt {RetryCount})", transfer.FileName, transfer.RetryCount);
+
+        try
+        {
+            if (transfer.Direction == TransferDirection.Outgoing)
+            {
+                // Retry sending file
+                await SendFile(transfer.RemotePeer, transfer.LocalPath);
+            }
+            // Incoming files would need server-side retry logic
+            return true;
+        }
+        catch (Exception ex)
+        {
+            transfer.Status = TransferStatus.Failed;
+            transfer.ErrorMessage = ex.Message;
+            transfer.EndTime = DateTime.Now;
+            Log.Warning(ex, "Retry failed for {FileName}", transfer.FileName);
+            InvokeOnUI(() => TransferFailed?.Invoke(transfer));
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Clears completed, failed, or cancelled transfers from the queue.
+    /// </summary>
+    public void ClearCompletedTransfers()
+    {
+        lock (_transferLock)
+        {
+            var toRemove = Transfers
+                .Where(t => t.Status is TransferStatus.Completed or TransferStatus.Failed or TransferStatus.Cancelled)
+                .ToList();
+
+            InvokeOnUI(() =>
+            {
+                foreach (var transfer in toRemove)
+                {
+                    Transfers.Remove(transfer);
+                }
+            });
+        }
+    }
+
+    private readonly object _transferLock = new();
+
+    #endregion
 
     public void Dispose()
     {
