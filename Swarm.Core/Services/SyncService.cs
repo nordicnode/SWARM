@@ -32,6 +32,7 @@ public class SyncService : IDisposable
     private readonly FileStateCacheService _fileStateCacheService;
     private readonly ActivityLogService? _activityLogService;
     private readonly ConflictResolutionService? _conflictResolutionService;
+    private readonly FolderEncryptionService _folderEncryptionService;
     private readonly FileWatcherService _fileWatcherService;
     
     private CancellationTokenSource? _cts;
@@ -109,7 +110,7 @@ public class SyncService : IDisposable
     // Track pending delta sync operations (relativePath -> peer awaiting delta)
     private readonly ConcurrentDictionary<string, (Peer peer, SyncedFile syncFile)> _pendingDeltaSyncs = new();
 
-    public SyncService(Settings settings, IDiscoveryService discoveryService, ITransferService transferService, VersioningService versioningService, IHashingService hashingService, FileStateCacheService fileStateCacheService, ActivityLogService? activityLogService = null, ConflictResolutionService? conflictResolutionService = null)
+    public SyncService(Settings settings, IDiscoveryService discoveryService, ITransferService transferService, VersioningService versioningService, IHashingService hashingService, FileStateCacheService fileStateCacheService, FolderEncryptionService folderEncryptionService, ActivityLogService? activityLogService = null, ConflictResolutionService? conflictResolutionService = null)
     {
         _settings = settings;
         _discoveryService = discoveryService;
@@ -117,9 +118,11 @@ public class SyncService : IDisposable
         _versioningService = versioningService;
         _hashingService = hashingService;
         _fileStateCacheService = fileStateCacheService;
+        _folderEncryptionService = folderEncryptionService;
         _activityLogService = activityLogService;
         _conflictResolutionService = conflictResolutionService;
         _swarmIgnoreService = new SwarmIgnoreService(settings);
+
         
         // Create FileWatcherService and subscribe to its events
         _fileWatcherService = new FileWatcherService(settings);
@@ -602,6 +605,15 @@ public class SyncService : IDisposable
     private async Task ProcessFileChange(string fullPath)
     {
         var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, fullPath);
+
+        // [SECURITY] Race Condition Check: 
+        // If this file is in an encrypted folder but not encrypted (.senc), it's a plaintext leak.
+        // We MUST ignore it until FolderEncryptionService encrypts it and deletes the original.
+        if (_folderEncryptionService.GetEncryptedFolderFor(relativePath) != null && 
+            !fullPath.EndsWith(".senc", StringComparison.OrdinalIgnoreCase))
+        {
+            return; 
+        }
         SyncedFile syncFile;
 
         if (File.Exists(fullPath))
@@ -757,7 +769,10 @@ public class SyncService : IDisposable
                 var fileInfo = new FileInfo(fullPath);
 
                 // Use delta sync for files larger than threshold
-                if (fileInfo.Length >= ProtocolConstants.DELTA_THRESHOLD)
+                // [OPTIMIZATION] Skip delta sync for encrypted files (.senc) as requested
+                // Even with chunking, the overhead might be considered wasteful if entropy is high
+                if (fileInfo.Length >= ProtocolConstants.DELTA_THRESHOLD && 
+                    !syncFile.RelativePath.EndsWith(".senc", StringComparison.OrdinalIgnoreCase))
                 {
                     System.Diagnostics.Debug.WriteLine($"Using delta sync for large file: {syncFile.RelativePath} ({fileInfo.Length} bytes)");
                     

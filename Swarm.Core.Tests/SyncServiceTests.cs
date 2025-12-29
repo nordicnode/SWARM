@@ -41,13 +41,16 @@ public class SyncServiceTests : IDisposable
         var versioningService = new VersioningService(_settings, _mockHashing.Object);
         var cacheService = new FileStateCacheService(_settings);
         
+        var folderEncryptionService = new FolderEncryptionService(_settings);
+
         return new SyncService(
             _settings,
             _mockDiscovery.Object,
             _mockTransfer.Object,
             versioningService,
             _mockHashing.Object,
-            cacheService);
+            cacheService,
+            folderEncryptionService);
     }
 
     [Fact]
