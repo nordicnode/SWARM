@@ -96,6 +96,8 @@ public partial class App : Application
         
         // Platform-specific secure key storage
         var keysDirectory = CryptoService.GetKeysDirectory();
+        
+        #pragma warning disable CA1416 // Platform compatibility - guarded by OperatingSystem.Is* checks
         if (OperatingSystem.IsWindows())
         {
             services.AddSingleton<ISecureKeyStorage>(sp => 
@@ -111,6 +113,7 @@ public partial class App : Application
             services.AddSingleton<ISecureKeyStorage>(sp => 
                 new LinuxSecureKeyStorage(keysDirectory, sp.GetRequiredService<ILogger<LinuxSecureKeyStorage>>()));
         }
+        #pragma warning restore CA1416
         
         services.AddSingleton<CryptoService>(sp => 
             new CryptoService(

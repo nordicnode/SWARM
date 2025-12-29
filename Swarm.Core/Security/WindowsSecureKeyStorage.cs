@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 
@@ -7,6 +8,7 @@ namespace Swarm.Core.Security;
 /// Windows implementation of secure key storage using DPAPI (Data Protection API).
 /// Keys are encrypted with CurrentUser scope - only the same Windows user can decrypt.
 /// </summary>
+[SupportedOSPlatform("windows")]
 public class WindowsSecureKeyStorage : ISecureKeyStorage
 {
     private readonly string _storageDirectory;

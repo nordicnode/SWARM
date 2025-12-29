@@ -1,12 +1,13 @@
-using System.Diagnostics;
 using Microsoft.Extensions.Logging;
+using System.Runtime.Versioning;
 
 namespace Swarm.Core.Security;
 
 /// <summary>
 /// Linux implementation of secure key storage using file permissions.
-/// Uses chmod 600 to restrict access to the current user only.
+/// Uses native .NET APIs to set owner-only permissions (600).
 /// </summary>
+[SupportedOSPlatform("linux")]
 public class LinuxSecureKeyStorage : ISecureKeyStorage
 {
     private readonly string _storageDirectory;
@@ -19,20 +20,22 @@ public class LinuxSecureKeyStorage : ISecureKeyStorage
         
         // Create directory with restricted permissions
         Directory.CreateDirectory(_storageDirectory);
-        SetUnixPermissions(_storageDirectory, "700");
+        SetDirectoryPermissions(_storageDirectory);
     }
 
     public void StoreKey(string keyName, byte[] keyData)
     {
+        ValidateKeyName(keyName);
+        
         try
         {
             var filePath = GetKeyPath(keyName);
             File.WriteAllBytes(filePath, keyData);
             
-            // Set file permissions to owner-only (600)
-            SetUnixPermissions(filePath, "600");
+            // Set file permissions to owner-only (600) using native API
+            File.SetUnixFileMode(filePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
             
-            _logger.LogInformation("Stored key '{KeyName}' with chmod 600 protection", keyName);
+            _logger.LogInformation("Stored key '{KeyName}' with owner-only permissions", keyName);
         }
         catch (Exception ex)
         {
@@ -43,6 +46,8 @@ public class LinuxSecureKeyStorage : ISecureKeyStorage
 
     public byte[]? RetrieveKey(string keyName)
     {
+        ValidateKeyName(keyName);
+        
         var filePath = GetKeyPath(keyName);
         if (!File.Exists(filePath))
             return null;
@@ -62,11 +67,14 @@ public class LinuxSecureKeyStorage : ISecureKeyStorage
 
     public bool KeyExists(string keyName)
     {
+        ValidateKeyName(keyName);
         return File.Exists(GetKeyPath(keyName));
     }
 
     public void DeleteKey(string keyName)
     {
+        ValidateKeyName(keyName);
+        
         var filePath = GetKeyPath(keyName);
         if (File.Exists(filePath))
         {
@@ -81,24 +89,29 @@ public class LinuxSecureKeyStorage : ISecureKeyStorage
         return Path.Combine(_storageDirectory, $"{safeName}.key");
     }
 
-    private void SetUnixPermissions(string path, string mode)
+    private void SetDirectoryPermissions(string path)
     {
         try
         {
-            var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = "chmod",
-                Arguments = $"{mode} \"{path}\"",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            });
-            process?.WaitForExit(5000);
+            // Set directory to owner-only (700)
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to set permissions on {Path}", path);
+            _logger.LogWarning(ex, "Failed to set permissions on directory {Path}", path);
         }
     }
+    
+    /// <summary>
+    /// Validates key name to prevent path traversal and injection attacks.
+    /// </summary>
+    private static void ValidateKeyName(string keyName)
+    {
+        if (string.IsNullOrWhiteSpace(keyName))
+            throw new ArgumentException("Key name cannot be empty", nameof(keyName));
+            
+        if (keyName.Contains("..") || keyName.Contains('/') || keyName.Contains('\\'))
+            throw new ArgumentException("Key name contains invalid characters", nameof(keyName));
+    }
 }
+

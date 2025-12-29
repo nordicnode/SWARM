@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.Text;
+using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;
 
 namespace Swarm.Core.Security;
@@ -7,7 +7,9 @@ namespace Swarm.Core.Security;
 /// <summary>
 /// macOS implementation of secure key storage using the Keychain.
 /// Uses the 'security' command-line tool to interact with the login keychain.
+/// Uses ArgumentList for safe parameter passing (no command injection).
 /// </summary>
+[SupportedOSPlatform("macos")]
 public class MacOSSecureKeyStorage : ISecureKeyStorage
 {
     private const string ServiceName = "com.swarm.keystore";
@@ -23,6 +25,8 @@ public class MacOSSecureKeyStorage : ISecureKeyStorage
 
     public void StoreKey(string keyName, byte[] keyData)
     {
+        ValidateKeyName(keyName);
+        
         try
         {
             // First try to delete any existing key
@@ -31,17 +35,26 @@ public class MacOSSecureKeyStorage : ISecureKeyStorage
             // Convert to base64 for keychain storage
             var base64Data = Convert.ToBase64String(keyData);
 
-            // Add to keychain using security command
-            var process = Process.Start(new ProcessStartInfo
+            // Add to keychain using security command with ArgumentList for safety
+            var psi = new ProcessStartInfo
             {
                 FileName = "security",
-                Arguments = $"add-generic-password -a \"{keyName}\" -s \"{ServiceName}\" -w \"{base64Data}\" -U",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
-            });
+            };
+            // Use ArgumentList for injection-safe argument passing
+            psi.ArgumentList.Add("add-generic-password");
+            psi.ArgumentList.Add("-a");
+            psi.ArgumentList.Add(keyName);
+            psi.ArgumentList.Add("-s");
+            psi.ArgumentList.Add(ServiceName);
+            psi.ArgumentList.Add("-w");
+            psi.ArgumentList.Add(base64Data);
+            psi.ArgumentList.Add("-U");
 
+            var process = Process.Start(psi);
             process?.WaitForExit(10000);
 
             if (process?.ExitCode == 0)
@@ -63,19 +76,27 @@ public class MacOSSecureKeyStorage : ISecureKeyStorage
 
     public byte[]? RetrieveKey(string keyName)
     {
+        ValidateKeyName(keyName);
+        
         try
         {
-            // Try to retrieve from keychain
-            var process = Process.Start(new ProcessStartInfo
+            // Try to retrieve from keychain with ArgumentList for safety
+            var psi = new ProcessStartInfo
             {
                 FileName = "security",
-                Arguments = $"find-generic-password -a \"{keyName}\" -s \"{ServiceName}\" -w",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
-            });
+            };
+            psi.ArgumentList.Add("find-generic-password");
+            psi.ArgumentList.Add("-a");
+            psi.ArgumentList.Add(keyName);
+            psi.ArgumentList.Add("-s");
+            psi.ArgumentList.Add(ServiceName);
+            psi.ArgumentList.Add("-w");
 
+            var process = Process.Start(psi);
             process?.WaitForExit(10000);
 
             if (process?.ExitCode == 0)
@@ -101,19 +122,26 @@ public class MacOSSecureKeyStorage : ISecureKeyStorage
 
     public bool KeyExists(string keyName)
     {
+        ValidateKeyName(keyName);
+        
         // Check keychain first
         try
         {
-            var process = Process.Start(new ProcessStartInfo
+            var psi = new ProcessStartInfo
             {
                 FileName = "security",
-                Arguments = $"find-generic-password -a \"{keyName}\" -s \"{ServiceName}\"",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
-            });
+            };
+            psi.ArgumentList.Add("find-generic-password");
+            psi.ArgumentList.Add("-a");
+            psi.ArgumentList.Add(keyName);
+            psi.ArgumentList.Add("-s");
+            psi.ArgumentList.Add(ServiceName);
 
+            var process = Process.Start(psi);
             process?.WaitForExit(5000);
             if (process?.ExitCode == 0)
                 return true;
@@ -126,6 +154,8 @@ public class MacOSSecureKeyStorage : ISecureKeyStorage
 
     public void DeleteKey(string keyName)
     {
+        ValidateKeyName(keyName);
+        
         DeleteFromKeychain(keyName);
         
         // Also delete fallback file if exists
@@ -142,15 +172,21 @@ public class MacOSSecureKeyStorage : ISecureKeyStorage
     {
         try
         {
-            var process = Process.Start(new ProcessStartInfo
+            var psi = new ProcessStartInfo
             {
                 FileName = "security",
-                Arguments = $"delete-generic-password -a \"{keyName}\" -s \"{ServiceName}\"",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
-            });
+            };
+            psi.ArgumentList.Add("delete-generic-password");
+            psi.ArgumentList.Add("-a");
+            psi.ArgumentList.Add(keyName);
+            psi.ArgumentList.Add("-s");
+            psi.ArgumentList.Add(ServiceName);
+
+            var process = Process.Start(psi);
             process?.WaitForExit(5000);
         }
         catch { }
@@ -160,8 +196,11 @@ public class MacOSSecureKeyStorage : ISecureKeyStorage
     {
         var filePath = GetKeyPath(keyName);
         File.WriteAllBytes(filePath, keyData);
-        SetUnixPermissions(filePath, "600");
-        _logger.LogInformation("Stored key '{KeyName}' with file fallback (chmod 600)", keyName);
+        
+        // Use native .NET API for permissions
+        File.SetUnixFileMode(filePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        
+        _logger.LogInformation("Stored key '{KeyName}' with file fallback (owner-only)", keyName);
     }
 
     private byte[]? RetrieveFallback(string keyName)
@@ -178,22 +217,17 @@ public class MacOSSecureKeyStorage : ISecureKeyStorage
         var safeName = string.Join("_", keyName.Split(Path.GetInvalidFileNameChars()));
         return Path.Combine(_storageDirectory, $"{safeName}.key");
     }
-
-    private void SetUnixPermissions(string path, string mode)
+    
+    /// <summary>
+    /// Validates key name to prevent path traversal and injection attacks.
+    /// </summary>
+    private static void ValidateKeyName(string keyName)
     {
-        try
-        {
-            var process = Process.Start(new ProcessStartInfo
-            {
-                FileName = "chmod",
-                Arguments = $"{mode} \"{path}\"",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            });
-            process?.WaitForExit(5000);
-        }
-        catch { }
+        if (string.IsNullOrWhiteSpace(keyName))
+            throw new ArgumentException("Key name cannot be empty", nameof(keyName));
+            
+        if (keyName.Contains("..") || keyName.Contains('/') || keyName.Contains('\\'))
+            throw new ArgumentException("Key name contains invalid characters", nameof(keyName));
     }
 }
+
