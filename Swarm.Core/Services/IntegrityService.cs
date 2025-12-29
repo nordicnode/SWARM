@@ -1,5 +1,6 @@
 using System.IO;
 using System.Security.Cryptography;
+using Swarm.Core.Abstractions;
 using Swarm.Core.Models;
 
 namespace Swarm.Core.Services;
@@ -22,16 +23,18 @@ public class IntegrityService
 {
     private readonly Settings _settings;
     private readonly SyncService _syncService;
+    private readonly IHashingService _hashingService;
 
     /// <summary>
     /// Raised during integrity verification to report progress.
     /// </summary>
     public event Action<IntegrityProgress>? ProgressChanged;
 
-    public IntegrityService(Settings settings, SyncService syncService)
+    public IntegrityService(Settings settings, SyncService syncService, IHashingService hashingService)
     {
         _settings = settings;
         _syncService = syncService;
+        _hashingService = hashingService;
     }
 
     /// <summary>
@@ -97,7 +100,7 @@ public class IntegrityService
                 // Compute current hash
                 try
                 {
-                    var currentHash = await ComputeFileHashAsync(fullPath, ct);
+                    var currentHash = await _hashingService.ComputeFileHashAsync(fullPath, ct);
 
                     if (string.Equals(currentHash, storedFile.ContentHash, StringComparison.OrdinalIgnoreCase))
                     {
@@ -152,23 +155,7 @@ public class IntegrityService
         return result;
     }
 
-    /// <summary>
-    /// Computes SHA-256 hash of a file.
-    /// </summary>
-    private static async Task<string> ComputeFileHashAsync(string filePath, CancellationToken ct)
-    {
-        await using var stream = new FileStream(
-            filePath, 
-            FileMode.Open, 
-            FileAccess.Read, 
-            FileShare.Read, 
-            ProtocolConstants.FILE_STREAM_BUFFER_SIZE, 
-            useAsync: true);
-        
-        using var sha = SHA256.Create();
-        var hash = await sha.ComputeHashAsync(stream, ct);
-        return Convert.ToHexString(hash);
-    }
+
 
     /// <summary>
     /// Determines if a file should be ignored during integrity check.

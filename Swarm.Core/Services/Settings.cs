@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Serilog;
 
 namespace Swarm.Core.Services;
 
@@ -276,7 +277,7 @@ public class Settings
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to load settings: {ex.Message}");
+            Log.Error(ex, $"Failed to load settings: {ex.Message}");
             settings = new Settings();
         }
 
@@ -319,7 +320,7 @@ public class Settings
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to save settings: {ex.Message}");
+            Log.Error(ex, $"Failed to save settings: {ex.Message}");
         }
     }
 

@@ -95,10 +95,11 @@
 
         <!-- Footer -->
         <Border Grid.Row="3" Background="{StaticResource SurfaceBrush}" Padding="16,12">
-            <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto">
                 <Button Content="Clear Log" Click="ClearButton_Click" Margin="0,0,8,0"/>
-                <Button Grid.Column="1" Content="Refresh" Click="RefreshButton_Click"/>
-                <Button Grid.Column="3" Content="Close" Classes="accent" Click="CloseButton_Click"/>
+                <Button Grid.Column="1" Content="Refresh" Click="RefreshButton_Click" Margin="0,0,8,0"/>
+                <Button Grid.Column="2" Content="Export" Click="ExportButton_Click"/>
+                <Button Grid.Column="4" Content="Close" Classes="accent" Click="CloseButton_Click"/>
             </Grid>
         </Border>
     </Grid>

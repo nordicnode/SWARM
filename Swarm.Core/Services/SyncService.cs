@@ -3,8 +3,10 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Swarm.Core.Abstractions;
 using Swarm.Core.Helpers;
 using Swarm.Core.Models;
+using Serilog;
 
 namespace Swarm.Core.Services;
 
@@ -22,10 +24,12 @@ public struct SyncProgress
 public class SyncService : IDisposable
 {
     private readonly Settings _settings;
-    private readonly DiscoveryService _discoveryService;
-    private readonly TransferService _transferService;
+    private readonly IDiscoveryService _discoveryService;
+    private readonly ITransferService _transferService;
     private readonly VersioningService _versioningService;
     private readonly SwarmIgnoreService _swarmIgnoreService;
+    private readonly IHashingService _hashingService;
+    private readonly FileStateCacheService _fileStateCacheService;
     private readonly ActivityLogService? _activityLogService;
     
     private FileSystemWatcher? _watcher;
@@ -59,10 +63,14 @@ public class SyncService : IDisposable
     private const int DIRECTORY_RENAME_DEBOUNCE_MS = 500;
     
     // Threshold: if this many files share a parent path change, treat as directory rename
-    private const int DIRECTORY_RENAME_THRESHOLD = 3;
+    private const int DIRECTORY_RENAME_THRESHOLD = 5;
     
     // How long to remember a directory rename for child suppression
     private const int DIRECTORY_RENAME_MEMORY_MS = 2000;
+    
+    // Batch debounce: wait for rename event storm to settle before processing
+    private const int RENAME_BATCH_DELAY_MS = 1000;
+    private DateTime _lastRenameEventTime = DateTime.MinValue;
 
     public string SyncFolderPath => _settings.SyncFolderPath;
     public bool IsEnabled => _settings.IsSyncEnabled;
@@ -129,12 +137,14 @@ public class SyncService : IDisposable
     // Track pending delta sync operations (relativePath -> peer awaiting delta)
     private readonly ConcurrentDictionary<string, (Peer peer, SyncedFile syncFile)> _pendingDeltaSyncs = new();
 
-    public SyncService(Settings settings, DiscoveryService discoveryService, TransferService transferService, VersioningService versioningService, ActivityLogService? activityLogService = null)
+    public SyncService(Settings settings, IDiscoveryService discoveryService, ITransferService transferService, VersioningService versioningService, IHashingService hashingService, FileStateCacheService fileStateCacheService, ActivityLogService? activityLogService = null)
     {
         _settings = settings;
         _discoveryService = discoveryService;
         _transferService = transferService;
         _versioningService = versioningService;
+        _hashingService = hashingService;
+        _fileStateCacheService = fileStateCacheService;
         _activityLogService = activityLogService;
         _swarmIgnoreService = new SwarmIgnoreService(settings);
 
@@ -160,7 +170,7 @@ public class SyncService : IDisposable
         if (!peer.IsTrusted || !peer.IsSyncEnabled || !IsRunning)
             return;
             
-        System.Diagnostics.Debug.WriteLine($"[SYNC] Trusted peer {peer.Name} connected, sending manifest...");
+        Log.Information($"[SYNC] Trusted peer {peer.Name} connected, sending manifest...");
         
         try
         {
@@ -170,7 +180,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[SYNC] Failed to sync with {peer.Name}: {ex.Message}");
+            Log.Error(ex, $"[SYNC] Failed to sync with {peer.Name}: {ex.Message}");
         }
     }
 
@@ -222,11 +232,11 @@ public class SyncService : IDisposable
                 _ = Task.Run(() => ProcessPendingChanges(_cts.Token));
 
                 SyncStatusChanged?.Invoke("Sync enabled - Watching for changes");
-                System.Diagnostics.Debug.WriteLine($"SyncService started, watching: {_settings.SyncFolderPath}");
+                Log.Information($"SyncService started, watching: {_settings.SyncFolderPath}");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to start SyncService: {ex.Message}");
+                Log.Error(ex, $"Failed to start SyncService: {ex.Message}");
                 SyncStatusChanged?.Invoke("Sync failed to start");
             }
         });
@@ -344,7 +354,7 @@ public class SyncService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to handle sync file {syncFile.RelativePath}: {ex.Message}");
+            Log.Error(ex, $"Failed to handle sync file {syncFile.RelativePath}: {ex.Message}");
         }
     }
 
@@ -383,7 +393,7 @@ public class SyncService : IDisposable
                     // Check for future timestamp (Clock Drift Protection)
                     if (remoteFile.LastModified > DateTime.UtcNow.AddMinutes(10))
                     {
-                        System.Diagnostics.Debug.WriteLine($"[Warning] Peer {sourcePeer.Name} has file {remoteFile.RelativePath} from the future ({remoteFile.LastModified}). Ignoring to prevent corruption.");
+                        Log.Warning($"[Warning] Peer {sourcePeer.Name} has file {remoteFile.RelativePath} from the future ({remoteFile.LastModified}). Ignoring to prevent corruption.");
                         TimeTravelDetected?.Invoke(remoteFile.RelativePath, remoteFile.LastModified);
                         continue;
                     }
@@ -421,7 +431,7 @@ public class SyncService : IDisposable
                     // Check for future timestamp on new files too
                     if (remoteFile.LastModified > DateTime.UtcNow.AddMinutes(10))
                     {
-                        System.Diagnostics.Debug.WriteLine($"[Warning] Peer {sourcePeer.Name} offering new file {remoteFile.RelativePath} from the future. Ignoring.");
+                        Log.Warning($"[Warning] Peer {sourcePeer.Name} offering new file {remoteFile.RelativePath} from the future. Ignoring.");
                         TimeTravelDetected?.Invoke(remoteFile.RelativePath, remoteFile.LastModified);
                         continue;
                     }
@@ -451,17 +461,47 @@ public class SyncService : IDisposable
         
         if (!Directory.Exists(_settings.SyncFolderPath)) return;
 
+        // Load existing cache
+        var cache = _fileStateCacheService.LoadCache();
+        var cacheHits = 0;
+        var cacheMisses = 0;
+
         foreach (var filePath in Directory.EnumerateFiles(_settings.SyncFolderPath, "*", SearchOption.AllDirectories))
         {
             try
             {
+                // Skip hidden files/directories (like .swarm-cache and .swarm-versions)
+                if (filePath.Contains(Path.DirectorySeparatorChar + ".") || Path.GetFileName(filePath).StartsWith("."))
+                    continue;
+
                 var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, filePath);
+                
+                // Also check ignore service
+                if (_swarmIgnoreService.IsIgnored(relativePath)) continue;
+
                 var fileInfo = new FileInfo(filePath);
+                string contentHash;
+
+                // Check cache
+                if (cache.TryGetValue(relativePath, out var cachedFile) &&
+                    cachedFile.FileSize == fileInfo.Length &&
+                    Math.Abs((cachedFile.LastModified - fileInfo.LastWriteTimeUtc).TotalSeconds) < 1.0) // 1s tolerance
+                {
+                    // Cache hit - trust the hash
+                    contentHash = cachedFile.ContentHash;
+                    cacheHits++;
+                }
+                else
+                {
+                    // Cache miss - compute hash
+                    contentHash = await _hashingService.ComputeFileHashAsync(filePath);
+                    cacheMisses++;
+                }
                 
                 _fileStates[relativePath] = new SyncedFile
                 {
                     RelativePath = relativePath,
-                    ContentHash = await ComputeFileHash(filePath),
+                    ContentHash = contentHash,
                     LastModified = fileInfo.LastWriteTimeUtc,
                     FileSize = fileInfo.Length,
                     Action = SyncAction.Create,
@@ -471,12 +511,18 @@ public class SyncService : IDisposable
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to read file {filePath}: {ex.Message}");
+                Log.Warning(ex, $"Failed to read file {filePath}: {ex.Message}");
             }
         }
 
-        System.Diagnostics.Debug.WriteLine($"Built initial state with {_fileStates.Count} files");
+        Log.Information($"Built initial state. Cache hits: {cacheHits}, Misses/Updates: {cacheMisses}. Total tracked: {_fileStates.Count}");
+        
+        // Save updated cache immediately
+        _fileStateCacheService.SaveCache(_fileStates);
     }
+
+
+
 
     private void OnFileCreated(object sender, FileSystemEventArgs e)
     {
@@ -509,6 +555,9 @@ public class SyncService : IDisposable
     private void OnFileRenamed(object sender, RenamedEventArgs e)
     {
         if (ShouldIgnore(e.FullPath)) return;
+        
+        // Track time of last rename event for batch debounce
+        _lastRenameEventTime = DateTime.Now;
         
         // Queue as a proper rename operation with both old and new paths
         QueueRename(e.OldFullPath, e.FullPath);
@@ -553,7 +602,7 @@ public class SyncService : IDisposable
     private void OnWatcherError(object sender, ErrorEventArgs e)
     {
         var exception = e.GetException();
-        System.Diagnostics.Debug.WriteLine($"FileSystemWatcher error: {exception.Message}");
+        Log.Error(exception, $"FileSystemWatcher error: {exception.Message}");
         
         // Detect buffer overflow (common when many files change at once)
         // The internal buffer can overflow if there's heavy file system activity
@@ -563,7 +612,7 @@ public class SyncService : IDisposable
             // Error code 122 (ERROR_INSUFFICIENT_BUFFER) or general internal buffer overflow
             if (win32Ex.NativeErrorCode == 122)
             {
-                System.Diagnostics.Debug.WriteLine("[CRITICAL] FileSystemWatcher internal buffer overflow detected!");
+                Log.Fatal("[CRITICAL] FileSystemWatcher internal buffer overflow detected!");
                 isPotentialBufferOverflow = true;
             }
         }
@@ -591,11 +640,11 @@ public class SyncService : IDisposable
                 
                 if (isPotentialBufferOverflow)
                 {
-                    System.Diagnostics.Debug.WriteLine("Triggering full sync to recover from buffer overflow");
+                    Log.Warning("Triggering full sync to recover from buffer overflow");
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("Triggering full sync to recover from watcher error");
+                    Log.Warning("Triggering full sync to recover from watcher error");
                 }
                 
                 await ForceSyncAsync();
@@ -608,7 +657,7 @@ public class SyncService : IDisposable
             }
             catch (Exception syncEx)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to sync after watcher error: {syncEx.Message}");
+                Log.Error(syncEx, $"Failed to sync after watcher error: {syncEx.Message}");
             }
         });
     }
@@ -638,13 +687,13 @@ public class SyncService : IDisposable
             var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, path);
             if (_swarmIgnoreService.IsIgnored(relativePath))
             {
-                System.Diagnostics.Debug.WriteLine($"[SwarmIgnore] Ignoring: {relativePath}");
+                Log.Debug($"[SwarmIgnore] Ignoring: {relativePath}");
                 return true;
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[SwarmIgnore] Error checking path: {ex.Message}");
+            Log.Warning(ex, $"[SwarmIgnore] Error checking path: {ex.Message}");
         }
 
         return false;
@@ -653,7 +702,7 @@ public class SyncService : IDisposable
     private void QueueChange(string fullPath, SyncAction action)
     {
         _pendingChanges[fullPath] = DateTime.Now;
-        System.Diagnostics.Debug.WriteLine($"Queued change: {action} - {fullPath}");
+        Log.Debug($"Queued change: {action} - {fullPath}");
     }
 
     private void QueueRename(string oldFullPath, string newFullPath)
@@ -672,7 +721,7 @@ public class SyncService : IDisposable
             TrackDirectoryRenameCandidate(oldDir, newDir, newFullPath);
         }
         
-        System.Diagnostics.Debug.WriteLine($"Queued rename: {oldFullPath} -> {newFullPath}");
+        Log.Debug($"Queued rename: {oldFullPath} -> {newFullPath}");
     }
 
     /// <summary>
@@ -737,12 +786,20 @@ public class SyncService : IDisposable
                 
                 var now = DateTime.Now;
 
-                // === STEP 1: Process confirmed directory renames first ===
-                // These are explicit directory rename events from FileSystemWatcher
-                var directoryRenames = _pendingRenames
-                    .Where(kvp => (now - kvp.Value.Time).TotalMilliseconds >= DEBOUNCE_MS
-                                  && Directory.Exists(kvp.Key))
-                    .ToList();
+                // === BATCH DEBOUNCE: Wait for rename event storm to settle ===
+                // If we received a rename event recently, skip rename processing this tick
+                // This allows directory rename coalescence to work properly
+                var timeSinceLastRename = (now - _lastRenameEventTime).TotalMilliseconds;
+                var shouldProcessRenames = timeSinceLastRename >= RENAME_BATCH_DELAY_MS || _lastRenameEventTime == DateTime.MinValue;
+
+                if (shouldProcessRenames && (_pendingRenames.Count > 0 || _directoryRenameCandidates.Count > 0))
+                {
+                    // === STEP 1: Process confirmed directory renames first ===
+                    // These are explicit directory rename events from FileSystemWatcher
+                    var directoryRenames = _pendingRenames
+                        .Where(kvp => (now - kvp.Value.Time).TotalMilliseconds >= DEBOUNCE_MS
+                                      && Directory.Exists(kvp.Key))
+                        .ToList();
 
                 foreach (var kvp in directoryRenames)
                 {
@@ -770,7 +827,7 @@ public class SyncService : IDisposable
                         if (info.AffectedFiles.Count >= DIRECTORY_RENAME_THRESHOLD)
                         {
                             // Enough files share this parent change - treat as directory rename
-                            System.Diagnostics.Debug.WriteLine(
+                            Log.Information(
                                 $"[DirectoryRenameCoalescence] Coalescing {info.AffectedFiles.Count} file renames into directory rename: " +
                                 $"{candidate.Key} -> {info.NewParentPath}");
                             
@@ -808,8 +865,10 @@ public class SyncService : IDisposable
                         await ProcessFileRename(oldPath, newPath);
                     }
                 }
+                } // End of shouldProcessRenames block
 
                 // === STEP 4: Process other changes (create, update, delete) ===
+                // These are NOT delayed by rename batch debounce
                 var toProcess = _pendingChanges
                     .Where(kvp => (now - kvp.Value).TotalMilliseconds >= DEBOUNCE_MS)
                     .Select(kvp => kvp.Key)
@@ -840,7 +899,7 @@ public class SyncService : IDisposable
         {
             // File exists - create or update
             var fileInfo = new FileInfo(fullPath);
-            var hash = await ComputeFileHash(fullPath);
+            var hash = await _hashingService.ComputeFileHashAsync(fullPath);
             
             var action = _fileStates.ContainsKey(relativePath) ? SyncAction.Update : SyncAction.Create;
             
@@ -1051,7 +1110,7 @@ public class SyncService : IDisposable
             {
                 try
                 {
-                    var currentHash = await ComputeFileHash(localPath);
+                    var currentHash = await _hashingService.ComputeFileHashAsync(localPath);
                     if (currentHash != syncFile.ContentHash)
                     {
                         // Use versioning service if enabled, otherwise fallback to legacy backup
@@ -1154,17 +1213,7 @@ public class SyncService : IDisposable
         }
     }
 
-    private static async Task<string> ComputeFileHash(string filePath)
-    {
-        // Use retry logic as file might be briefly locked
-        return await FileHelpers.ExecuteWithRetryAsync(async () =>
-        {
-            await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, ProtocolConstants.FILE_STREAM_BUFFER_SIZE, useAsync: true);
-            using var sha = SHA256.Create();
-            var hash = await sha.ComputeHashAsync(stream);
-            return Convert.ToHexString(hash);
-        });
-    }
+
 
 
     private async void OnSyncFileReceived(SyncedFile syncFile, Stream stream, Peer peer)
@@ -1427,6 +1476,12 @@ public class SyncService : IDisposable
             _transferService.SignaturesRequested -= OnSignaturesRequested;
             _transferService.BlockSignaturesReceived -= OnBlockSignaturesReceived;
             _transferService.DeltaDataReceived -= OnDeltaDataReceived;
+        }
+
+        // Save cache on exit
+        if (_fileStateCacheService != null)
+        {
+            _fileStateCacheService.SaveCache(_fileStates);
         }
     }
 

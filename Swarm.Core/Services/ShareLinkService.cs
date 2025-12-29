@@ -6,6 +6,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Web;
+using Serilog;
+using Swarm.Core.Abstractions;
 
 namespace Swarm.Core.Services;
 
@@ -44,6 +46,7 @@ public class ShareLinkService : IDisposable
     private const string ShareLinksFileName = "share_links.json";
     
     private readonly Settings _settings;
+    private readonly IHashingService _hashingService;
     private readonly string _shareLinksPath;
     private readonly Dictionary<string, ShareLink> _shareLinks = new();
     private readonly object _lock = new();
@@ -60,9 +63,10 @@ public class ShareLinkService : IDisposable
     public event Action<string, IPEndPoint>? ShareRequested;
 #pragma warning restore CS0067
     
-    public ShareLinkService(Settings settings)
+    public ShareLinkService(Settings settings, IHashingService hashingService)
     {
         _settings = settings;
+        _hashingService = hashingService;
         
         // Store share links in settings directory
         var settingsDir = Settings.IsPortableMode
@@ -77,7 +81,7 @@ public class ShareLinkService : IDisposable
     /// <summary>
     /// Creates a share link for a file or folder.
     /// </summary>
-    public ShareLink CreateShareLink(string relativePath, TimeSpan? expiration = null, string? password = null, bool requiresTrust = true)
+    public async Task<ShareLink> CreateShareLinkAsync(string relativePath, TimeSpan? expiration = null, string? password = null, bool requiresTrust = true)
     {
         var fullPath = Path.Combine(_settings.SyncFolderPath, relativePath);
         
@@ -88,7 +92,7 @@ public class ShareLinkService : IDisposable
         
         var isFile = File.Exists(fullPath);
         var fileSize = isFile ? new FileInfo(fullPath).Length : 0;
-        var contentHash = isFile ? ComputeFileHash(fullPath) : "";
+        var contentHash = isFile ? await _hashingService.ComputeFileHashAsync(fullPath) : "";
         
         var shareLink = new ShareLink
         {
@@ -108,7 +112,7 @@ public class ShareLinkService : IDisposable
             SaveShareLinks();
         }
         
-        System.Diagnostics.Debug.WriteLine($"[ShareLink] Created: {shareLink.Uri} -> {relativePath}");
+        Log.Information($"[ShareLink] Created: {shareLink.Uri} -> {relativePath}");
         
         return shareLink;
     }
@@ -128,7 +132,7 @@ public class ShareLinkService : IDisposable
             // Check expiration
             if (shareLink.IsExpired)
             {
-                System.Diagnostics.Debug.WriteLine($"[ShareLink] Link expired: {shareId}");
+                Log.Information($"[ShareLink] Link expired: {shareId}");
                 return null;
             }
             
@@ -137,7 +141,7 @@ public class ShareLinkService : IDisposable
             {
                 if (password == null || HashPassword(password) != shareLink.Password)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[ShareLink] Invalid password: {shareId}");
+                    Log.Warning($"[ShareLink] Invalid password: {shareId}");
                     return null;
                 }
             }
@@ -163,7 +167,7 @@ public class ShareLinkService : IDisposable
             if (_shareLinks.Remove(shareId))
             {
                 SaveShareLinks();
-                System.Diagnostics.Debug.WriteLine($"[ShareLink] Revoked: {shareId}");
+                Log.Information($"[ShareLink] Revoked: {shareId}");
                 return true;
             }
             return false;
@@ -204,7 +208,7 @@ public class ShareLinkService : IDisposable
             if (expired.Count > 0)
             {
                 SaveShareLinks();
-                System.Diagnostics.Debug.WriteLine($"[ShareLink] Cleaned up {expired.Count} expired links");
+                Log.Information($"[ShareLink] Cleaned up {expired.Count} expired links");
             }
             
             return expired.Count;
@@ -284,10 +288,15 @@ public class ShareLinkService : IDisposable
     /// </summary>
     public static bool RegisterProtocolHandler()
     {
-        // Only supported on Windows currently
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            return RegisterLinuxProtocolHandler();
+        }
+
+        // Only supported on Windows/Linux currently
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            System.Diagnostics.Debug.WriteLine("[ShareLink] Protocol registration not supported on this platform");
+            Log.Warning("[ShareLink] Protocol registration not supported on this platform");
             return false;
         }
 
@@ -303,7 +312,7 @@ public class ShareLinkService : IDisposable
             
             if (currentUser == null)
             {
-                System.Diagnostics.Debug.WriteLine("[ShareLink] Could not access Registry");
+                Log.Error("[ShareLink] Could not access Registry");
                 return false;
             }
 
@@ -331,12 +340,12 @@ public class ShareLinkService : IDisposable
                 }
             }
             
-            System.Diagnostics.Debug.WriteLine("[ShareLink] Protocol handler registered");
+            Log.Information("[ShareLink] Protocol handler registered");
             return true;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[ShareLink] Failed to register protocol: {ex.Message}");
+            Log.Error(ex, $"[ShareLink] Failed to register protocol: {ex.Message}");
             return false;
         }
     }
@@ -364,20 +373,7 @@ public class ShareLinkService : IDisposable
         return Convert.ToHexString(bytes);
     }
     
-    private static string ComputeFileHash(string filePath)
-    {
-        try
-        {
-            using var sha256 = SHA256.Create();
-            using var stream = File.OpenRead(filePath);
-            var hashBytes = sha256.ComputeHash(stream);
-            return Convert.ToHexString(hashBytes)[..16]; // First 16 chars
-        }
-        catch
-        {
-            return "";
-        }
-    }
+
     
     private void LoadShareLinks()
     {
@@ -398,12 +394,12 @@ public class ShareLinkService : IDisposable
                         _shareLinks[link.Id] = link;
                     }
                 }
-                System.Diagnostics.Debug.WriteLine($"[ShareLink] Loaded {links.Count} share links");
+                Log.Information($"[ShareLink] Loaded {links.Count} share links");
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[ShareLink] Failed to load: {ex.Message}");
+            Log.Error(ex, $"[ShareLink] Failed to load: {ex.Message}");
         }
     }
     
@@ -423,10 +419,55 @@ public class ShareLinkService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[ShareLink] Failed to save: {ex.Message}");
+            Log.Error(ex, $"[ShareLink] Failed to save: {ex.Message}");
         }
     }
     
+    private static bool RegisterLinuxProtocolHandler()
+    {
+        try
+        {
+            var exePath = Environment.ProcessPath ?? "";
+            if (string.IsNullOrEmpty(exePath)) return false;
+
+            // 1. Create .desktop file
+            var desktopFileContent = $"""
+[Desktop Entry]
+Type=Application
+Name=Swarm URL Handler
+Exec="{exePath}" --uri %u
+StartupNotify=false
+MimeType=x-scheme-handler/swarm;
+""";
+            
+            var localShare = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            // Ensure we are in ~/.local/share
+            if (!localShare.Contains(".local")) 
+            {
+                // Fallback if XDG_DATA_HOME not set strictly
+                var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                localShare = Path.Combine(home, ".local", "share");
+            }
+            
+            var appsDir = Path.Combine(localShare, "applications");
+            Directory.CreateDirectory(appsDir);
+            
+            var desktopFilePath = Path.Combine(appsDir, "swarm-handler.desktop");
+            File.WriteAllText(desktopFilePath, desktopFileContent);
+            
+            // 2. Register with xdg-mime
+            System.Diagnostics.Process.Start("xdg-mime", "default swarm-handler.desktop x-scheme-handler/swarm");
+            
+            Log.Information($"[ShareLink] Linux protocol handler registered at {desktopFilePath}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, $"[ShareLink] Failed to register Linux protocol: {ex.Message}");
+            return false;
+        }
+    }
+
     #endregion
     
     public void Dispose()

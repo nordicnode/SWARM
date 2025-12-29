@@ -11,6 +11,7 @@ using Swarm.Core.Models;
 using Swarm.Core.Services;
 using Swarm.Core.ViewModels;
 using Avalonia.Controls.Notifications;
+using Swarm.Core.Abstractions;
 
 namespace Swarm.Avalonia.ViewModels;
 
@@ -56,32 +57,47 @@ public class MainViewModel : ViewModelBase, IDisposable
     public PeersViewModel PeersVM { get; }
     public SettingsViewModel SettingsVM { get; }
 
-    public MainViewModel()
+    public MainViewModel(
+        Settings settings,
+        CryptoService cryptoService,
+        IDiscoveryService discoveryService,
+        ITransferService transferService,
+        VersioningService versioningService,
+        SyncService syncService,
+        IntegrityService integrityService,
+        RescanService rescanService,
+        ActivityLogService activityLogService,
+        ConflictResolutionService conflictResolutionService,
+        ShareLinkService shareLinkService,
+        PairingService pairingService,
+        AvaloniaDispatcher dispatcher,
+        AvaloniaPowerService powerService,
+        AvaloniaToastService toastService)
     {
-        _dispatcher = new AvaloniaDispatcher();
-        _powerService = new AvaloniaPowerService();
-        ToastService = new AvaloniaToastService();
+        _settings = settings;
+        _cryptoService = cryptoService;
+        _discoveryService = (DiscoveryService)discoveryService; // Cast until we fully decouple
+        _transferService = (TransferService)transferService;
+        _versioningService = versioningService;
+        _syncService = syncService;
+        _integrityService = integrityService;
+        _rescanService = rescanService;
+        _activityLogService = activityLogService;
+        _conflictResolutionService = conflictResolutionService;
+        _shareLinkService = shareLinkService;
+        _pairingService = pairingService;
+        
+        // Avalonia services
+        _dispatcher = dispatcher;
+        _powerService = powerService;
+        ToastService = toastService;
 
-        // Register power service and load settings
+        // Register power service
         Settings.RegisterPowerService(_powerService);
-        _settings = Settings.Load();
-
-        // Initialize services
-        _cryptoService = new CryptoService();
-        _discoveryService = new DiscoveryService(_settings.LocalId, _cryptoService, _settings, _dispatcher);
-        _transferService = new TransferService(_settings, _cryptoService, _dispatcher);
-        _versioningService = new VersioningService(_settings);
-        _activityLogService = new ActivityLogService(_settings);
-        _syncService = new SyncService(_settings, _discoveryService, _transferService, _versioningService, _activityLogService);
-        _integrityService = new IntegrityService(_settings, _syncService);
-        _rescanService = new RescanService(_settings, _syncService);
-        _conflictResolutionService = new ConflictResolutionService(_settings, _versioningService, _activityLogService);
-        _shareLinkService = new ShareLinkService(_settings);
-        _pairingService = new PairingService(_cryptoService);
 
         // Initialize Sub-ViewModels
-        OverviewVM = new OverviewViewModel(_syncService, _versioningService, _activityLogService, _discoveryService, _settings);
-        FilesVM = new FilesViewModel(_settings, _syncService);
+        OverviewVM = new OverviewViewModel(_syncService, _discoveryService, _settings);
+        FilesVM = new FilesViewModel(_settings, _syncService, _versioningService);
         PeersVM = new PeersViewModel(_discoveryService, _transferService, _settings);
         SettingsVM = new SettingsViewModel(
             _settings,
@@ -101,6 +117,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         NavigateToPeersCommand = new RelayCommand(NavigateToPeers);
         NavigateToSettingsCommand = new RelayCommand(NavigateToSettings);
         ToggleSyncCommand = new RelayCommand(ToggleSync);
+        OpenActivityLogCommand = new RelayCommand(OpenActivityLog);
         
         // Start services
         InitializeServices();
@@ -360,6 +377,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     public ICommand NavigateToPeersCommand { get; }
     public ICommand NavigateToSettingsCommand { get; }
     public ICommand ToggleSyncCommand { get; }
+    public ICommand OpenActivityLogCommand { get; }
 
     #endregion
 
@@ -398,7 +416,28 @@ public class MainViewModel : ViewModelBase, IDisposable
     {
         ClearNavSelection();
         IsSettingsSelected = true;
+        IsSettingsSelected = true;
         CurrentView = SettingsVM;
+    }
+
+    private async void OpenActivityLog()
+    {
+        try
+        {
+            var mainWindow = global::Avalonia.Application.Current?.ApplicationLifetime is 
+                global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                ? desktop.MainWindow
+                : null;
+
+            if (mainWindow == null) return;
+
+            var activityDialog = new Swarm.Avalonia.Dialogs.ActivityLogDialog(_activityLogService);
+            await activityDialog.ShowDialog(mainWindow);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to open activity log: {ex.Message}");
+        }
     }
 
     #endregion

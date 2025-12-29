@@ -20,6 +20,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
 {
     private readonly Settings _settings = null!;
     private readonly SyncService? _syncService;
+    private readonly VersioningService? _versioningService;
     private readonly System.Timers.Timer _refreshDebounceTimer;
 
     private string _currentPath = "";
@@ -86,6 +87,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
     public ICommand DeleteCommand { get; } = null!;
     public ICommand NavigateToPathCommand { get; } = null!;
     public ICommand SortByCommand { get; } = null!;
+    public ICommand ViewHistoryCommand { get; } = null!;
 
     public FileSortColumn SortColumn
     {
@@ -111,10 +113,11 @@ public class FilesViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public FilesViewModel(Settings settings, SyncService? syncService = null)
+    public FilesViewModel(Settings settings, SyncService? syncService = null, VersioningService? versioningService = null)
     {
         _settings = settings;
         _syncService = syncService;
+        _versioningService = versioningService;
 
         // Initialize debounce timer for auto-refresh (500ms)
         _refreshDebounceTimer = new System.Timers.Timer(500) { AutoReset = false };
@@ -146,6 +149,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
         OpenCommand = new RelayCommand(Open, CanOpen);
         ShowInExplorerCommand = new RelayCommand(ShowInExplorer, CanFileAction);
         DeleteCommand = new RelayCommand(DeleteFile, CanFileAction);
+        ViewHistoryCommand = new RelayCommand(ViewHistory, CanViewHistory);
         SortByCommand = new RelayCommand<string>(column =>
         {
             if (Enum.TryParse<FileSortColumn>(column, out var sortCol))
@@ -350,6 +354,45 @@ public class FilesViewModel : ViewModelBase, IDisposable
         {
             Log.Warning(ex, "Failed to show file in explorer: {Path}", SelectedFile?.Path);
         }
+    }
+
+    private bool CanViewHistory() => SelectedFile != null && !SelectedFile.IsDirectory && _versioningService != null;
+
+    private void ViewHistory()
+    {
+        if (SelectedFile == null || _versioningService == null) return;
+        
+        var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, SelectedFile.Path);
+        
+        Dispatcher.UIThread.Post(async () =>
+        {
+            try
+            {
+                var mainWindow = global::Avalonia.Application.Current?.ApplicationLifetime is 
+                    global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                    ? desktop.MainWindow
+                    : null;
+                    
+                if (mainWindow == null) return;
+
+                var vm = new FileHistoryViewModel(SelectedFile.Path, relativePath, _versioningService);
+                var dialog = new Swarm.Avalonia.Views.FileHistoryDialog
+                {
+                    DataContext = vm
+                };
+                
+                var result = await dialog.ShowDialog<bool>(mainWindow);
+                if (result)
+                {
+                    // If restored, refresh file list
+                    LoadFiles();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to open history for {Path}", SelectedFile.Path);
+            }
+        });
     }
 
     private void DeleteFile()

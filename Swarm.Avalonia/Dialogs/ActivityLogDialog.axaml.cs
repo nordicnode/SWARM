@@ -115,6 +115,46 @@ public partial class ActivityLogDialog : Window
         LoadEntries();
     }
 
+    private async void ExportButton_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var topLevel = global::Avalonia.Controls.TopLevel.GetTopLevel(this);
+            if (topLevel == null) return;
+            
+            var file = await topLevel.StorageProvider.SaveFilePickerAsync(new global::Avalonia.Platform.Storage.FilePickerSaveOptions
+            {
+                Title = "Export Activity Log",
+                DefaultExtension = "csv",
+                FileTypeChoices = new[]
+                {
+                    new global::Avalonia.Platform.Storage.FilePickerFileType("CSV Files") { Patterns = new[] { "*.csv" } },
+                    new global::Avalonia.Platform.Storage.FilePickerFileType("Text Files") { Patterns = new[] { "*.txt" } }
+                }
+            });
+            
+            if (file != null)
+            {
+                using var stream = await file.OpenWriteAsync();
+                using var writer = new System.IO.StreamWriter(stream);
+                
+                await writer.WriteLineAsync("Timestamp,Type,Severity,Message,Details");
+                
+                // Export filtered entries
+                foreach (var entry in _filteredEntries)
+                {
+                    var line = $"\"{entry.Timestamp:yyyy-MM-dd HH:mm:ss}\",\"{entry.Type}\",\"{entry.Severity}\",\"{entry.Message.Replace("\"", "\"\"")}\",\"{entry.Details?.Replace("\"", "\"\"")}\"";
+                    await writer.WriteLineAsync(line);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Ideally use a message box service here, but for now just log
+            System.Diagnostics.Debug.WriteLine($"Export failed: {ex.Message}");
+        }
+    }
+
     private void CloseButton_Click(object? sender, RoutedEventArgs e)
     {
         Close();

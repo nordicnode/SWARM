@@ -1,0 +1,175 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Swarm.Avalonia.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="600"
+        x:Class="Swarm.Avalonia.Dialogs.DiffCompareDialog"
+        x:DataType="vm:DiffCompareViewModel"
+        Title="Compare Versions"
+        Width="1000" Height="600"
+        MinWidth="600" MinHeight="400"
+        WindowStartupLocation="CenterOwner"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="-1"
+        Background="Transparent"
+        TransparencyLevelHint="AcrylicBlur"
+        SystemDecorations="None">
+    
+    <Border Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderLightBrush}"
+            BorderThickness="1"
+            CornerRadius="12"
+            Padding="24">
+        <Grid RowDefinitions="Auto,*,Auto">
+            
+            <!-- Header -->
+            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+                <StackPanel>
+                    <TextBlock Text="Compare Versions" 
+                               FontSize="20" 
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                    <TextBlock Text="Side-by-side comparison of file versions" 
+                               FontSize="14" 
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+                
+                <Button Command="{Binding CloseCommand}"
+                        Grid.Column="1"
+                        Background="Transparent"
+                        Padding="8"
+                        CornerRadius="20">
+                    <PathIcon Data="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"
+                              Width="16" Height="16"
+                              Foreground="{DynamicResource TextSecondaryBrush}"/>
+                </Button>
+            </Grid>
+
+            <!-- Diff Content -->
+            <Grid Grid.Row="1" ColumnDefinitions="*,4,*">
+                
+                <!-- Left Panel (Old Version) -->
+                <Border Background="{DynamicResource BackgroundLightBrush}"
+                        BorderBrush="{DynamicResource BorderLightBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        ClipToBounds="True">
+                    <Grid RowDefinitions="Auto,*">
+                        <Border Background="{DynamicResource BackgroundDarkBrush}"
+                                Padding="12,8">
+                            <TextBlock Text="{Binding LeftTitle}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+                        </Border>
+                        
+                        <ScrollViewer Grid.Row="1" 
+                                      HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding LeftLines}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:DiffLineViewModel">
+                                        <Border Background="{Binding BackgroundColor}"
+                                                Padding="4,2">
+                                            <Grid ColumnDefinitions="40,*">
+                                                <TextBlock Text="{Binding LineNumberDisplay}"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           FontFamily="Consolas,Menlo,monospace"
+                                                           FontSize="12"
+                                                           TextAlignment="Right"
+                                                           Margin="0,0,8,0"/>
+                                                <TextBlock Grid.Column="1" 
+                                                           Text="{Binding Text}"
+                                                           FontFamily="Consolas,Menlo,monospace"
+                                                           FontSize="12"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+                
+                <!-- Splitter -->
+                <GridSplitter Grid.Column="1" 
+                              Width="4" 
+                              Background="Transparent"
+                              ResizeDirection="Columns"/>
+                
+                <!-- Right Panel (New/Current Version) -->
+                <Border Grid.Column="2"
+                        Background="{DynamicResource BackgroundLightBrush}"
+                        BorderBrush="{DynamicResource BorderLightBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        ClipToBounds="True">
+                    <Grid RowDefinitions="Auto,*">
+                        <Border Background="{DynamicResource BackgroundDarkBrush}"
+                                Padding="12,8">
+                            <TextBlock Text="{Binding RightTitle}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"/>
+                        </Border>
+                        
+                        <ScrollViewer Grid.Row="1" 
+                                      HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding RightLines}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:DiffLineViewModel">
+                                        <Border Background="{Binding BackgroundColor}"
+                                                Padding="4,2">
+                                            <Grid ColumnDefinitions="40,*">
+                                                <TextBlock Text="{Binding LineNumberDisplay}"
+                                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                                           FontFamily="Consolas,Menlo,monospace"
+                                                           FontSize="12"
+                                                           TextAlignment="Right"
+                                                           Margin="0,0,8,0"/>
+                                                <TextBlock Grid.Column="1" 
+                                                           Text="{Binding Text}"
+                                                           FontFamily="Consolas,Menlo,monospace"
+                                                           FontSize="12"
+                                                           Foreground="{DynamicResource TextPrimaryBrush}"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- Footer -->
+            <StackPanel Grid.Row="2" 
+                        Orientation="Horizontal" 
+                        HorizontalAlignment="Right" 
+                        Spacing="12"
+                        Margin="0,16,0,0">
+                <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Border Width="12" Height="12" Background="#20008800" CornerRadius="2"/>
+                        <TextBlock Text="Added" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Border Width="12" Height="12" Background="#20880000" CornerRadius="2"/>
+                        <TextBlock Text="Removed" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Border Width="12" Height="12" Background="#20886600" CornerRadius="2"/>
+                        <TextBlock Text="Modified" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                    </StackPanel>
+                </StackPanel>
+                
+                <Button Content="Close"
+                        Command="{Binding CloseCommand}"
+                        Classes="Primary"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

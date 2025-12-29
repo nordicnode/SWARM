@@ -3,6 +3,9 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Swarm.Core.Models;
 
+using Serilog;
+using Swarm.Core.Abstractions;
+
 namespace Swarm.Core.Services;
 
 /// <summary>
@@ -15,15 +18,17 @@ public class VersioningService : IDisposable
     private const string MANIFEST_FILE = "manifest.json";
     
     private readonly Settings _settings;
+    private readonly IHashingService _hashingService;
     private readonly string _versionsBasePath;
     private readonly string _manifestPath;
     private readonly object _manifestLock = new();
     private List<VersionInfo> _versions = [];
     private bool _isInitialized;
 
-    public VersioningService(Settings settings)
+    public VersioningService(Settings settings, IHashingService hashingService)
     {
         _settings = settings;
+        _hashingService = hashingService;
         _versionsBasePath = Path.Combine(settings.SyncFolderPath, VERSIONS_FOLDER);
         _manifestPath = Path.Combine(_versionsBasePath, MANIFEST_FILE);
     }
@@ -51,11 +56,11 @@ public class VersioningService : IDisposable
             LoadManifest();
             _isInitialized = true;
 
-            System.Diagnostics.Debug.WriteLine($"VersioningService initialized with {_versions.Count} versions");
+            Log.Information($"VersioningService initialized with {_versions.Count} versions");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to initialize VersioningService: {ex.Message}");
+            Log.Error(ex, $"Failed to initialize VersioningService: {ex.Message}");
         }
     }
 
@@ -93,14 +98,14 @@ public class VersioningService : IDisposable
         {
             var fileInfo = new FileInfo(sourcePath);
             var versionId = DateTime.Now.ToString("yyyyMMdd-HHmmss-fff");
-            var contentHash = await ComputeFileHashAsync(sourcePath);
+            var contentHash = await _hashingService.ComputeFileHashAsync(sourcePath);
 
             // Check for duplicate (same content already versioned)
             var existingVersion = _versions.FirstOrDefault(v => 
                 v.RelativePath == relativePath && v.ContentHash == contentHash);
             if (existingVersion != null)
             {
-                System.Diagnostics.Debug.WriteLine($"Skipping duplicate version for {relativePath}");
+                Log.Debug($"Skipping duplicate version for {relativePath}");
                 return existingVersion;
             }
 
@@ -137,12 +142,12 @@ public class VersioningService : IDisposable
             // Prune old versions for this file
             await PruneVersionsForFileAsync(relativePath);
 
-            System.Diagnostics.Debug.WriteLine($"Created version {versionId} for {relativePath} (Reason: {reason})");
+            Log.Information($"Created version {versionId} for {relativePath} (Reason: {reason})");
             return versionInfo;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to create version for {relativePath}: {ex.Message}");
+            Log.Error(ex, $"Failed to create version for {relativePath}: {ex.Message}");
             return null;
         }
     }
@@ -219,7 +224,7 @@ public class VersioningService : IDisposable
 
             if (!File.Exists(versionFilePath))
             {
-                System.Diagnostics.Debug.WriteLine($"Version file not found: {versionFilePath}");
+                Log.Warning($"Version file not found: {versionFilePath}");
                 return false;
             }
 
@@ -240,12 +245,12 @@ public class VersioningService : IDisposable
 
             await CopyFileAsync(versionFilePath, targetPath);
 
-            System.Diagnostics.Debug.WriteLine($"Restored version {version.VersionId} of {version.RelativePath}");
+            Log.Information($"Restored version {version.VersionId} of {version.RelativePath}");
             return true;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to restore version: {ex.Message}");
+            Log.Error(ex, $"Failed to restore version: {ex.Message}");
             return false;
         }
     }
@@ -278,12 +283,12 @@ public class VersioningService : IDisposable
             SaveManifest();
             CleanupEmptyFolders();
 
-            System.Diagnostics.Debug.WriteLine($"Deleted version {version.VersionId} of {version.RelativePath}");
+            Log.Information($"Deleted version {version.VersionId} of {version.RelativePath}");
             return true;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to delete version: {ex.Message}");
+            Log.Error(ex, $"Failed to delete version: {ex.Message}");
             return false;
         }
     }
@@ -317,7 +322,7 @@ public class VersioningService : IDisposable
 
         if (toDelete.Count > 0)
         {
-            System.Diagnostics.Debug.WriteLine($"Pruned {toDelete.Count} old versions for {relativePath}");
+            Log.Information($"Pruned {toDelete.Count} old versions for {relativePath}");
         }
 
         await Task.CompletedTask;
@@ -376,7 +381,7 @@ public class VersioningService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to open versions folder: {ex.Message}");
+            Log.Warning(ex, $"Failed to open versions folder: {ex.Message}");
         }
     }
 
@@ -414,7 +419,7 @@ public class VersioningService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to open version location: {ex.Message}");
+            Log.Warning(ex, $"Failed to open version location: {ex.Message}");
         }
     }
 
@@ -438,7 +443,7 @@ public class VersioningService : IDisposable
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to load version manifest: {ex.Message}");
+                Log.Error(ex, $"Failed to load version manifest: {ex.Message}");
                 _versions = [];
             }
         }
@@ -456,7 +461,7 @@ public class VersioningService : IDisposable
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to save version manifest: {ex.Message}");
+                Log.Error(ex, $"Failed to save version manifest: {ex.Message}");
             }
         }
     }
@@ -476,13 +481,7 @@ public class VersioningService : IDisposable
         return sanitized;
     }
 
-    private static async Task<string> ComputeFileHashAsync(string filePath)
-    {
-        await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
-        using var sha = SHA256.Create();
-        var hash = await sha.ComputeHashAsync(stream);
-        return Convert.ToHexString(hash);
-    }
+
 
     private static async Task CopyFileAsync(string source, string destination)
     {
@@ -505,7 +504,7 @@ public class VersioningService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to cleanup empty folders: {ex.Message}");
+            Log.Warning(ex, $"Failed to cleanup empty folders: {ex.Message}");
         }
     }
 

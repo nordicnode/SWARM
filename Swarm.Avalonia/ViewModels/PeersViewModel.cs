@@ -68,25 +68,22 @@ public class PeersViewModel : ViewModelBase
         set => SetProperty(ref _selectedPeer, value);
     }
 
-    public void SendFiles(PeerItemViewModel peerItem, System.Collections.Generic.IEnumerable<string> files)
+    public async Task SendFiles(PeerItemViewModel peerItem, System.Collections.Generic.IEnumerable<string> files)
     {
         var peer = _discoveryService.Peers.FirstOrDefault(p => p.Id == peerItem.Id);
         if (peer == null) return;
 
-        Task.Run(async () =>
+        foreach (var file in files)
         {
-            foreach (var file in files)
+            try 
             {
-                try 
-                {
-                    await _transferService.SendFile(peer, file);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "Failed to send file {File} to peer {Peer}", file, peer.Name);
-                }
+                await _transferService.SendFile(peer, file);
             }
-        });
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to send file {File} to peer {Peer}", file, peer.Name);
+            }
+        }
     }
 }
 

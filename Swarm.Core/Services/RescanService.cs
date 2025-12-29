@@ -1,6 +1,6 @@
-using System.Collections.Concurrent;
 using System.IO;
 using System.Security.Cryptography;
+using Swarm.Core.Abstractions;
 
 namespace Swarm.Core.Services;
 
@@ -63,6 +63,7 @@ public class RescanService : IDisposable
 {
     private readonly Settings _settings;
     private readonly SyncService _syncService;
+    private readonly IHashingService _hashingService;
     private readonly Helpers.SwarmIgnoreService _swarmIgnoreService;
     
     private System.Threading.Timer? _rescanTimer;
@@ -105,10 +106,11 @@ public class RescanService : IDisposable
     /// </summary>
     public event Action<RescanChange>? ChangeDetected;
 
-    public RescanService(Settings settings, SyncService syncService)
+    public RescanService(Settings settings, SyncService syncService, IHashingService hashingService)
     {
         _settings = settings;
         _syncService = syncService;
+        _hashingService = hashingService;
         _swarmIgnoreService = new Helpers.SwarmIgnoreService(settings);
     }
 
@@ -265,7 +267,7 @@ public class RescanService : IDisposable
                         else
                         {
                             // Deep mode: compare hash
-                            var actualHash = await ComputeFileHashAsync(fullPath, ct);
+                            var actualHash = await _hashingService.ComputeFileHashAsync(fullPath, ct);
                             if (!string.Equals(actualHash, knownFile.ContentHash, StringComparison.OrdinalIgnoreCase))
                             {
                                 hasChanged = true;
@@ -416,20 +418,7 @@ public class RescanService : IDisposable
         }
     }
 
-    private static async Task<string> ComputeFileHashAsync(string filePath, CancellationToken ct)
-    {
-        await using var stream = new FileStream(
-            filePath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            ProtocolConstants.FILE_STREAM_BUFFER_SIZE,
-            useAsync: true);
 
-        using var sha = SHA256.Create();
-        var hash = await sha.ComputeHashAsync(stream, ct);
-        return Convert.ToHexString(hash);
-    }
 
     public void Dispose()
     {

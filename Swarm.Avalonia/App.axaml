@@ -24,6 +24,10 @@
                     <NativeMenu>
                         <NativeMenuItem Header="Show Swarm" Command="{ReflectionBinding ShowWindowCommand}" />
                         <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Open Sync Folder" Command="{ReflectionBinding OpenSyncFolderCommand}" />
+                        <NativeMenuItem Header="Toggle Sync" Command="{ReflectionBinding ToggleSyncCommand}" />
+                        <NativeMenuItem Header="Settings" Command="{ReflectionBinding OpenSettingsCommand}" />
+                        <NativeMenuItemSeparator />
                         <NativeMenuItem Header="Exit" Command="{ReflectionBinding ExitCommand}" />
                     </NativeMenu>
                 </TrayIcon.Menu>

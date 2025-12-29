@@ -12,7 +12,7 @@ public partial class PeersView : UserControl
         InitializeComponent();
     }
 
-    private void OnDrop(object? sender, DragEventArgs e)
+    private async void OnDrop(object? sender, DragEventArgs e)
     {
         var files = e.Data.GetFiles()?.Select(f => f.Path.LocalPath).ToList();
         if (files == null || !files.Any()) return;
@@ -21,7 +21,7 @@ public partial class PeersView : UserControl
             control.DataContext is PeerItemViewModel peerItem && 
             DataContext is PeersViewModel viewModel)
         {
-            viewModel.SendFiles(peerItem, files);
+            await viewModel.SendFiles(peerItem, files);
         }
     }
 }

@@ -4,13 +4,15 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Swarm.Core.Models;
+using Serilog;
+using Swarm.Core.Abstractions;
 
 namespace Swarm.Core.Services;
 
 /// <summary>
 /// UDP-based peer discovery service for finding other Swarm instances on the LAN.
 /// </summary>
-public class DiscoveryService : IDisposable
+public class DiscoveryService : IDiscoveryService
 {
     private const int DISCOVERY_PORT = ProtocolConstants.DISCOVERY_PORT;
     private const string PROTOCOL_HEADER = ProtocolConstants.DISCOVERY_HEADER;
@@ -61,7 +63,7 @@ public class DiscoveryService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"mDNS initialization failed (non-fatal): {ex.Message}");
+            Log.Warning(ex, $"mDNS initialization failed (non-fatal): {ex.Message}");
             _mdnsService = null;
         }
     }
@@ -81,7 +83,7 @@ public class DiscoveryService : IDisposable
         }
         catch (SocketException ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Discovery socket error: {ex.Message}");
+            Log.Warning(ex, $"Discovery socket error: {ex.Message}");
             BindingFailed?.Invoke();
             // Port might be in use, try a different one
             _udpClient = new UdpClient(0);
@@ -118,7 +120,7 @@ public class DiscoveryService : IDisposable
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Broadcast error: {ex.Message}");
+                Log.Warning(ex, $"Broadcast error: {ex.Message}");
             }
         }
     }
@@ -184,7 +186,7 @@ public class DiscoveryService : IDisposable
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Listen error: {ex.Message}");
+                Log.Error(ex, $"Listen error: {ex.Message}");
             }
         }
     }
@@ -224,20 +226,20 @@ public class DiscoveryService : IDisposable
                         
                         if (!signatureValid)
                         {
-                            System.Diagnostics.Debug.WriteLine($"Invalid signature from peer {peerId}");
+                            Log.Warning($"Invalid signature from peer {peerId}");
                             return; // Reject messages with invalid signatures
                         }
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Signature verification error: {ex.Message}");
+                        Log.Warning(ex, $"Signature verification error: {ex.Message}");
                         return;
                     }
                 }
             }
             catch (JsonException ex)
             {
-                System.Diagnostics.Debug.WriteLine($"JSON parse error: {ex.Message}");
+                Log.Debug(ex, $"JSON parse error: {ex.Message}");
                 return;
             }
         }

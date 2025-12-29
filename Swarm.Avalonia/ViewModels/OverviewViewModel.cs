@@ -17,8 +17,6 @@ namespace Swarm.Avalonia.ViewModels;
 public class OverviewViewModel : ViewModelBase, IDisposable
 {
     private readonly SyncService _syncService = null!;
-    private readonly VersioningService _versioningService = null!;
-    private readonly ActivityLogService _activityLogService = null!;
     private readonly DiscoveryService _discoveryService = null!;
     private readonly Settings _settings = null!;
 
@@ -41,14 +39,10 @@ public class OverviewViewModel : ViewModelBase, IDisposable
 
     public OverviewViewModel(
         SyncService syncService,
-        VersioningService versioningService,
-        ActivityLogService activityLogService,
         DiscoveryService discoveryService,
         Settings settings)
     {
         _syncService = syncService;
-        _versioningService = versioningService;
-        _activityLogService = activityLogService;
         _discoveryService = discoveryService;
         _settings = settings;
 

@@ -39,7 +39,8 @@
                              BorderThickness="0"
                              Background="Transparent"
                              Padding="0"
-                             FontSize="13"/>
+                             FontSize="13"
+                             VerticalContentAlignment="Center"/>
                 </Grid>
             </Border>
         </Grid>
@@ -119,6 +120,7 @@
                         <ContextMenu>
                             <MenuItem Header="Open" Command="{Binding OpenCommand}"/>
                             <MenuItem Header="Show in Explorer" Command="{Binding ShowInExplorerCommand}"/>
+                            <MenuItem Header="File History" Command="{Binding ViewHistoryCommand}"/>
                             <Separator/>
                             <MenuItem Header="Delete" Command="{Binding DeleteCommand}" Foreground="{StaticResource AccentDestructiveBrush}"/>
                         </ContextMenu>

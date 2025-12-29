@@ -1,0 +1,121 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Swarm.Avalonia.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="450"
+        x:Class="Swarm.Avalonia.Views.FileHistoryDialog"
+        x:DataType="vm:FileHistoryViewModel"
+        Title="File History"
+        Width="600" Height="450"
+        WindowStartupLocation="CenterOwner"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        ExtendClientAreaTitleBarHeightHint="-1"
+        Background="Transparent"
+        TransparencyLevelHint="AcrylicBlur"
+        SystemDecorations="None">
+
+    <Border Background="{DynamicResource SurfaceBrush}"
+            BorderBrush="{DynamicResource BorderLightBrush}"
+            BorderThickness="1"
+            CornerRadius="12"
+            Padding="24">
+        <Grid RowDefinitions="Auto,*,Auto">
+            
+            <!-- Header -->
+            <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,20">
+                <StackPanel>
+                    <TextBlock Text="File History" 
+                               FontSize="20" 
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}"/>
+                    <TextBlock Text="{Binding FileName}" 
+                               FontSize="14" 
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+                
+                <Button Command="{Binding CloseCommand}"
+                        Background="Transparent"
+                        Padding="8"
+                        CornerRadius="20">
+                    <PathIcon Data="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"
+                              Width="16" Height="16"
+                              Foreground="{DynamicResource TextSecondaryBrush}"/>
+                </Button>
+            </Grid>
+
+            <!-- Version List -->
+            <Border Grid.Row="1"
+                    Background="{DynamicResource BackgroundLightBrush}"
+                    BorderBrush="{DynamicResource BorderLightBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    ClipToBounds="True">
+                <DataGrid ItemsSource="{Binding Versions}"
+                          SelectedItem="{Binding SelectedVersion}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          HeadersVisibility="Column"
+                          GridLinesVisibility="Horizontal"
+                          HorizontalGridLinesBrush="#15ffffff"
+                          BorderThickness="0"
+                          Background="Transparent">
+                    
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Date" 
+                                            Binding="{Binding CreatedAtDisplay}" 
+                                            Width="160"/>
+                        <DataGridTextColumn Header="Size" 
+                                            Binding="{Binding FileSizeDisplay}" 
+                                            Width="100"/>
+                        <DataGridTextColumn Header="Reason" 
+                                            Binding="{Binding Reason}" 
+                                            Width="*"/>
+                        <DataGridTextColumn Header="Source" 
+                                            Binding="{Binding SourcePeerId}" 
+                                            Width="100"/>
+                    </DataGrid.Columns>
+                    
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Restore" Command="{Binding RestoreCommand}"/>
+                            <MenuItem Header="Open Location" Command="{Binding OpenLocationCommand}"/>
+                            <Separator/>
+                            <MenuItem Header="Delete" Command="{Binding DeleteCommand}" Foreground="#ff4444"/>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                </DataGrid>
+            </Border>
+
+            <!-- Actions -->
+            <StackPanel Grid.Row="2" 
+                        Orientation="Horizontal" 
+                        HorizontalAlignment="Right" 
+                        Spacing="12"
+                        Margin="0,20,0,0">
+                <Button Content="Compare"
+                        Command="{Binding CompareCommand}"
+                        Classes="Outline"
+                        IsEnabled="{Binding SelectedVersion, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                
+                <Button Content="Open Location"
+                        Command="{Binding OpenLocationCommand}"
+                        Classes="Outline"
+                        IsEnabled="{Binding SelectedVersion, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                
+                <Button Content="Delete"
+                        Command="{Binding DeleteCommand}"
+                        Classes="Outline"
+                        Foreground="#ff4444"
+                        IsEnabled="{Binding SelectedVersion, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                
+                <Button Content="Restore Version"
+                        Command="{Binding RestoreCommand}"
+                        Classes="Primary"
+                        IsEnabled="{Binding SelectedVersion, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

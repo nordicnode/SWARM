@@ -12,12 +12,15 @@ using System.Text.Json;
 using Swarm.Core.Helpers;
 using Swarm.Core.Models;
 
+using Swarm.Core.Abstractions;
+using Serilog;
+
 namespace Swarm.Core.Services;
 
 /// <summary>
 /// TCP-based file transfer service for sending and receiving files.
 /// </summary>
-public class TransferService : IDisposable
+public class TransferService : ITransferService
 {
     private const int BUFFER_SIZE = ProtocolConstants.DEFAULT_BUFFER_SIZE;
     private const string PROTOCOL_HEADER = ProtocolConstants.TRANSFER_HEADER;
@@ -325,11 +328,11 @@ public class TransferService : IDisposable
                     try
                     {
                         await _owner.PerformSecureHandshakeAsClient(connection, _peer, ct);
-                        System.Diagnostics.Debug.WriteLine($"Secure handshake completed for pool connection to {_peer.Name}");
+                        Log.Debug($"Secure handshake completed for pool connection to {_peer.Name}");
                     }
                     catch (Exception handshakeEx)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Secure handshake failed for pool connection to {_peer.Name}: {handshakeEx.Message}");
+                        Log.Warning(handshakeEx, $"Secure handshake failed for pool connection to {_peer.Name}: {handshakeEx.Message}");
                     }
 
                     // Measure RTT
@@ -339,7 +342,7 @@ public class TransferService : IDisposable
                     }
                     catch { }
 
-                    System.Diagnostics.Debug.WriteLine($"Created pool connection #{_connections.Count + 1} to {_peer.Name}");
+                    Log.Debug($"Created pool connection #{_connections.Count + 1} to {_peer.Name}");
                     return connection;
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -357,7 +360,7 @@ public class TransferService : IDisposable
                 }
             }
 
-            System.Diagnostics.Debug.WriteLine($"Failed to create pool connection to {_peer.Name}: {lastException?.Message}");
+            Log.Warning(lastException, $"Failed to create pool connection to {_peer.Name}: {lastException?.Message}");
             return null;
         }
 
@@ -399,7 +402,7 @@ public class TransferService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to configure TCP options: {ex.Message}");
+            Log.Warning(ex, $"Failed to configure TCP options: {ex.Message}");
         }
     }
 
@@ -561,7 +564,7 @@ public class TransferService : IDisposable
             
             if (!isTrusted)
             {
-                System.Diagnostics.Debug.WriteLine($"Handshake from untrusted peer: {peerName} ({peerId})");
+                Log.Warning($"Handshake from untrusted peer: {peerName} ({peerId})");
                 // Still allow connection - trust is enforced at a higher level
             }
             
@@ -580,14 +583,14 @@ public class TransferService : IDisposable
             
             // Store session info (the caller will need to use this)
             // For now, we return true and let the caller handle the session key
-            System.Diagnostics.Debug.WriteLine($"Secure handshake completed as server with {peerName}");
+            Log.Debug($"Secure handshake completed as server with {peerName}");
             
             return true;
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Handshake error: {ex.Message}");
-            try { writer.Write($"{ProtocolConstants.HANDSHAKE_FAILED_PREFIX}{ex.Message}"); } catch { }
+            Log.Error(ex, $"Handshake error: {ex.Message}");
+            try { writer.Write($"{ProtocolConstants.HANDSHAKE_FAILED_PREFIX}GENERIC_ERROR"); } catch { }
             return false;
         }
     }
@@ -632,7 +635,7 @@ public class TransferService : IDisposable
                 // DoS prevention: limit concurrent incoming connections
                 if (!await _connectionLimiter.WaitAsync(0, ct))
                 {
-                    System.Diagnostics.Debug.WriteLine($"Connection limit reached ({MAX_CONCURRENT_CONNECTIONS}), rejecting new connection");
+                    Log.Warning($"Connection limit reached ({MAX_CONCURRENT_CONNECTIONS}), rejecting new connection");
                     client.Dispose();
                     continue;
                 }
@@ -642,7 +645,7 @@ public class TransferService : IDisposable
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Accept error: {ex.Message}");
+                Log.Error(ex, $"Accept error: {ex.Message}");
             }
         }
     }
@@ -758,7 +761,7 @@ public class TransferService : IDisposable
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Receive error: {ex.Message}");
+                Log.Error(ex, $"Receive error: {ex.Message}");
             }
         }
     }
@@ -819,7 +822,7 @@ public class TransferService : IDisposable
                 break;
 
             default:
-                System.Diagnostics.Debug.WriteLine($"Unknown sync message type: {messageType}");
+                Log.Warning($"Unknown sync message type: {messageType}");
                 break;
         }
     }
@@ -844,7 +847,7 @@ public class TransferService : IDisposable
             SourcePeerId = remotePeer.Id
         };
 
-        System.Diagnostics.Debug.WriteLine($"Sync file received: {relativePath} ({fileSize} bytes)");
+        Log.Information($"Sync file received: {relativePath} ({fileSize} bytes)");
         
         // Raise event for SyncService to handle - pass the stream for reading file data
         SyncFileReceived?.Invoke(syncFile, stream, remotePeer);
@@ -863,7 +866,7 @@ public class TransferService : IDisposable
             SourcePeerId = remotePeer.Id
         };
 
-        System.Diagnostics.Debug.WriteLine($"Sync delete received: {relativePath}");
+        Log.Information($"Sync delete received: {relativePath}");
         SyncDeleteReceived?.Invoke(syncFile, remotePeer);
     }
 
@@ -879,7 +882,7 @@ public class TransferService : IDisposable
             SourcePeerId = remotePeer.Id
         };
 
-        System.Diagnostics.Debug.WriteLine($"Sync dir created received: {relativePath}");
+        Log.Information($"Sync dir created received: {relativePath}");
         SyncFileReceived?.Invoke(syncFile, Stream.Null, remotePeer);
     }
 
@@ -895,7 +898,7 @@ public class TransferService : IDisposable
             SourcePeerId = remotePeer.Id
         };
 
-        System.Diagnostics.Debug.WriteLine($"Sync dir deleted received: {relativePath}");
+        Log.Information($"Sync dir deleted received: {relativePath}");
         SyncDeleteReceived?.Invoke(syncFile, remotePeer);
     }
 
@@ -914,7 +917,7 @@ public class TransferService : IDisposable
             SourcePeerId = remotePeer.Id
         };
 
-        System.Diagnostics.Debug.WriteLine($"Sync rename received: {oldRelativePath} -> {newRelativePath}");
+        Log.Information($"Sync rename received: {oldRelativePath} -> {newRelativePath}");
         SyncRenameReceived?.Invoke(syncFile, remotePeer);
     }
 
@@ -944,7 +947,7 @@ public class TransferService : IDisposable
             SourcePeerId = remotePeer.Id
         };
 
-        System.Diagnostics.Debug.WriteLine($"Sync file received (compressed): {relativePath} ({compressedSize} -> {fileSize} bytes)");
+        Log.Information($"Sync file received (compressed): {relativePath} ({compressedSize} -> {fileSize} bytes)");
         
         if (compressedSize > STREAMING_THRESHOLD)
         {
@@ -1018,7 +1021,7 @@ public class TransferService : IDisposable
         var json = reader.ReadString();
         var manifest = JsonSerializer.Deserialize<List<SyncedFile>>(json) ?? [];
 
-        System.Diagnostics.Debug.WriteLine($"Sync manifest received: {manifest.Count} files");
+        Log.Information($"Sync manifest received: {manifest.Count} files");
         SyncManifestReceived?.Invoke(manifest, remotePeer);
     }
 
@@ -1026,7 +1029,7 @@ public class TransferService : IDisposable
     {
         var relativePath = reader.ReadString();
 
-        System.Diagnostics.Debug.WriteLine($"Sync file requested: {relativePath}");
+        Log.Information($"Sync file requested: {relativePath}");
         SyncFileRequested?.Invoke(relativePath, remotePeer);
     }
 
@@ -1035,7 +1038,7 @@ public class TransferService : IDisposable
     private Task HandleRequestSignatures(BinaryReader reader, Peer remotePeer)
     {
         var relativePath = reader.ReadString();
-        System.Diagnostics.Debug.WriteLine($"Signature request received for: {relativePath}");
+        Log.Debug($"Signature request received for: {relativePath}");
         SignaturesRequested?.Invoke(relativePath, remotePeer);
         return Task.CompletedTask;
     }
@@ -1057,7 +1060,7 @@ public class TransferService : IDisposable
             });
         }
 
-        System.Diagnostics.Debug.WriteLine($"Block signatures received for {relativePath}: {signatureCount} blocks");
+        Log.Debug($"Block signatures received for {relativePath}: {signatureCount} blocks");
         BlockSignaturesReceived?.Invoke(relativePath, signatures, remotePeer);
         return Task.CompletedTask;
     }
@@ -1100,7 +1103,7 @@ public class TransferService : IDisposable
             SourcePeerId = remotePeer.Id
         };
 
-        System.Diagnostics.Debug.WriteLine($"Delta data received for {relativePath}: {instructionCount} instructions");
+        Log.Debug($"Delta data received for {relativePath}: {instructionCount} instructions");
         DeltaDataReceived?.Invoke(syncFile, instructions, remotePeer);
         return Task.CompletedTask;
     }
@@ -1259,7 +1262,7 @@ public class TransferService : IDisposable
         catch (Exception ex)
         {
             transfer.Status = TransferStatus.Failed;
-            System.Diagnostics.Debug.WriteLine($"Send error: {ex.Message}");
+            Log.Error(ex, $"Send error: {ex.Message}");
             throw;
         }
     }
@@ -1303,7 +1306,7 @@ public class TransferService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error scanning for existing files: {ex.Message}");
+            Log.Warning(ex, $"Error scanning for existing files: {ex.Message}");
             // Fallback to old behavior on error
             var counter = 1;
             var result = safe;
@@ -1333,7 +1336,7 @@ public class TransferService : IDisposable
         var fileList = files.ToList();
         if (fileList.Count == 0) return;
 
-        System.Diagnostics.Debug.WriteLine($"Starting parallel transfer of {fileList.Count} files to {peer.Name}");
+        Log.Information($"Starting parallel transfer of {fileList.Count} files to {peer.Name}");
 
         // Use SemaphoreSlim to limit concurrent transfers to pool size
         var semaphore = new SemaphoreSlim(ProtocolConstants.MAX_PARALLEL_CONNECTIONS);
@@ -1354,7 +1357,7 @@ public class TransferService : IDisposable
                     }, ct);
                     
                     Interlocked.Increment(ref completedCount);
-                    System.Diagnostics.Debug.WriteLine($"Parallel transfer [{completedCount}/{fileList.Count}]: {syncFile.RelativePath}");
+                    Log.Debug($"Parallel transfer [{completedCount}/{fileList.Count}]: {syncFile.RelativePath}");
                 }
                 finally
                 {
@@ -1368,7 +1371,7 @@ public class TransferService : IDisposable
         await Task.WhenAll(tasks);
         semaphore.Dispose();
 
-        System.Diagnostics.Debug.WriteLine($"Completed parallel transfer of {fileList.Count} files to {peer.Name}");
+        Log.Information($"Completed parallel transfer of {fileList.Count} files to {peer.Name}");
     }
 
     /// <summary>
@@ -1421,7 +1424,7 @@ public class TransferService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Parallel send error for {syncFile.RelativePath}: {ex.Message}");
+            Log.Error(ex, $"Parallel send error for {syncFile.RelativePath}: {ex.Message}");
             RemoveConnectionPool(peer);
             throw;
         }
@@ -1472,7 +1475,7 @@ public class TransferService : IDisposable
                 var compressedData = compressedBuffer.ToArray();
                 var compressionRatio = fileInfo.Length > 0 ? (1.0 - (double)compressedData.Length / fileInfo.Length) * 100 : 0;
                 
-                System.Diagnostics.Debug.WriteLine($"Compression: {syncFile.RelativePath} - {fileInfo.Length} -> {compressedData.Length} bytes ({compressionRatio:F1}% saved)");
+                Log.Debug($"Compression: {syncFile.RelativePath} - {fileInfo.Length} -> {compressedData.Length} bytes ({compressionRatio:F1}% saved)");
 
                 // Send sync header and metadata with compressed flag
                 connection.Writer.Write(ProtocolConstants.SYNC_HEADER);
@@ -1500,7 +1503,7 @@ public class TransferService : IDisposable
                     progressCallback?.Invoke(totalSent, compressedData.Length);
                 }
 
-                System.Diagnostics.Debug.WriteLine($"Sync sent (compressed): {syncFile.RelativePath} to {peer.Name}");
+                Log.Information($"Sync sent (compressed): {syncFile.RelativePath} to {peer.Name}");
             }
             finally
             {
@@ -1512,7 +1515,7 @@ public class TransferService : IDisposable
             // If connection failed, remove it so we retry next time
             // Connection pool handles disposal of bad connections on next access
             
-            System.Diagnostics.Debug.WriteLine($"Sync send error: {ex.Message}");
+            Log.Error(ex, $"Sync send error: {ex.Message}");
         }
     }
 
@@ -1532,7 +1535,7 @@ public class TransferService : IDisposable
                 connection.Writer.Write(syncFile.RelativePath);
                 connection.Writer.Write(syncFile.IsDirectory);
 
-                System.Diagnostics.Debug.WriteLine($"Sync delete sent: {syncFile.RelativePath} to {peer.Name}");
+                Log.Information($"Sync delete sent: {syncFile.RelativePath} to {peer.Name}");
             }
             finally
             {
@@ -1542,7 +1545,7 @@ public class TransferService : IDisposable
         catch (Exception ex)
         {
 
-            System.Diagnostics.Debug.WriteLine($"Sync delete error: {ex.Message}");
+            Log.Error(ex, $"Sync delete error: {ex.Message}");
         }
     }
 
@@ -1563,7 +1566,7 @@ public class TransferService : IDisposable
                 connection.Writer.Write(syncFile.RelativePath);
                 connection.Writer.Write(syncFile.IsDirectory);
 
-                System.Diagnostics.Debug.WriteLine($"Sync rename sent: {syncFile.OldRelativePath} -> {syncFile.RelativePath} to {peer.Name}");
+                Log.Information($"Sync rename sent: {syncFile.OldRelativePath} -> {syncFile.RelativePath} to {peer.Name}");
             }
             finally
             {
@@ -1573,7 +1576,7 @@ public class TransferService : IDisposable
         catch (Exception ex)
         {
 
-            System.Diagnostics.Debug.WriteLine($"Sync rename error: {ex.Message}");
+            Log.Error(ex, $"Sync rename error: {ex.Message}");
         }
     }
 
@@ -1592,7 +1595,7 @@ public class TransferService : IDisposable
                 connection.Writer.Write(ProtocolConstants.MSG_DIR_CREATED);
                 connection.Writer.Write(syncFile.RelativePath);
 
-                System.Diagnostics.Debug.WriteLine($"Sync dir sent: {syncFile.RelativePath} to {peer.Name}");
+                Log.Information($"Sync dir sent: {syncFile.RelativePath} to {peer.Name}");
             }
             finally 
             {
@@ -1602,14 +1605,14 @@ public class TransferService : IDisposable
         catch (Exception ex)
         {
 
-            System.Diagnostics.Debug.WriteLine($"Sync dir error: {ex.Message}");
+            Log.Error(ex, $"Sync dir error: {ex.Message}");
         }
     }
 
     /// <summary>
     /// Sends the full sync manifest to a peer.
     /// </summary>
-    public async Task SendSyncManifest(Peer peer, List<SyncedFile> manifest, CancellationToken ct = default)
+    public async Task SendSyncManifest(Peer peer, IEnumerable<SyncedFile> manifest, CancellationToken ct = default)
     {
         try
         {
@@ -1623,7 +1626,7 @@ public class TransferService : IDisposable
                 var json = JsonSerializer.Serialize(manifest);
                 connection.Writer.Write(json);
 
-                System.Diagnostics.Debug.WriteLine($"Sync manifest sent to {peer.Name}: {manifest.Count} files");
+                Log.Information($"Sync manifest sent to {peer.Name}: {manifest.Count()} files");
             }
             finally
             {
@@ -1633,7 +1636,7 @@ public class TransferService : IDisposable
         catch (Exception ex)
         {
 
-            System.Diagnostics.Debug.WriteLine($"Sync manifest error: {ex.Message}");
+            Log.Error(ex, $"Sync manifest error: {ex.Message}");
         }
     }
 
@@ -1652,7 +1655,7 @@ public class TransferService : IDisposable
                 connection.Writer.Write(ProtocolConstants.MSG_REQUEST_FILE);
                 connection.Writer.Write(relativePath);
 
-                System.Diagnostics.Debug.WriteLine($"Sync file requested: {relativePath} from {peer.Name}");
+                Log.Information($"Sync file requested: {relativePath} from {peer.Name}");
             }
             finally
             {
@@ -1662,7 +1665,7 @@ public class TransferService : IDisposable
         catch (Exception ex)
         {
 
-            System.Diagnostics.Debug.WriteLine($"Sync request error: {ex.Message}");
+            Log.Error(ex, $"Sync request error: {ex.Message}");
         }
     }
 
@@ -1683,7 +1686,7 @@ public class TransferService : IDisposable
                 connection.Writer.Write(ProtocolConstants.MSG_REQUEST_SIGNATURES);
                 connection.Writer.Write(relativePath);
 
-                System.Diagnostics.Debug.WriteLine($"Requested signatures for: {relativePath} from {peer.Name}");
+                Log.Debug($"Requested signatures for: {relativePath} from {peer.Name}");
             }
             finally
             {
@@ -1693,7 +1696,7 @@ public class TransferService : IDisposable
         catch (Exception ex)
         {
 
-            System.Diagnostics.Debug.WriteLine($"Request signatures error: {ex.Message}");
+            Log.Error(ex, $"Request signatures error: {ex.Message}");
         }
     }
 
@@ -1720,7 +1723,7 @@ public class TransferService : IDisposable
                     connection.Writer.Write(sig.StrongChecksum);
                 }
 
-                System.Diagnostics.Debug.WriteLine($"Sent {signatures.Count} block signatures for: {relativePath} to {peer.Name}");
+                Log.Debug($"Sent {signatures.Count} block signatures for: {relativePath} to {peer.Name}");
             }
             finally
             {
@@ -1730,7 +1733,7 @@ public class TransferService : IDisposable
         catch (Exception ex)
         {
 
-            System.Diagnostics.Debug.WriteLine($"Send signatures error: {ex.Message}");
+            Log.Error(ex, $"Send signatures error: {ex.Message}");
         }
     }
 
@@ -1773,7 +1776,7 @@ public class TransferService : IDisposable
                 }
 
                 var deltaSize = DeltaSyncService.EstimateDeltaSize(instructions);
-                System.Diagnostics.Debug.WriteLine($"Sent delta for {syncFile.RelativePath} to {peer.Name}: {instructions.Count} instructions, ~{FileHelpers.FormatBytes(deltaSize)}");
+                Log.Debug($"Sent delta for {syncFile.RelativePath} to {peer.Name}: {instructions.Count} instructions, ~{FileHelpers.FormatBytes(deltaSize)}");
             }
             finally
             {
@@ -1783,7 +1786,7 @@ public class TransferService : IDisposable
         catch (Exception ex)
         {
 
-            System.Diagnostics.Debug.WriteLine($"Send delta error: {ex.Message}");
+            Log.Error(ex, $"Send delta error: {ex.Message}");
         }
     }
 
