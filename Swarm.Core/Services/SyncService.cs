@@ -29,16 +29,13 @@ public class SyncService : IDisposable
     private readonly VersioningService _versioningService;
     private readonly SwarmIgnoreService _swarmIgnoreService;
     private readonly IHashingService _hashingService;
-    private readonly FileStateCacheService _fileStateCacheService;
+    private readonly IFileStateRepository _fileStateRepository;
     private readonly ActivityLogService? _activityLogService;
     private readonly ConflictResolutionService? _conflictResolutionService;
     private readonly FolderEncryptionService _folderEncryptionService;
     private readonly FileWatcherService _fileWatcherService;
     
     private CancellationTokenSource? _cts;
-    
-    // Track file states for change detection
-    private readonly ConcurrentDictionary<string, SyncedFile> _fileStates = new();
     
     // Activity log debounce to prevent duplicate entries
     private readonly ConcurrentDictionary<string, DateTime> _activityLogDebounce = new();
@@ -71,7 +68,7 @@ public class SyncService : IDisposable
         catch (Exception ex)
         {
             Log.Warning(ex, $"Failed to enumerate sync folder files: {ex.Message}");
-            return _fileStates.Count; // Fallback to tracked state
+            return _fileStateRepository.Count; // Fallback to tracked state
         }
     }
     
@@ -110,14 +107,14 @@ public class SyncService : IDisposable
     // Track pending delta sync operations (relativePath -> peer awaiting delta)
     private readonly ConcurrentDictionary<string, (Peer peer, SyncedFile syncFile)> _pendingDeltaSyncs = new();
 
-    public SyncService(Settings settings, IDiscoveryService discoveryService, ITransferService transferService, VersioningService versioningService, IHashingService hashingService, FileStateCacheService fileStateCacheService, FolderEncryptionService folderEncryptionService, ActivityLogService? activityLogService = null, ConflictResolutionService? conflictResolutionService = null)
+    public SyncService(Settings settings, IDiscoveryService discoveryService, ITransferService transferService, VersioningService versioningService, IHashingService hashingService, IFileStateRepository fileStateRepository, FolderEncryptionService folderEncryptionService, ActivityLogService? activityLogService = null, ConflictResolutionService? conflictResolutionService = null)
     {
         _settings = settings;
         _discoveryService = discoveryService;
         _transferService = transferService;
         _versioningService = versioningService;
         _hashingService = hashingService;
-        _fileStateCacheService = fileStateCacheService;
+        _fileStateRepository = fileStateRepository;
         _folderEncryptionService = folderEncryptionService;
         _activityLogService = activityLogService;
         _conflictResolutionService = conflictResolutionService;
@@ -227,7 +224,7 @@ public class SyncService : IDisposable
         
         _settings.SyncFolderPath = newPath;
         _settings.Save();
-        _fileStates.Clear();
+        _fileStateRepository.Clear();
         
         if (wasRunning) Start();
     }
@@ -299,11 +296,11 @@ public class SyncService : IDisposable
             // Update our state
             if (syncFile.Action != SyncAction.Delete)
             {
-                _fileStates[syncFile.RelativePath] = syncFile;
+                _fileStateRepository.AddOrUpdate(syncFile);
             }
             else
             {
-                _fileStates.TryRemove(syncFile.RelativePath, out _);
+                _fileStateRepository.Remove(syncFile.RelativePath);
             }
 
             IncomingSyncFile?.Invoke(syncFile);
@@ -319,7 +316,7 @@ public class SyncService : IDisposable
     /// </summary>
     public IEnumerable<SyncedFile> GetManifest()
     {
-        return _fileStates.Values.ToList();
+        return _fileStateRepository.GetAll();
     }
 
     /// <summary>
@@ -327,7 +324,7 @@ public class SyncService : IDisposable
     /// </summary>
     public IReadOnlyDictionary<string, SyncedFile> GetFileStates()
     {
-        return _fileStates;
+        return _fileStateRepository.AsReadOnlyDictionary();
     }
 
 
@@ -341,7 +338,8 @@ public class SyncService : IDisposable
 
         foreach (var remoteFile in remoteManifest)
         {
-            if (_fileStates.TryGetValue(remoteFile.RelativePath, out var localFile))
+            var localFile = _fileStateRepository.Get(remoteFile.RelativePath);
+            if (localFile != null)
             {
                 // File exists locally - check for conflict
                 if (remoteFile.ContentHash != localFile.ContentHash)
@@ -399,7 +397,7 @@ public class SyncService : IDisposable
 
         // Check for files we have that remote doesn't
         var remoteSet = remoteManifest.Select(f => f.RelativePath).ToHashSet();
-        foreach (var localFile in _fileStates.Values)
+        foreach (var localFile in _fileStateRepository.GetAll())
         {
             if (!remoteSet.Contains(localFile.RelativePath))
             {
@@ -413,12 +411,13 @@ public class SyncService : IDisposable
 
     private async Task BuildInitialFileStates()
     {
-        _fileStates.Clear();
+        _fileStateRepository.Clear();
         
         if (!Directory.Exists(_settings.SyncFolderPath)) return;
 
-        // Load existing cache
-        var cache = _fileStateCacheService.LoadCache();
+        // Load from persistent storage first
+        _fileStateRepository.Load();
+        var existingStates = _fileStateRepository.AsReadOnlyDictionary();
         var cacheHits = 0;
         var cacheMisses = 0;
 
@@ -441,7 +440,7 @@ public class SyncService : IDisposable
                 string contentHash;
 
                 // Check cache
-                if (cache.TryGetValue(relativePath, out var cachedFile) &&
+                if (existingStates.TryGetValue(relativePath, out var cachedFile) &&
                     cachedFile.FileSize == fileInfo.Length &&
                     Math.Abs((cachedFile.LastModified - fileInfo.LastWriteTimeUtc).TotalSeconds) < 1.0) // 1s tolerance
                 {
@@ -456,7 +455,7 @@ public class SyncService : IDisposable
                     cacheMisses++;
                 }
                 
-                _fileStates[relativePath] = new SyncedFile
+                _fileStateRepository.AddOrUpdate(new SyncedFile
                 {
                     RelativePath = relativePath,
                     ContentHash = contentHash,
@@ -465,7 +464,7 @@ public class SyncService : IDisposable
                     Action = SyncAction.Create,
                     SourcePeerId = _discoveryService.LocalId,
                     IsDirectory = false
-                };
+                });
             }
             catch (Exception ex)
             {
@@ -473,10 +472,10 @@ public class SyncService : IDisposable
             }
         }
 
-        Log.Information($"Built initial state. Cache hits: {cacheHits}, Misses/Updates: {cacheMisses}. Total tracked: {_fileStates.Count}");
+        Log.Information($"Built initial state. Cache hits: {cacheHits}, Misses/Updates: {cacheMisses}. Total tracked: {_fileStateRepository.Count}");
         
         // Save updated cache immediately
-        _fileStateCacheService.SaveCache(_fileStates);
+        _fileStateRepository.SaveChanges();
     }
 
 
@@ -624,7 +623,7 @@ public class SyncService : IDisposable
             var fileInfo = new FileInfo(fullPath);
             var hash = await _hashingService.ComputeFileHashAsync(fullPath);
             
-            var action = _fileStates.ContainsKey(relativePath) ? SyncAction.Update : SyncAction.Create;
+            var action = _fileStateRepository.Exists(relativePath) ? SyncAction.Update : SyncAction.Create;
             
             syncFile = new SyncedFile
             {
@@ -637,7 +636,7 @@ public class SyncService : IDisposable
                 IsDirectory = false
             };
 
-            _fileStates[relativePath] = syncFile;
+            _fileStateRepository.AddOrUpdate(syncFile);
         }
         else if (Directory.Exists(fullPath))
         {
@@ -654,7 +653,8 @@ public class SyncService : IDisposable
         else
         {
             // File/folder deleted
-            _fileStates.TryRemove(relativePath, out var existing);
+            var existing = _fileStateRepository.Get(relativePath);
+            _fileStateRepository.Remove(relativePath);
             
             syncFile = new SyncedFile
             {
@@ -692,20 +692,17 @@ public class SyncService : IDisposable
         {
             // For directory renames, update all child file states
             var oldPrefix = oldRelativePath + Path.DirectorySeparatorChar;
-            var filesToUpdate = _fileStates
-                .Where(kvp => kvp.Key.StartsWith(oldPrefix, StringComparison.OrdinalIgnoreCase) ||
-                              kvp.Key.Equals(oldRelativePath, StringComparison.OrdinalIgnoreCase))
+            var filesToUpdate = _fileStateRepository.GetAll()
+                .Where(f => f.RelativePath.StartsWith(oldPrefix, StringComparison.OrdinalIgnoreCase) ||
+                            f.RelativePath.Equals(oldRelativePath, StringComparison.OrdinalIgnoreCase))
                 .ToList();
             
-            foreach (var kvp in filesToUpdate)
+            foreach (var file in filesToUpdate)
             {
-                if (_fileStates.TryRemove(kvp.Key, out var state))
-                {
-                    // Update the relative path to reflect the new directory name
-                    var newPath = newRelativePath + kvp.Key.Substring(oldRelativePath.Length);
-                    state.RelativePath = newPath;
-                    _fileStates[newPath] = state;
-                }
+                _fileStateRepository.Remove(file.RelativePath);
+                var newPath = newRelativePath + file.RelativePath.Substring(oldRelativePath.Length);
+                file.RelativePath = newPath;
+                _fileStateRepository.AddOrUpdate(file);
             }
             
             System.Diagnostics.Debug.WriteLine(
@@ -714,10 +711,12 @@ public class SyncService : IDisposable
         else
         {
             // Single file rename
-            if (_fileStates.TryRemove(oldRelativePath, out var existingState))
+            var existingState = _fileStateRepository.Get(oldRelativePath);
+            if (existingState != null)
             {
+                _fileStateRepository.Remove(oldRelativePath);
                 existingState.RelativePath = newRelativePath;
-                _fileStates[newRelativePath] = existingState;
+                _fileStateRepository.AddOrUpdate(existingState);
             }
         }
 
@@ -1077,10 +1076,12 @@ public class SyncService : IDisposable
             }
 
             // Update our state
-            if (_fileStates.TryRemove(syncFile.OldRelativePath, out var existingState))
+            var existingState = _fileStateRepository.Get(syncFile.OldRelativePath);
+            if (existingState != null)
             {
+                _fileStateRepository.Remove(syncFile.OldRelativePath);
                 existingState.RelativePath = syncFile.RelativePath;
-                _fileStates[syncFile.RelativePath] = existingState;
+                _fileStateRepository.AddOrUpdate(existingState);
             }
 
             IncomingSyncFile?.Invoke(syncFile);
@@ -1254,7 +1255,7 @@ public class SyncService : IDisposable
             }
 
             // Update our state
-            _fileStates[syncFile.RelativePath] = syncFile;
+            _fileStateRepository.AddOrUpdate(syncFile);
             IncomingSyncFile?.Invoke(syncFile);
 
             lock (_progressLock)
@@ -1306,10 +1307,7 @@ public class SyncService : IDisposable
         }
 
         // Save cache on exit
-        if (_fileStateCacheService != null)
-        {
-            _fileStateCacheService.SaveCache(_fileStates);
-        }
+        _fileStateRepository?.SaveChanges();
     }
 
 }

@@ -39,8 +39,7 @@ public class SyncServiceTests : IDisposable
     private SyncService CreateSyncService()
     {
         var versioningService = new VersioningService(_settings, _mockHashing.Object);
-        var cacheService = new FileStateCacheService(_settings);
-        
+        var fileStateRepository = new FileStateRepository(_settings);
         var folderEncryptionService = new FolderEncryptionService(_settings);
 
         return new SyncService(
@@ -49,7 +48,7 @@ public class SyncServiceTests : IDisposable
             _mockTransfer.Object,
             versioningService,
             _mockHashing.Object,
-            cacheService,
+            fileStateRepository,
             folderEncryptionService);
     }
 
