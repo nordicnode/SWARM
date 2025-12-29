@@ -36,6 +36,11 @@ public class SyncedFile
     public string SourcePeerId { get; set; } = string.Empty;
 
     /// <summary>
+    /// Name of the peer that originated this change (for UI display).
+    /// </summary>
+    public string SourcePeerName { get; set; } = string.Empty;
+
+    /// <summary>
     /// Whether this is a directory (folder) rather than a file.
     /// </summary>
     public bool IsDirectory { get; set; }

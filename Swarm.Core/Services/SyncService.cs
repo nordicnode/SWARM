@@ -31,50 +31,21 @@ public class SyncService : IDisposable
     private readonly IHashingService _hashingService;
     private readonly FileStateCacheService _fileStateCacheService;
     private readonly ActivityLogService? _activityLogService;
+    private readonly ConflictResolutionService? _conflictResolutionService;
+    private readonly FileWatcherService _fileWatcherService;
     
-    private FileSystemWatcher? _watcher;
     private CancellationTokenSource? _cts;
     
     // Track file states for change detection
     private readonly ConcurrentDictionary<string, SyncedFile> _fileStates = new();
     
-    // Debounce rapid changes
-    private readonly ConcurrentDictionary<string, DateTime> _pendingChanges = new();
-    private readonly ConcurrentDictionary<string, (string OldPath, DateTime Time)> _pendingRenames = new();
-    private const int DEBOUNCE_MS = ProtocolConstants.SYNC_DEBOUNCE_MS;
-    
-    // Ignore list for files currently being written by sync
-    private readonly ConcurrentDictionary<string, DateTime> _ignoreList = new();
-    private const int IGNORE_DURATION_MS = ProtocolConstants.SYNC_IGNORE_DURATION_MS;
-    
     // Activity log debounce to prevent duplicate entries
     private readonly ConcurrentDictionary<string, DateTime> _activityLogDebounce = new();
-    private const int ACTIVITY_DEBOUNCE_MS = 2000; // 2 second debounce for activity logging
-
-    // Directory rename coalescence: track potential directory renames detected from file rename patterns
-    // Key: oldParentPath, Value: (newParentPath, set of affected file paths, first seen time)
-    private readonly ConcurrentDictionary<string, (string NewParentPath, HashSet<string> AffectedFiles, DateTime FirstSeen)> 
-        _directoryRenameCandidates = new();
-    
-    // Track recently renamed directories to suppress redundant child file rename broadcasts
-    private readonly ConcurrentDictionary<string, DateTime> _recentDirectoryRenames = new();
-    
-    // Extended debounce for directory rename detection (longer than file debounce to collect all events)
-    private const int DIRECTORY_RENAME_DEBOUNCE_MS = 500;
-    
-    // Threshold: if this many files share a parent path change, treat as directory rename
-    private const int DIRECTORY_RENAME_THRESHOLD = 5;
-    
-    // How long to remember a directory rename for child suppression
-    private const int DIRECTORY_RENAME_MEMORY_MS = 2000;
-    
-    // Batch debounce: wait for rename event storm to settle before processing
-    private const int RENAME_BATCH_DELAY_MS = 1000;
-    private DateTime _lastRenameEventTime = DateTime.MinValue;
+    private const int ACTIVITY_DEBOUNCE_MS = 2000;
 
     public string SyncFolderPath => _settings.SyncFolderPath;
     public bool IsEnabled => _settings.IsSyncEnabled;
-    public bool IsRunning => _watcher != null;
+    public bool IsRunning => _fileWatcherService.IsRunning;
     
     // Dashboard tracking
     private DateTime? _lastSyncTime;
@@ -96,8 +67,9 @@ public class SyncService : IDisposable
                 return 0;
             return Directory.EnumerateFiles(_settings.SyncFolderPath, "*", SearchOption.AllDirectories).Count();
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Warning(ex, $"Failed to enumerate sync folder files: {ex.Message}");
             return _fileStates.Count; // Fallback to tracked state
         }
     }
@@ -137,7 +109,7 @@ public class SyncService : IDisposable
     // Track pending delta sync operations (relativePath -> peer awaiting delta)
     private readonly ConcurrentDictionary<string, (Peer peer, SyncedFile syncFile)> _pendingDeltaSyncs = new();
 
-    public SyncService(Settings settings, IDiscoveryService discoveryService, ITransferService transferService, VersioningService versioningService, IHashingService hashingService, FileStateCacheService fileStateCacheService, ActivityLogService? activityLogService = null)
+    public SyncService(Settings settings, IDiscoveryService discoveryService, ITransferService transferService, VersioningService versioningService, IHashingService hashingService, FileStateCacheService fileStateCacheService, ActivityLogService? activityLogService = null, ConflictResolutionService? conflictResolutionService = null)
     {
         _settings = settings;
         _discoveryService = discoveryService;
@@ -146,7 +118,15 @@ public class SyncService : IDisposable
         _hashingService = hashingService;
         _fileStateCacheService = fileStateCacheService;
         _activityLogService = activityLogService;
+        _conflictResolutionService = conflictResolutionService;
         _swarmIgnoreService = new SwarmIgnoreService(settings);
+        
+        // Create FileWatcherService and subscribe to its events
+        _fileWatcherService = new FileWatcherService(settings);
+        _fileWatcherService.FileChangeDetected += OnFileWatcherChange;
+        _fileWatcherService.FileRenameDetected += OnFileWatcherRename;
+        _fileWatcherService.DirectoryRenameDetected += OnFileWatcherDirectoryRename;
+        _fileWatcherService.WatcherError += OnFileWatcherError;
 
         // Subscribe to TransferService sync events
         _transferService.SyncFileReceived += OnSyncFileReceived;
@@ -209,27 +189,8 @@ public class SyncService : IDisposable
                 // Check again before enabling watcher
                 if (_cts.Token.IsCancellationRequested) return;
 
-                // Set up FileSystemWatcher
-                _watcher = new FileSystemWatcher(_settings.SyncFolderPath)
-                {
-                    NotifyFilter = NotifyFilters.FileName
-                                 | NotifyFilters.DirectoryName
-                                 | NotifyFilters.LastWrite
-                                 | NotifyFilters.Size
-                                 | NotifyFilters.CreationTime,
-                    IncludeSubdirectories = true,
-                    EnableRaisingEvents = true,
-                    InternalBufferSize = 65536 // 64KB buffer to prevent overflow
-                };
-
-                _watcher.Created += OnFileCreated;
-                _watcher.Changed += OnFileChanged;
-                _watcher.Deleted += OnFileDeleted;
-                _watcher.Renamed += OnFileRenamed;
-                _watcher.Error += OnWatcherError;
-
-                // Start debounce processor
-                _ = Task.Run(() => ProcessPendingChanges(_cts.Token));
+                // Start the FileWatcherService
+                _fileWatcherService.Start();
 
                 SyncStatusChanged?.Invoke("Sync enabled - Watching for changes");
                 Log.Information($"SyncService started, watching: {_settings.SyncFolderPath}");
@@ -248,14 +209,7 @@ public class SyncService : IDisposable
     public void Stop()
     {
         _cts?.Cancel();
-        
-        if (_watcher != null)
-        {
-            _watcher.EnableRaisingEvents = false;
-            _watcher.Dispose();
-            _watcher = null;
-        }
-
+        _fileWatcherService.Stop();
         SyncStatusChanged?.Invoke("Sync disabled");
     }
 
@@ -317,10 +271,9 @@ public class SyncService : IDisposable
     public async Task HandleIncomingSyncFile(SyncedFile syncFile, Stream dataStream)
     {
         var localPath = Path.Combine(_settings.SyncFolderPath, syncFile.RelativePath);
-        var normalizedPath = FileHelpers.NormalizePath(localPath);
         
         // Add to ignore list to prevent echo
-        _ignoreList[normalizedPath] = DateTime.Now;
+        IgnorePathTemporarily(localPath);
 
         try
         {
@@ -524,64 +477,82 @@ public class SyncService : IDisposable
 
 
 
-    private void OnFileCreated(object sender, FileSystemEventArgs e)
+    // ========== FileWatcherService Event Handlers ==========
+
+    private async void OnFileWatcherChange(string fullPath, SyncAction action)
     {
-        if (ShouldIgnore(e.FullPath)) return;
-        QueueChange(e.FullPath, SyncAction.Create);
+        var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, fullPath);
+        LogActivityDebounced(relativePath, action.ToString().ToLower());
         
-        var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, e.FullPath);
-        LogActivityDebounced(relativePath, "created");
+        await ProcessFileChange(fullPath);
     }
 
-    private void OnFileChanged(object sender, FileSystemEventArgs e)
+    private async void OnFileWatcherRename(string oldPath, string newPath)
     {
-        if (ShouldIgnore(e.FullPath)) return;
-        QueueChange(e.FullPath, SyncAction.Update);
-        
-        // Don't log "modified" if we just logged "created" for this file
-        var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, e.FullPath);
-        LogActivityDebounced(relativePath, "modified");
-    }
-
-    private void OnFileDeleted(object sender, FileSystemEventArgs e)
-    {
-        if (ShouldIgnore(e.FullPath)) return;
-        QueueChange(e.FullPath, SyncAction.Delete);
-        
-        var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, e.FullPath);
-        LogActivityDebounced(relativePath, "deleted");
-    }
-
-    private void OnFileRenamed(object sender, RenamedEventArgs e)
-    {
-        if (ShouldIgnore(e.FullPath)) return;
-        
-        // Track time of last rename event for batch debounce
-        _lastRenameEventTime = DateTime.Now;
-        
-        // Queue as a proper rename operation with both old and new paths
-        QueueRename(e.OldFullPath, e.FullPath);
-        
-        var oldRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, e.OldFullPath);
-        var newRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, e.FullPath);
+        var oldRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, oldPath);
+        var newRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, newPath);
         _activityLogService?.LogFileSync(newRelativePath, $"renamed from {oldRelativePath}");
+        
+        await ProcessFileRename(oldPath, newPath);
     }
-    
+
+    private async void OnFileWatcherDirectoryRename(string oldPath, string newPath)
+    {
+        var oldRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, oldPath);
+        var newRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, newPath);
+        Log.Information($"[SYNC] Directory renamed: {oldRelativePath} -> {newRelativePath}");
+        _activityLogService?.LogFileSync(newRelativePath, $"directory renamed from {oldRelativePath}");
+        
+        await ProcessFileRename(oldPath, newPath);
+    }
+
+    private void OnFileWatcherError(Exception exception, bool isBufferOverflow)
+    {
+        SyncStatusChanged?.Invoke("Sync error - recovering...");
+        
+        // Trigger full sync after error
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(2000);
+                
+                if (isBufferOverflow)
+                {
+                    Log.Warning("Triggering full sync to recover from buffer overflow");
+                }
+                else
+                {
+                    Log.Warning("Triggering full sync to recover from watcher error");
+                }
+                
+                await ForceSyncAsync();
+                
+                if (isBufferOverflow)
+                {
+                    RescanRequested?.Invoke();
+                }
+            }
+            catch (Exception syncEx)
+            {
+                Log.Error(syncEx, $"Failed to sync after watcher error: {syncEx.Message}");
+            }
+        });
+    }
+
     /// <summary>
-    /// Logs file activity with debounce to prevent duplicate entries from multiple FSW events.
+    /// Logs file activity with debounce to prevent duplicate entries.
     /// </summary>
     private void LogActivityDebounced(string relativePath, string action)
     {
-        // Key on file path only - ignore any subsequent events for the same file within debounce window
         var key = relativePath.ToLowerInvariant();
         var now = DateTime.Now;
         
-        // Check if we recently logged ANY action for this file
         if (_activityLogDebounce.TryGetValue(key, out var lastLog))
         {
             if ((now - lastLog).TotalMilliseconds < ACTIVITY_DEBOUNCE_MS)
             {
-                return; // Skip - already logged recently
+                return;
             }
         }
         
@@ -599,295 +570,12 @@ public class SyncService : IDisposable
         }
     }
 
-    private void OnWatcherError(object sender, ErrorEventArgs e)
-    {
-        var exception = e.GetException();
-        Log.Error(exception, $"FileSystemWatcher error: {exception.Message}");
-        
-        // Detect buffer overflow (common when many files change at once)
-        // The internal buffer can overflow if there's heavy file system activity
-        bool isPotentialBufferOverflow = false;
-        if (exception is System.ComponentModel.Win32Exception win32Ex)
-        {
-            // Error code 122 (ERROR_INSUFFICIENT_BUFFER) or general internal buffer overflow
-            if (win32Ex.NativeErrorCode == 122)
-            {
-                Log.Fatal("[CRITICAL] FileSystemWatcher internal buffer overflow detected!");
-                isPotentialBufferOverflow = true;
-            }
-        }
-        
-        // Also treat "too many changes" type errors as potential overflow
-        if (exception.Message.Contains("buffer") || exception.Message.Contains("overflow"))
-        {
-            isPotentialBufferOverflow = true;
-        }
-        
-        SyncStatusChanged?.Invoke("Sync error - recovering...");
-        
-        // Attempt to restart the watcher
-        Stop();
-        Start();
-        
-        // Always trigger a full sync after watcher error to catch any missed changes
-        // This is especially important for buffer overflow scenarios where events were lost
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                // Give the watcher time to stabilize after restart
-                await Task.Delay(2000);
-                
-                if (isPotentialBufferOverflow)
-                {
-                    Log.Warning("Triggering full sync to recover from buffer overflow");
-                }
-                else
-                {
-                    Log.Warning("Triggering full sync to recover from watcher error");
-                }
-                
-                await ForceSyncAsync();
-                
-                // After a buffer overflow, also recommend a deep rescan to catch any missed changes
-                if (isPotentialBufferOverflow)
-                {
-                    RescanRequested?.Invoke();
-                }
-            }
-            catch (Exception syncEx)
-            {
-                Log.Error(syncEx, $"Failed to sync after watcher error: {syncEx.Message}");
-            }
-        });
-    }
-
-    private bool ShouldIgnore(string path)
-    {
-        var normalizedPath = FileHelpers.NormalizePath(path);
-
-        // Check if this file is being written by sync
-        if (_ignoreList.TryGetValue(normalizedPath, out var ignoreTime))
-        {
-            if ((DateTime.Now - ignoreTime).TotalMilliseconds < IGNORE_DURATION_MS)
-            {
-                return true;
-            }
-            _ignoreList.TryRemove(normalizedPath, out _);
-        }
-
-        // Ignore system/hidden files
-        var fileName = Path.GetFileName(path);
-        if (fileName.StartsWith('.') || fileName.StartsWith("~"))
-            return true;
-
-        // Check .swarmignore patterns
-        try
-        {
-            var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, path);
-            if (_swarmIgnoreService.IsIgnored(relativePath))
-            {
-                Log.Debug($"[SwarmIgnore] Ignoring: {relativePath}");
-                return true;
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, $"[SwarmIgnore] Error checking path: {ex.Message}");
-        }
-
-        return false;
-    }
-
-    private void QueueChange(string fullPath, SyncAction action)
-    {
-        _pendingChanges[fullPath] = DateTime.Now;
-        Log.Debug($"Queued change: {action} - {fullPath}");
-    }
-
-    private void QueueRename(string oldFullPath, string newFullPath)
-    {
-        _pendingRenames[newFullPath] = (oldFullPath, DateTime.Now);
-        
-        // Check if this could be part of a directory rename:
-        // Same filename but different parent directory = files moved with their parent
-        var oldDir = Path.GetDirectoryName(oldFullPath) ?? "";
-        var newDir = Path.GetDirectoryName(newFullPath) ?? "";
-        
-        if (oldDir != newDir && 
-            Path.GetFileName(oldFullPath) == Path.GetFileName(newFullPath))
-        {
-            // Same filename, different parent = potential directory rename
-            TrackDirectoryRenameCandidate(oldDir, newDir, newFullPath);
-        }
-        
-        Log.Debug($"Queued rename: {oldFullPath} -> {newFullPath}");
-    }
-
     /// <summary>
-    /// Tracks a file rename as a potential directory rename candidate.
-    /// Multiple files with the same parent path change indicate a directory was renamed.
+    /// Tells the FileWatcherService to ignore a path temporarily (for incoming sync writes).
     /// </summary>
-    private void TrackDirectoryRenameCandidate(string oldParent, string newParent, string newFilePath)
+    private void IgnorePathTemporarily(string fullPath)
     {
-        _directoryRenameCandidates.AddOrUpdate(
-            oldParent,
-            _ => (newParent, new HashSet<string> { newFilePath }, DateTime.Now),
-            (_, existing) =>
-            {
-                existing.AffectedFiles.Add(newFilePath);
-                return existing;
-            });
-    }
-
-    /// <summary>
-    /// Marks a directory as recently renamed to suppress child file rename broadcasts.
-    /// </summary>
-    private void MarkDirectoryAsRenamed(string oldPath)
-    {
-        _recentDirectoryRenames[oldPath.ToLowerInvariant()] = DateTime.Now;
-    }
-
-    /// <summary>
-    /// Checks if a path is a subpath of a recently renamed directory.
-    /// Used to suppress individual file renames that are part of a directory rename.
-    /// </summary>
-    private bool IsSubpathOfRenamedDirectory(string path)
-    {
-        var normalizedPath = path.ToLowerInvariant();
-        var now = DateTime.Now;
-        
-        foreach (var (dirPath, timestamp) in _recentDirectoryRenames.ToList())
-        {
-            // Clean up old entries
-            if ((now - timestamp).TotalMilliseconds > DIRECTORY_RENAME_MEMORY_MS)
-            {
-                _recentDirectoryRenames.TryRemove(dirPath, out _);
-                continue;
-            }
-            
-            // Check if this path starts with the renamed directory path
-            if (normalizedPath.StartsWith(dirPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-                normalizedPath.Equals(dirPath, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private async Task ProcessPendingChanges(CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(100, ct);
-                
-                var now = DateTime.Now;
-
-                // === BATCH DEBOUNCE: Wait for rename event storm to settle ===
-                // If we received a rename event recently, skip rename processing this tick
-                // This allows directory rename coalescence to work properly
-                var timeSinceLastRename = (now - _lastRenameEventTime).TotalMilliseconds;
-                var shouldProcessRenames = timeSinceLastRename >= RENAME_BATCH_DELAY_MS || _lastRenameEventTime == DateTime.MinValue;
-
-                if (shouldProcessRenames && (_pendingRenames.Count > 0 || _directoryRenameCandidates.Count > 0))
-                {
-                    // === STEP 1: Process confirmed directory renames first ===
-                    // These are explicit directory rename events from FileSystemWatcher
-                    var directoryRenames = _pendingRenames
-                        .Where(kvp => (now - kvp.Value.Time).TotalMilliseconds >= DEBOUNCE_MS
-                                      && Directory.Exists(kvp.Key))
-                        .ToList();
-
-                foreach (var kvp in directoryRenames)
-                {
-                    var newPath = kvp.Key;
-                    var oldPath = kvp.Value.OldPath;
-                    
-                    if (_pendingRenames.TryRemove(newPath, out _))
-                    {
-                        // Mark this directory's old path so we can suppress child file renames
-                        MarkDirectoryAsRenamed(oldPath);
-                        await ProcessFileRename(oldPath, newPath);
-                    }
-                }
-
-                // === STEP 2: Coalesce file renames into directory renames ===
-                // If multiple files share the same parent path change, treat as directory rename
-                var candidatesToProcess = _directoryRenameCandidates
-                    .Where(kvp => (now - kvp.Value.FirstSeen).TotalMilliseconds >= DIRECTORY_RENAME_DEBOUNCE_MS)
-                    .ToList();
-
-                foreach (var candidate in candidatesToProcess)
-                {
-                    if (_directoryRenameCandidates.TryRemove(candidate.Key, out var info))
-                    {
-                        if (info.AffectedFiles.Count >= DIRECTORY_RENAME_THRESHOLD)
-                        {
-                            // Enough files share this parent change - treat as directory rename
-                            Log.Information(
-                                $"[DirectoryRenameCoalescence] Coalescing {info.AffectedFiles.Count} file renames into directory rename: " +
-                                $"{candidate.Key} -> {info.NewParentPath}");
-                            
-                            // Remove individual file renames from pending queue
-                            foreach (var filePath in info.AffectedFiles)
-                            {
-                                _pendingRenames.TryRemove(filePath, out _);
-                            }
-                            
-                            // Mark as renamed to suppress any stragglers
-                            MarkDirectoryAsRenamed(candidate.Key);
-                            
-                            // Process as single directory rename (only if directory still exists)
-                            if (Directory.Exists(info.NewParentPath))
-                            {
-                                await ProcessFileRename(candidate.Key, info.NewParentPath);
-                            }
-                        }
-                        // Else: not enough files, individual renames will be processed below
-                    }
-                }
-
-                // === STEP 3: Process remaining individual file renames ===
-                // Skip files whose parent was already renamed (subsumed by directory rename)
-                var renamesToProcess = _pendingRenames
-                    .Where(kvp => (now - kvp.Value.Time).TotalMilliseconds >= DEBOUNCE_MS)
-                    .Where(kvp => !IsSubpathOfRenamedDirectory(kvp.Value.OldPath))
-                    .Select(kvp => (NewPath: kvp.Key, OldPath: kvp.Value.OldPath))
-                    .ToList();
-
-                foreach (var (newPath, oldPath) in renamesToProcess)
-                {
-                    if (_pendingRenames.TryRemove(newPath, out _))
-                    {
-                        await ProcessFileRename(oldPath, newPath);
-                    }
-                }
-                } // End of shouldProcessRenames block
-
-                // === STEP 4: Process other changes (create, update, delete) ===
-                // These are NOT delayed by rename batch debounce
-                var toProcess = _pendingChanges
-                    .Where(kvp => (now - kvp.Value).TotalMilliseconds >= DEBOUNCE_MS)
-                    .Select(kvp => kvp.Key)
-                    .ToList();
-
-                foreach (var fullPath in toProcess)
-                {
-                    if (_pendingChanges.TryRemove(fullPath, out _))
-                    {
-                        await ProcessFileChange(fullPath);
-                    }
-                }
-            }
-            catch (OperationCanceledException) { break; }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error processing changes: {ex.Message}");
-            }
-        }
+        _fileWatcherService.IgnoreTemporarily(fullPath);
     }
 
     private async Task ProcessFileChange(string fullPath)
@@ -1105,7 +793,7 @@ public class SyncService : IDisposable
         }
         else
         {
-            // Version control: Create version before overwriting if content differs
+            // Conflict resolution: Check if content differs and resolve based on settings
             if (File.Exists(localPath))
             {
                 try
@@ -1113,36 +801,76 @@ public class SyncService : IDisposable
                     var currentHash = await _hashingService.ComputeFileHashAsync(localPath);
                     if (currentHash != syncFile.ContentHash)
                     {
-                        // Use versioning service if enabled, otherwise fallback to legacy backup
-                        if (_settings.VersioningEnabled)
+                        // Build conflict info
+                        var localInfo = new FileInfo(localPath);
+                        var conflict = new FileConflict
                         {
-                            var version = await _versioningService.CreateVersionAsync(
-                                syncFile.RelativePath,
-                                localPath,
-                                "Conflict",
-                                syncFile.SourcePeerId);
-                            
-                            if (version != null)
-                            {
-                                FileConflictDetected?.Invoke(localPath, null); // null = stored in versions folder
-                                System.Diagnostics.Debug.WriteLine($"Conflict detected! Version {version.VersionId} created for {syncFile.RelativePath}");
-                            }
+                            RelativePath = syncFile.RelativePath,
+                            LocalHash = currentHash,
+                            RemoteHash = syncFile.ContentHash,
+                            LocalModified = localInfo.LastWriteTimeUtc,
+                            RemoteModified = syncFile.LastModified,
+                            LocalSize = localInfo.Length,
+                            RemoteSize = syncFile.FileSize,
+                            SourcePeerName = syncFile.SourcePeerName ?? "Unknown",
+                            SourcePeerId = syncFile.SourcePeerId ?? ""
+                        };
+
+                        // Resolve conflict using service (or fallback to auto-newest)
+                        ConflictChoice? choice = null;
+                        if (_conflictResolutionService != null)
+                        {
+                            choice = await _conflictResolutionService.ResolveConflictAsync(conflict);
                         }
                         else
                         {
-                            // Legacy backup behavior
-                            var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-                            var backupPath = $"{localPath}.conflict-{timestamp}.bak";
+                            // No service - use auto-newest fallback
+                            choice = conflict.AutoWinner == ConflictWinner.Local 
+                                ? ConflictChoice.KeepLocal 
+                                : ConflictChoice.KeepRemote;
+                        }
+
+                        // Handle choice
+                        switch (choice)
+                        {
+                            case ConflictChoice.KeepLocal:
+                                Log.Information($"[Conflict] Keeping local version of {syncFile.RelativePath}");
+                                return; // Don't overwrite
                             
-                            File.Copy(localPath, backupPath, overwrite: true);
-                            FileConflictDetected?.Invoke(localPath, backupPath);
-                            System.Diagnostics.Debug.WriteLine($"Conflict detected! Backed up to {backupPath}");
+                            case ConflictChoice.Skip:
+                                Log.Information($"[Conflict] Skipped resolution for {syncFile.RelativePath}");
+                                return; // Don't overwrite
+                            
+                            case ConflictChoice.KeepBoth:
+                                // Save remote file with conflict name
+                                var conflictPath = ConflictResolutionService.GenerateConflictFilename(
+                                    localPath, syncFile.SourcePeerName ?? "Remote");
+                                await WriteStreamToFile(syncFile, conflictPath, dataStream);
+                                FileConflictDetected?.Invoke(localPath, conflictPath);
+                                Log.Information($"[Conflict] Kept both: {syncFile.RelativePath} and conflict copy");
+                                return; // We wrote the conflict copy, don't overwrite original
+                            
+                            case ConflictChoice.KeepRemote:
+                            default:
+                                // Archive local before overwriting
+                                if (_conflictResolutionService != null)
+                                {
+                                    await _conflictResolutionService.ArchiveLocalBeforeOverwriteAsync(localPath, syncFile.RelativePath);
+                                }
+                                else if (_settings.VersioningEnabled)
+                                {
+                                    await _versioningService.CreateVersionAsync(
+                                        syncFile.RelativePath, localPath, "Conflict", syncFile.SourcePeerId);
+                                }
+                                FileConflictDetected?.Invoke(localPath, null);
+                                Log.Information($"[Conflict] Overwriting local with remote for {syncFile.RelativePath}");
+                                break; // Continue to write remote file
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Failed to process conflict backup: {ex.Message}");
+                    Log.Warning(ex, $"Failed to process conflict for {syncFile.RelativePath}: {ex.Message}");
                 }
             }
 
@@ -1185,6 +913,41 @@ public class SyncService : IDisposable
                 System.Diagnostics.Debug.WriteLine($"Failed to set timestamp for {localPath}: {ex.Message}");
             }
         }
+    }
+
+    /// <summary>
+    /// Writes a stream to a file. Used for conflict copies.
+    /// </summary>
+    private async Task WriteStreamToFile(SyncedFile syncFile, string targetPath, Stream dataStream)
+    {
+        var directory = Path.GetDirectoryName(targetPath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        await FileHelpers.ExecuteWithRetryAsync(async () =>
+        {
+            await using var fileStream = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None, ProtocolConstants.FILE_STREAM_BUFFER_SIZE, useAsync: true);
+            
+            var buffer = new byte[ProtocolConstants.DEFAULT_BUFFER_SIZE];
+            long totalRead = 0;
+            while (totalRead < syncFile.FileSize)
+            {
+                var toRead = (int)Math.Min(buffer.Length, syncFile.FileSize - totalRead);
+                var bytesRead = await dataStream.ReadAsync(buffer.AsMemory(0, toRead));
+                if (bytesRead == 0) break; // End of stream
+                
+                await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
+                totalRead += bytesRead;
+            }
+        });
+
+        try
+        {
+            File.SetLastWriteTimeUtc(targetPath, syncFile.LastModified);
+        }
+        catch { /* Ignore timestamp errors for conflict copies */ }
     }
 
 
@@ -1231,10 +994,9 @@ public class SyncService : IDisposable
         // Handle incoming rename - move the local file
         var oldLocalPath = Path.Combine(_settings.SyncFolderPath, syncFile.OldRelativePath);
         var newLocalPath = Path.Combine(_settings.SyncFolderPath, syncFile.RelativePath);
-        var normalizedNewPath = FileHelpers.NormalizePath(newLocalPath);
 
         // Add to ignore list to prevent echo
-        _ignoreList[normalizedNewPath] = DateTime.Now;
+        IgnorePathTemporarily(newLocalPath);
 
         try
         {
@@ -1382,10 +1144,9 @@ public class SyncService : IDisposable
     {
         // Apply delta to reconstruct the file
         var localPath = Path.Combine(SyncFolderPath, syncFile.RelativePath);
-        var normalizedPath = FileHelpers.NormalizePath(localPath);
 
         // Add to ignore list to prevent echo
-        _ignoreList[normalizedPath] = DateTime.Now;
+        IgnorePathTemporarily(localPath);
 
         try
         {

@@ -20,6 +20,7 @@ public class DiscoveryService : IDiscoveryService
     private const int PEER_TIMEOUT_SECONDS = ProtocolConstants.PEER_TIMEOUT_SECONDS;
 
     private UdpClient? _udpClient;
+    private UdpClient? _udpClientV6; // IPv6 support
     private CancellationTokenSource? _cts;
     private readonly object _peersLock = new();
     private readonly CryptoService _cryptoService;
@@ -73,6 +74,7 @@ public class DiscoveryService : IDiscoveryService
         TransferPort = transferPort;
         _cts = new CancellationTokenSource();
 
+        // IPv4 UDP client
         try
         {
             _udpClient = new UdpClient();
@@ -83,18 +85,39 @@ public class DiscoveryService : IDiscoveryService
         }
         catch (SocketException ex)
         {
-            Log.Warning(ex, $"Discovery socket error: {ex.Message}");
+            Log.Warning(ex, $"IPv4 discovery socket error: {ex.Message}");
             BindingFailed?.Invoke();
-            // Port might be in use, try a different one
             _udpClient = new UdpClient(0);
             _udpClient.EnableBroadcast = true;
+        }
+
+        // IPv6 UDP client (optional - may fail on systems without IPv6)
+        try
+        {
+            _udpClientV6 = new UdpClient(AddressFamily.InterNetworkV6);
+            _udpClientV6.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+            _udpClientV6.Client.SetSocketOption(SocketOptionLevel.IPv6, SocketOptionName.IPv6Only, true);
+            _udpClientV6.ExclusiveAddressUse = false;
+            _udpClientV6.Client.Bind(new IPEndPoint(IPAddress.IPv6Any, DISCOVERY_PORT));
+            Log.Information("IPv6 discovery enabled");
+        }
+        catch (SocketException ex)
+        {
+            Log.Debug($"IPv6 discovery not available: {ex.Message}");
+            _udpClientV6 = null; // IPv6 not available on this system
         }
 
         // Start broadcasting
         Task.Run(() => BroadcastLoop(_cts.Token));
         
-        // Start listening
+        // Start listening (IPv4)
         Task.Run(() => ListenLoop(_cts.Token));
+        
+        // Start listening (IPv6) if available
+        if (_udpClientV6 != null)
+        {
+            Task.Run(() => ListenLoopV6(_cts.Token));
+        }
         
         // Start cleanup
         Task.Run(() => CleanupLoop(_cts.Token));
@@ -187,6 +210,27 @@ public class DiscoveryService : IDiscoveryService
             catch (Exception ex)
             {
                 Log.Error(ex, $"Listen error: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task ListenLoopV6(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                if (_udpClientV6 == null) break;
+                
+                var result = await _udpClientV6.ReceiveAsync(ct);
+                var message = Encoding.UTF8.GetString(result.Buffer);
+                
+                ProcessDiscoveryMessage(message, result.RemoteEndPoint);
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                Log.Debug($"IPv6 listen error: {ex.Message}");
             }
         }
     }

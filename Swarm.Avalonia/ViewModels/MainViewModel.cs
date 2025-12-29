@@ -58,34 +58,23 @@ public class MainViewModel : ViewModelBase, IDisposable
     public SettingsViewModel SettingsVM { get; }
 
     public MainViewModel(
-        Settings settings,
-        CryptoService cryptoService,
-        IDiscoveryService discoveryService,
-        ITransferService transferService,
-        VersioningService versioningService,
-        SyncService syncService,
-        IntegrityService integrityService,
-        RescanService rescanService,
-        ActivityLogService activityLogService,
-        ConflictResolutionService conflictResolutionService,
-        ShareLinkService shareLinkService,
-        PairingService pairingService,
+        CoreServiceFacade coreServices,
         AvaloniaDispatcher dispatcher,
         AvaloniaPowerService powerService,
         AvaloniaToastService toastService)
     {
-        _settings = settings;
-        _cryptoService = cryptoService;
-        _discoveryService = (DiscoveryService)discoveryService; // Cast until we fully decouple
-        _transferService = (TransferService)transferService;
-        _versioningService = versioningService;
-        _syncService = syncService;
-        _integrityService = integrityService;
-        _rescanService = rescanService;
-        _activityLogService = activityLogService;
-        _conflictResolutionService = conflictResolutionService;
-        _shareLinkService = shareLinkService;
-        _pairingService = pairingService;
+        _settings = coreServices.Settings;
+        _cryptoService = coreServices.CryptoService;
+        _discoveryService = coreServices.DiscoveryService;
+        _transferService = coreServices.TransferService;
+        _versioningService = coreServices.VersioningService;
+        _syncService = coreServices.SyncService;
+        _integrityService = coreServices.IntegrityService;
+        _rescanService = coreServices.RescanService;
+        _activityLogService = coreServices.ActivityLogService;
+        _conflictResolutionService = coreServices.ConflictResolutionService;
+        _shareLinkService = coreServices.ShareLinkService;
+        _pairingService = coreServices.PairingService;
         
         // Avalonia services
         _dispatcher = dispatcher;
@@ -143,6 +132,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         // Subscribe to events
         _syncService.SyncStatusChanged += OnSyncStatusChanged;
         _syncService.TimeTravelDetected += OnTimeTravelDetected;
+        _syncService.FileConflictDetected += OnFileConflictDetected;
         _transferService.TransferProgress += OnTransferProgress;
         _transferService.IncomingFileRequest += OnIncomingFileRequest;
         _discoveryService.UntrustedPeerDiscovered += OnUntrustedPeerDiscovered;
@@ -207,6 +197,26 @@ public class MainViewModel : ViewModelBase, IDisposable
             ToastService.Show("Time Travel Detected", 
                 $"File '{fileName}' is from the future ({futureTime}). Check peer clocks!", 
                 NotificationType.Warning);
+        });
+    }
+
+    private void OnFileConflictDetected(string localPath, string? backupPath)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            var fileName = System.IO.Path.GetFileName(localPath);
+            if (backupPath != null)
+            {
+                ToastService.Show("File Conflict Resolved", 
+                    $"Conflict on '{fileName}' - both versions saved.", 
+                    NotificationType.Information);
+            }
+            else
+            {
+                ToastService.Show("File Conflict Resolved", 
+                    $"Conflict on '{fileName}' - backup in version history.", 
+                    NotificationType.Information);
+            }
         });
     }
 

@@ -57,366 +57,19 @@ public class TransferService : ITransferService
         }
     }
 
-    private class PeerConnection : IDisposable
-    {
-        public TcpClient Client { get; }
-        public NetworkStream NetworkStream { get; }
-        public Stream Stream { get; private set; }
-        public BinaryWriter Writer { get; private set; }
-        public BinaryReader Reader { get; private set; }
-        public SemaphoreSlim Lock { get; } = new(1, 1);
-        public DateTime LastActivity { get; set; } = DateTime.UtcNow;
-        public byte[]? SessionKey { get; private set; }
-        public bool IsEncrypted => SessionKey != null;
-
-        /// <summary>
-        /// Measured round-trip time in milliseconds. -1 if not measured.
-        /// </summary>
-        public int RttMs { get; set; } = -1;
-
-        /// <summary>
-        /// Gets the optimal buffer size based on measured RTT.
-        /// </summary>
-        public int GetOptimalBufferSize()
-        {
-            if (RttMs < 0)
-            {
-                // Not measured yet - use default
-                return ProtocolConstants.DEFAULT_BUFFER_SIZE;
-            }
-
-            if (RttMs < ProtocolConstants.FAST_LAN_RTT_MS)
-            {
-                // Fast LAN - use maximum buffer
-                return ProtocolConstants.MAX_BUFFER_SIZE;
-            }
-            else if (RttMs > ProtocolConstants.SLOW_LINK_RTT_MS)
-            {
-                // Slow link - use minimum buffer for responsiveness
-                return ProtocolConstants.MIN_BUFFER_SIZE;
-            }
-            else
-            {
-                // Medium speed - use default
-                return ProtocolConstants.DEFAULT_BUFFER_SIZE;
-            }
-        }
-
-
-        public PeerConnection(TcpClient client)
-        {
-            Client = client;
-            NetworkStream = client.GetStream();
-            Stream = NetworkStream;
-            Writer = new BinaryWriter(Stream, Encoding.UTF8, leaveOpen: true);
-            Reader = new BinaryReader(Stream, Encoding.UTF8, leaveOpen: true);
-        }
-
-        /// <summary>
-        /// Upgrades the connection to use encryption with the given session key.
-        /// </summary>
-        public void EnableEncryption(byte[] sessionKey)
-        {
-            SessionKey = sessionKey;
-            var secureStream = new SecureStream(NetworkStream, sessionKey);
-            Stream = secureStream;
-            Writer = new BinaryWriter(Stream, Encoding.UTF8, leaveOpen: true);
-            Reader = new BinaryReader(Stream, Encoding.UTF8, leaveOpen: true);
-        }
-
-        public bool IsConnected => Client.Connected;
-
-        /// <summary>
-        /// Performs an active health check on the connection to detect half-open TCP connections.
-        /// </summary>
-        public bool IsHealthy()
-        {
-            if (!Client.Connected) return false;
-
-            try
-            {
-                // Check if the socket is still connected by polling
-                var socket = Client.Client;
-                if (socket == null) return false;
-
-                // Poll with a zero timeout to check if connection is still valid
-                // SelectRead returns true if: data available, connection closed, or error
-                // If no data and connection is good, Poll returns false
-                bool readable = socket.Poll(0, SelectMode.SelectRead);
-                bool hasData = socket.Available > 0;
-                
-                // If readable but no data, the connection was closed by the remote side
-                if (readable && !hasData)
-                {
-                    return false;
-                }
-
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        public void Dispose()
-        {
-            try { Lock.Dispose(); } catch { }
-            try { Writer.Dispose(); } catch { }
-            try { Reader.Dispose(); } catch { }
-            try { Client.Dispose(); } catch { }
-        }
-    }
-
-    /// <summary>
-    /// Manages a pool of TCP connections to a single peer for parallel transfers.
-    /// </summary>
-    private class ConnectionPool : IDisposable
-    {
-        private readonly List<PeerConnection> _connections = new();
-        private readonly SemaphoreSlim _poolLock = new(1, 1);
-        private readonly Peer _peer;
-        private readonly TransferService _owner;
-        private bool _disposed;
-
-        public string PeerKey { get; }
-        public int MaxConnections { get; set; } = ProtocolConstants.MAX_PARALLEL_CONNECTIONS;
-
-        public ConnectionPool(Peer peer, TransferService owner)
-        {
-            _peer = peer;
-            _owner = owner;
-            PeerKey = $"{peer.IpAddress}:{peer.Port}";
-        }
-
-        /// <summary>
-        /// Acquires an available connection from the pool, creating new ones if needed.
-        /// </summary>
-        public async Task<PeerConnection> AcquireAsync(CancellationToken ct)
-        {
-            await _poolLock.WaitAsync(ct);
-            try
-            {
-                // First, try to find an available healthy connection
-                foreach (var conn in _connections.ToList())
-                {
-                    if (!conn.IsHealthy())
-                    {
-                        conn.Dispose();
-                        _connections.Remove(conn);
-                        continue;
-                    }
-
-                    // Try to acquire the connection's lock without waiting
-                    if (await conn.Lock.WaitAsync(0, ct))
-                    {
-                        conn.LastActivity = DateTime.UtcNow;
-                        return conn;
-                    }
-                }
-
-                // No available connections - can we create a new one?
-                if (_connections.Count < MaxConnections)
-                {
-                    var newConn = await CreateNewConnectionAsync(ct);
-                    if (newConn != null)
-                    {
-                        _connections.Add(newConn);
-                        await newConn.Lock.WaitAsync(ct); // Acquire lock before returning
-                        return newConn;
-                    }
-                }
-
-                // All connections busy and at max capacity - wait for first available
-                // Release pool lock while waiting to allow other operations
-            }
-            finally
-            {
-                _poolLock.Release();
-            }
-
-            // Wait for any connection to become available
-            while (!ct.IsCancellationRequested)
-            {
-                await _poolLock.WaitAsync(ct);
-                try
-                {
-                    foreach (var conn in _connections)
-                    {
-                        if (conn.IsHealthy() && await conn.Lock.WaitAsync(0, ct))
-                        {
-                            conn.LastActivity = DateTime.UtcNow;
-                            return conn;
-                        }
-                    }
-                }
-                finally
-                {
-                    _poolLock.Release();
-                }
-
-                // Small delay before retrying
-                await Task.Delay(10, ct);
-            }
-
-            throw new OperationCanceledException(ct);
-        }
-
-        /// <summary>
-        /// Gets the primary connection (first in pool) for operations that need a consistent connection.
-        /// Creates one if pool is empty.
-        /// </summary>
-        public async Task<PeerConnection> GetPrimaryConnectionAsync(CancellationToken ct)
-        {
-            await _poolLock.WaitAsync(ct);
-            try
-            {
-                // Clean up unhealthy connections
-                for (int i = _connections.Count - 1; i >= 0; i--)
-                {
-                    if (!_connections[i].IsHealthy())
-                    {
-                        _connections[i].Dispose();
-                        _connections.RemoveAt(i);
-                    }
-                }
-
-                // Return first healthy connection or create new one
-                if (_connections.Count > 0)
-                {
-                    var conn = _connections[0];
-                    await conn.Lock.WaitAsync(ct);
-                    conn.LastActivity = DateTime.UtcNow;
-                    return conn;
-                }
-
-                // Create first connection
-                var newConn = await CreateNewConnectionAsync(ct);
-                if (newConn != null)
-                {
-                    _connections.Add(newConn);
-                    await newConn.Lock.WaitAsync(ct);
-                    return newConn;
-                }
-
-                throw new InvalidOperationException($"Failed to create connection to {PeerKey}");
-            }
-            finally
-            {
-                _poolLock.Release();
-            }
-        }
-
-        private async Task<PeerConnection?> CreateNewConnectionAsync(CancellationToken ct)
-        {
-            Exception? lastException = null;
-            for (int attempt = 1; attempt <= ProtocolConstants.MAX_RETRY_ATTEMPTS; attempt++)
-            {
-                try
-                {
-                    var client = new TcpClient();
-                    ConfigureTcpClient(client);
-
-                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    timeoutCts.CancelAfter(ProtocolConstants.CONNECTION_TIMEOUT_MS);
-
-                    await client.ConnectAsync(_peer.IpAddress, _peer.Port, timeoutCts.Token);
-
-                    var connection = new PeerConnection(client);
-
-                    // Perform secure handshake
-                    try
-                    {
-                        await _owner.PerformSecureHandshakeAsClient(connection, _peer, ct);
-                        Log.Debug($"Secure handshake completed for pool connection to {_peer.Name}");
-                    }
-                    catch (Exception handshakeEx)
-                    {
-                        Log.Warning(handshakeEx, $"Secure handshake failed for pool connection to {_peer.Name}: {handshakeEx.Message}");
-                    }
-
-                    // Measure RTT
-                    try
-                    {
-                        connection.RttMs = await _owner.MeasureRttAsync(connection, ct);
-                    }
-                    catch { }
-
-                    Log.Debug($"Created pool connection #{_connections.Count + 1} to {_peer.Name}");
-                    return connection;
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    lastException = ex;
-                    if (attempt < ProtocolConstants.MAX_RETRY_ATTEMPTS)
-                    {
-                        var delay = ProtocolConstants.RETRY_BASE_DELAY_MS * (int)Math.Pow(2, attempt - 1);
-                        await Task.Delay(delay, ct);
-                    }
-                }
-            }
-
-            Log.Warning(lastException, $"Failed to create pool connection to {_peer.Name}: {lastException?.Message}");
-            return null;
-        }
-
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _disposed = true;
-
-            foreach (var conn in _connections)
-            {
-                try { conn.Dispose(); } catch { }
-            }
-            _connections.Clear();
-            _poolLock.Dispose();
-        }
-    }
-
     private readonly ConcurrentDictionary<string, ConnectionPool> _connectionPools = new();
-
-
-    /// <summary>
-    /// Configures TCP socket options for better connection management.
-    /// </summary>
-    private static void ConfigureTcpClient(TcpClient client)
-    {
-        try
-        {
-            var socket = client.Client;
-            
-            // Enable TCP keepalive to detect half-open connections
-            socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
-            
-            // Set send/receive timeouts
-            client.SendTimeout = ProtocolConstants.CONNECTION_TIMEOUT_MS;
-            client.ReceiveTimeout = ProtocolConstants.CONNECTION_TIMEOUT_MS;
-            
-            // Disable Nagle's algorithm for lower latency
-            client.NoDelay = true;
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, $"Failed to configure TCP options: {ex.Message}");
-        }
-    }
 
     /// <summary>
     /// Measures round-trip time to a peer for adaptive buffer sizing.
     /// </summary>
-    private async Task<int> MeasureRttAsync(PeerConnection connection, CancellationToken ct)
+    private Task<int> MeasureRttAsync(PeerConnection connection, CancellationToken ct)
     {
         // Simple RTT measurement: time a small read/write operation
         // If the connection has a network stream, we can measure based on socket stats
         try
         {
             var socket = connection.Client.Client;
-            if (socket == null) return -1;
+            if (socket == null) return Task.FromResult(-1);
 
             // Use socket round-trip time if available (Windows only)
             // This gives us the actual TCP RTT without additional traffic
@@ -432,17 +85,17 @@ public class TransferService : ITransferService
                 if (ip.StartsWith("127.") || ip.StartsWith("192.168.") || ip.StartsWith("10.") || ip.StartsWith("172."))
                 {
                     // Likely LAN - assume fast
-                    return 2;
+                    return Task.FromResult(2);
                 }
             }
 
             // Default to medium speed assumption
-            return 25;
+            return Task.FromResult(25);
         }
         catch
         {
             // If we can't measure, assume medium speed
-            return 25;
+            return Task.FromResult(25);
         }
     }
 
@@ -452,7 +105,10 @@ public class TransferService : ITransferService
     private ConnectionPool GetOrCreateConnectionPool(Peer peer)
     {
         var key = $"{peer.IpAddress}:{peer.Port}";
-        return _connectionPools.GetOrAdd(key, _ => new ConnectionPool(peer, this));
+        return _connectionPools.GetOrAdd(key, _ => new ConnectionPool(
+            peer,
+            async (p, conn, ct) => await PerformSecureHandshakeAsClient(conn, p, ct),
+            MeasureRttAsync));
     }
 
     /// <summary>

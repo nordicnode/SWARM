@@ -54,6 +54,7 @@ public class SettingsViewModel : ViewModelBase
     // Selective Sync - Excluded Folders
     private ObservableCollection<string> _excludedFolders = new();
     private string? _selectedExcludedFolder;
+    private string? _excludedFolderError;
 
     public SettingsViewModel() {
         // Design-time
@@ -274,6 +275,12 @@ public class SettingsViewModel : ViewModelBase
         }
     }
 
+    public string? ExcludedFolderError
+    {
+        get => _excludedFolderError;
+        set => SetProperty(ref _excludedFolderError, value);
+    }
+
     #endregion
 
     #region Commands
@@ -383,8 +390,17 @@ public class SettingsViewModel : ViewModelBase
 
     private async void AddExcludedFolder()
     {
+        ExcludedFolderError = null; // Clear previous error
+        
         var topLevel = GetTopLevel();
         if (topLevel == null) return;
+
+        // Validate sync folder is set
+        if (string.IsNullOrEmpty(_settings.SyncFolderPath))
+        {
+            ExcludedFolderError = "Please set a sync folder first.";
+            return;
+        }
 
         var folders = await topLevel.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
@@ -395,17 +411,32 @@ public class SettingsViewModel : ViewModelBase
         if (folders.Count > 0)
         {
             var path = folders[0].Path.LocalPath;
-            // Store relative path from sync folder if possible
-            if (path.StartsWith(_settings.SyncFolderPath, StringComparison.OrdinalIgnoreCase))
+            
+            // Validate: folder must be inside sync folder
+            if (!path.StartsWith(_settings.SyncFolderPath, StringComparison.OrdinalIgnoreCase))
             {
-                var relativePath = path.Substring(_settings.SyncFolderPath.Length)
-                    .TrimStart(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
-                    
-                if (!string.IsNullOrEmpty(relativePath) && !ExcludedFolders.Contains(relativePath))
-                {
-                    ExcludedFolders.Add(relativePath);
-                }
+                ExcludedFolderError = "Folder must be inside the sync folder.";
+                return;
             }
+            
+            var relativePath = path.Substring(_settings.SyncFolderPath.Length)
+                .TrimStart(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+            
+            // Validate: not empty (can't exclude root)
+            if (string.IsNullOrEmpty(relativePath))
+            {
+                ExcludedFolderError = "Cannot exclude the root sync folder.";
+                return;
+            }
+            
+            // Validate: not already excluded
+            if (ExcludedFolders.Contains(relativePath))
+            {
+                ExcludedFolderError = "This folder is already excluded.";
+                return;
+            }
+            
+            ExcludedFolders.Add(relativePath);
         }
     }
 

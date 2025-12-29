@@ -1,0 +1,17 @@
+2025-12-28 20:03:02.522 -08:00 [INF] Swarm Avalonia application started.
+2025-12-28 20:03:03.518 -08:00 [INF] [ShareLink] Loaded 1 share links
+2025-12-28 20:03:03.544 -08:00 [INF] IPv6 discovery enabled
+2025-12-28 20:03:04.044 -08:00 [INF] Loaded 5 items from file state cache
+2025-12-28 20:03:04.046 -08:00 [INF] Built initial state. Cache hits: 5, Misses/Updates: 0. Total tracked: 5
+2025-12-28 20:03:04.050 -08:00 [WRN] Failed to save file state cache
+System.UnauthorizedAccessException: Access to the path 'C:\Users\Mikey\Documents\SWARM\Synced\.swarm-cache' is denied.
+   at Microsoft.Win32.SafeHandles.SafeFileHandle.CreateFile(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options)
+   at Microsoft.Win32.SafeHandles.SafeFileHandle.Open(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)
+   at System.IO.File.OpenHandle(String path, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize)
+   at System.IO.File.WriteToFile(String path, FileMode mode, ReadOnlySpan`1 contents, Encoding encoding)
+   at System.IO.File.WriteAllText(String path, String contents, Encoding encoding)
+   at Swarm.Core.Services.FileStateCacheService.SaveCache(IDictionary`2 fileStates) in C:\Users\Mikey\Desktop\Web Dev\swarm\Swarm.Core\Services\FileStateCacheService.cs:line 70
+2025-12-28 20:03:04.071 -08:00 [INF] FileWatcherService started, watching: C:\Users\Mikey\Documents\SWARM\Synced
+2025-12-28 20:03:04.072 -08:00 [INF] SyncService started, watching: C:\Users\Mikey\Documents\SWARM\Synced
+2025-12-28 20:04:38.813 -08:00 [INF] VersioningService initialized with 0 versions
+2025-12-28 20:05:38.005 -08:00 [INF] Swarm Avalonia application exiting.

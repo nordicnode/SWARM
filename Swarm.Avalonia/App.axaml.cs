@@ -93,13 +93,15 @@ public partial class App : Application
         services.AddSingleton<AvaloniaToastService>();
 
         // Services with dependencies
-        services.AddSingleton<IDiscoveryService>(sp => {
+        services.AddSingleton<DiscoveryService>(sp => {
             var settings = sp.GetRequiredService<Settings>();
             var crypto = sp.GetRequiredService<CryptoService>();
             var dispatcher = sp.GetRequiredService<Swarm.Core.Abstractions.IDispatcher>();
             return new DiscoveryService(settings.LocalId, crypto, settings, dispatcher);
         });
-        services.AddSingleton<ITransferService, TransferService>();
+        services.AddSingleton<IDiscoveryService>(sp => sp.GetRequiredService<DiscoveryService>());
+        services.AddSingleton<TransferService>();
+        services.AddSingleton<ITransferService>(sp => sp.GetRequiredService<TransferService>());
         services.AddSingleton<VersioningService>();
         services.AddSingleton<ActivityLogService>();
         services.AddSingleton<FileStateCacheService>();
@@ -111,6 +113,9 @@ public partial class App : Application
         services.AddSingleton<ConflictResolutionService>();
         services.AddSingleton<ShareLinkService>();
         services.AddSingleton<PairingService>();
+
+        // Facade
+        services.AddSingleton<CoreServiceFacade>();
 
         // ViewModels
         services.AddSingleton<MainViewModel>();
