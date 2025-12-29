@@ -51,7 +51,8 @@ public class SyncServiceTests : IDisposable
             _mockHashing.Object,
             fileStateRepository,
             folderEncryptionService,
-            NullLogger<SyncService>.Instance);
+            NullLogger<SyncService>.Instance,
+            null); // IToastService
     }
 
     [Fact]

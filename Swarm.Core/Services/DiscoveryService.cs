@@ -264,7 +264,7 @@ public class DiscoveryService : IDiscoveryService
                     {
                         var publicKey = Convert.FromBase64String(discoveryMessage.PublicKey);
                         var signature = Convert.FromBase64String(discoveryMessage.Signature);
-                        signatureValid = CryptoService.Verify(discoveryMessage.GetSignablePayload(), signature, publicKey);
+                        signatureValid = _cryptoService.Verify(discoveryMessage.GetSignablePayload(), signature, publicKey);
                         
                         if (!signatureValid)
                         {

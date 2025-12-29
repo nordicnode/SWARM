@@ -22,7 +22,7 @@ public class DiscoveryServiceTests : IDisposable
             DeviceName = "TestDevice"
         };
         
-        _cryptoService = new CryptoService();
+        _cryptoService = new CryptoService(NullLogger<CryptoService>.Instance);
         
         _service = new DiscoveryService("test-local-id", _cryptoService, _settings, NullLogger<DiscoveryService>.Instance, null);
     }
@@ -134,3 +134,4 @@ public class DiscoveryServiceTests : IDisposable
         _cryptoService.Dispose();
     }
 }
+

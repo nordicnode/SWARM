@@ -117,7 +117,21 @@ public partial class App : Application
         services.AddSingleton<IFileStateRepository, SqliteFileStateRepository>();
         
         // Complex Services
-        services.AddSingleton<SyncService>();
+        services.AddSingleton<SyncService>(sp => {
+            return new SyncService(
+                sp.GetRequiredService<Settings>(),
+                sp.GetRequiredService<IDiscoveryService>(),
+                sp.GetRequiredService<ITransferService>(),
+                sp.GetRequiredService<VersioningService>(),
+                sp.GetRequiredService<IHashingService>(),
+                sp.GetRequiredService<IFileStateRepository>(),
+                sp.GetRequiredService<FolderEncryptionService>(),
+                sp.GetRequiredService<ILogger<SyncService>>(),
+                sp.GetRequiredService<AvaloniaToastService>(),
+                sp.GetRequiredService<ActivityLogService>(),
+                sp.GetRequiredService<ConflictResolutionService>()
+            );
+        });
         services.AddSingleton<IntegrityService>();
         services.AddSingleton<RescanService>();
         services.AddSingleton<ConflictResolutionService>();

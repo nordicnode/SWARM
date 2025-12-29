@@ -1,6 +1,7 @@
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Logging;
 
 namespace Swarm.Core.Services;
 
@@ -11,7 +12,13 @@ namespace Swarm.Core.Services;
 public class CryptoService : IDisposable
 {
     private const string PortableMarkerFile = "portable.marker";
+    private readonly ILogger<CryptoService> _logger;
     
+    public CryptoService(ILogger<CryptoService> logger)
+    {
+        _logger = logger;
+    }
+
     /// <summary>
     /// Gets the keys directory, respecting portable mode.
     /// In portable mode, keys are stored next to the executable.
@@ -40,7 +47,7 @@ public class CryptoService : IDisposable
         }
         return AppContext.BaseDirectory;
     }
-
+    
     private static readonly string KeyDirectory = GetKeysDirectory();
     private static readonly string IdentityKeyPath = Path.Combine(KeyDirectory, "identity.key");
 
@@ -65,11 +72,11 @@ public class CryptoService : IDisposable
                     var keyData = File.ReadAllBytes(IdentityKeyPath);
                     _identityKey = ECDsa.Create();
                     _identityKey.ImportECPrivateKey(keyData, out _);
-                    System.Diagnostics.Debug.WriteLine("Loaded existing identity key");
+                    _logger.LogInformation("Loaded existing identity key");
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Failed to load identity key: {ex.Message}");
+                    _logger.LogError(ex, "Failed to load identity key: {Message}", ex.Message);
                     _identityKey = null;
                 }
             }
@@ -79,7 +86,7 @@ public class CryptoService : IDisposable
                 _identityKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
                 var keyData = _identityKey.ExportECPrivateKey();
                 File.WriteAllBytes(IdentityKeyPath, keyData);
-                System.Diagnostics.Debug.WriteLine("Generated new identity key");
+                _logger.LogInformation("Generated new identity key");
             }
 
             return _identityKey;
@@ -143,7 +150,7 @@ public class CryptoService : IDisposable
     /// <summary>
     /// Verifies a signature against the provided public key.
     /// </summary>
-    public static bool Verify(byte[] data, byte[] signature, byte[] publicKey)
+    public bool Verify(byte[] data, byte[] signature, byte[] publicKey)
     {
         try
         {
@@ -153,7 +160,7 @@ public class CryptoService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Signature verification failed: {ex.Message}");
+            _logger.LogWarning(ex, "Signature verification failed: {Message}", ex.Message);
             return false;
         }
     }
@@ -161,7 +168,7 @@ public class CryptoService : IDisposable
     /// <summary>
     /// Verifies a signature for a string message.
     /// </summary>
-    public static bool Verify(string message, byte[] signature, byte[] publicKey)
+    public bool Verify(string message, byte[] signature, byte[] publicKey)
     {
         return Verify(Encoding.UTF8.GetBytes(message), signature, publicKey);
     }

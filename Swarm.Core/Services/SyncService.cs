@@ -35,6 +35,7 @@ public class SyncService : IDisposable
     private readonly FolderEncryptionService _folderEncryptionService;
     private readonly FileWatcherService _fileWatcherService;
     private readonly ILogger<SyncService> _logger;
+    private readonly IToastService? _toastService;
     
     private CancellationTokenSource? _cts;
     
@@ -108,7 +109,7 @@ public class SyncService : IDisposable
     // Track pending delta sync operations (relativePath -> peer awaiting delta)
     private readonly ConcurrentDictionary<string, (Peer peer, SyncedFile syncFile)> _pendingDeltaSyncs = new();
 
-    public SyncService(Settings settings, IDiscoveryService discoveryService, ITransferService transferService, VersioningService versioningService, IHashingService hashingService, IFileStateRepository fileStateRepository, FolderEncryptionService folderEncryptionService, ILogger<SyncService> logger, ActivityLogService? activityLogService = null, ConflictResolutionService? conflictResolutionService = null)
+    public SyncService(Settings settings, IDiscoveryService discoveryService, ITransferService transferService, VersioningService versioningService, IHashingService hashingService, IFileStateRepository fileStateRepository, FolderEncryptionService folderEncryptionService, ILogger<SyncService> logger, IToastService? toastService = null, ActivityLogService? activityLogService = null, ConflictResolutionService? conflictResolutionService = null)
     {
         _settings = settings;
         _discoveryService = discoveryService;
@@ -118,6 +119,7 @@ public class SyncService : IDisposable
         _fileStateRepository = fileStateRepository;
         _folderEncryptionService = folderEncryptionService;
         _logger = logger;
+        _toastService = toastService;
         _activityLogService = activityLogService;
         _conflictResolutionService = conflictResolutionService;
         _swarmIgnoreService = new SwarmIgnoreService(settings);
@@ -615,6 +617,8 @@ public class SyncService : IDisposable
         if (_folderEncryptionService.GetEncryptedFolderFor(relativePath) != null && 
             !fullPath.EndsWith(".senc", StringComparison.OrdinalIgnoreCase))
         {
+            _logger.LogWarning("Security Block: Blocked plaintext file in encrypted folder: {Path}", relativePath);
+            _toastService?.ShowToast("Security Alert", $"Blocked plaintext file '{Path.GetFileName(relativePath)}' in encrypted folder.", ToastType.Warning);
             return; 
         }
         SyncedFile syncFile;

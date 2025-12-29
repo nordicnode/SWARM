@@ -89,8 +89,9 @@ public class SecureHandshakeHandler
             
             // Verify signature
             var signableData = Encoding.UTF8.GetBytes(peerId + Convert.ToBase64String(clientPublicKey));
-            if (!CryptoService.Verify(signableData, signature, clientIdentityKey))
+            if (!_cryptoService.Verify(signableData, signature, clientIdentityKey))
             {
+                _logger.LogWarning("Signature verification failed during handshake from {PeerId}", peerId);
                 writer.Write(ProtocolConstants.HANDSHAKE_FAILED_PREFIX + "INVALID_SIGNATURE");
                 return HandshakeResult.Failed("Invalid signature");
             }

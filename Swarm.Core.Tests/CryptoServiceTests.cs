@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using Swarm.Core.Services;
+using Xunit;
 
 namespace Swarm.Core.Tests;
 
@@ -10,7 +12,7 @@ public class CryptoServiceTests
     [Fact]
     public void GetPublicKey_ReturnsNonEmptyBytes()
     {
-        using var cryptoService = new CryptoService();
+        using var cryptoService = new CryptoService(NullLogger<CryptoService>.Instance);
 
         var publicKey = cryptoService.GetPublicKey();
         Assert.NotNull(publicKey);
@@ -21,7 +23,7 @@ public class CryptoServiceTests
     [Fact]
     public void GetPublicKeyFingerprint_ReturnsValidHex()
     {
-        using var crypto = new CryptoService();
+        using var crypto = new CryptoService(NullLogger<CryptoService>.Instance);
 
         var fingerprint = crypto.GetPublicKeyFingerprint();
 
@@ -35,7 +37,7 @@ public class CryptoServiceTests
     [Fact]
     public void GetShortFingerprint_ReturnsColonSeparatedFormat()
     {
-        using var crypto = new CryptoService();
+        using var crypto = new CryptoService(NullLogger<CryptoService>.Instance);
 
         var shortFingerprint = crypto.GetShortFingerprint();
 
@@ -46,12 +48,12 @@ public class CryptoServiceTests
     [Fact]
     public void Sign_AndVerify_RoundTrip()
     {
-        using var crypto = new CryptoService();
+        using var crypto = new CryptoService(NullLogger<CryptoService>.Instance);
 
         var message = "Hello, this is a test message!";
         var signature = crypto.Sign(message);
 
-        var isValid = CryptoService.Verify(message, signature, crypto.GetPublicKey());
+        var isValid = crypto.Verify(message, signature, crypto.GetPublicKey());
 
         Assert.True(isValid);
     }
@@ -59,12 +61,12 @@ public class CryptoServiceTests
     [Fact]
     public void Verify_WithTamperedMessage_ReturnsFalse()
     {
-        using var crypto = new CryptoService();
+        using var crypto = new CryptoService(NullLogger<CryptoService>.Instance);
 
         var message = "Original message";
         var signature = crypto.Sign(message);
 
-        var isValid = CryptoService.Verify("Tampered message", signature, crypto.GetPublicKey());
+        var isValid = crypto.Verify("Tampered message", signature, crypto.GetPublicKey());
 
         Assert.False(isValid);
     }
@@ -118,7 +120,7 @@ public class CryptoServiceTests
     [Fact]
     public void ComputeFingerprint_ReturnsSameForSameKey()
     {
-        using var crypto = new CryptoService();
+        using var crypto = new CryptoService(NullLogger<CryptoService>.Instance);
         var publicKey = crypto.GetPublicKey();
 
         var fp1 = CryptoService.ComputeFingerprint(publicKey);
@@ -130,7 +132,7 @@ public class CryptoServiceTests
     [Fact]
     public void ComputeShortFingerprint_ReturnsColonSeparatedHex()
     {
-        using var crypto = new CryptoService();
+        using var crypto = new CryptoService(NullLogger<CryptoService>.Instance);
         var publicKey = crypto.GetPublicKey();
 
         var shortFp = CryptoService.ComputeShortFingerprint(publicKey);
