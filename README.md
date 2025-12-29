@@ -1,10 +1,10 @@
-# Swarm
+# SWARM
 
-Swarm is a cross-platform, peer-to-peer file synchronization and transfer application designed for local area networks (LAN). It enables secure, high-performance file sharing and folder mirroring between devices without relying on external cloud servers or internet connectivity.
+SWARM is a cross-platform, peer-to-peer file synchronization and transfer application designed for local area networks (LAN). It enables secure, high-performance file sharing and folder mirroring between devices without relying on external cloud servers or internet connectivity.
 
 ## Overview
 
-Swarm automatically discovers other instances on your local network—even across VLANs or restrictive corporate environments—allowing you to:
+SWARM automatically discovers other instances on your local network—even across VLANs or restrictive corporate environments—allowing you to:
 
 *   **Sync Folders:** Keep a specific folder identical across multiple devices in real-time.
 *   **Direct Transfer:** Send individual files directly to peers with a simple drag-and-drop interface.
@@ -140,13 +140,13 @@ dotnet publish Swarm.Avalonia -c Release -r linux-x64 --self-contained
 ```
 
 > [!NOTE]
-> Swarm supports "Portable Mode". Create a `portable.marker` file next to the executable to save settings locally.
+> SWARM supports "Portable Mode". Create a `portable.marker` file next to the executable to save settings locally.
 
 ## Usage
 
 ### Syncing Files
 
-*   On first launch, Swarm creates a folder at `Documents/SWARM/Synced`.
+*   On first launch, SWARM creates a folder at `Documents/SWARM/Synced`.
 *   Files placed here are automatically encrypted, compressed, and synced to trusted peers.
 *   **Conflict Handling:** Configurable - uses "Last Write Wins" by default but archives conflicting copies to Version History.
 
