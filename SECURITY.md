@@ -214,4 +214,4 @@ This document and the full source code are available for review. We welcome secu
 
 ---
 
-*Last Updated: December 2024*
+*Last Updated: December 2025*
