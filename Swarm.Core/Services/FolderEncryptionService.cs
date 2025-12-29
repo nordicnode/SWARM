@@ -328,29 +328,36 @@ public class FolderEncryptionService : IDisposable
 
             // Read and verify header
             var magic = new byte[4];
-            inputStream.Read(magic);
+            inputStream.ReadExactly(magic);
             if (Encoding.ASCII.GetString(magic) != "SENC")
                 throw new InvalidDataException("Invalid encrypted file format");
 
             var versionBytes = new byte[2];
-            inputStream.Read(versionBytes);
+            inputStream.ReadExactly(versionBytes);
             // var version = BitConverter.ToUInt16(versionBytes);
 
             var chunkSizeBytes = new byte[2];
-            inputStream.Read(chunkSizeBytes);
+            inputStream.ReadExactly(chunkSizeBytes);
             // var chunkSizeKB = BitConverter.ToUInt16(chunkSizeBytes);
 
             // Read and decrypt chunks
             var lengthBuffer = new byte[4];
-            while (inputStream.Read(lengthBuffer) == 4)
+            int lengthRead;
+            while ((lengthRead = inputStream.Read(lengthBuffer, 0, 4)) == 4)
             {
                 var encryptedLength = BitConverter.ToInt32(lengthBuffer);
                 if (encryptedLength <= 0 || encryptedLength > ChunkSize + NonceSize + TagSize + 1024)
                     break;
 
                 var encryptedChunk = new byte[encryptedLength];
-                var read = inputStream.Read(encryptedChunk);
-                if (read != encryptedLength)
+                var totalChunkRead = 0;
+                while (totalChunkRead < encryptedLength)
+                {
+                    var read = inputStream.Read(encryptedChunk, totalChunkRead, encryptedLength - totalChunkRead);
+                    if (read == 0) break;
+                    totalChunkRead += read;
+                }
+                if (totalChunkRead != encryptedLength)
                     break;
 
                 var decrypted = DecryptChunk(encryptedChunk, folder.CachedKey);

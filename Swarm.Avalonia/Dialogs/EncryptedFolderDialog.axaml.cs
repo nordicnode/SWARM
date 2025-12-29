@@ -17,6 +17,14 @@ public partial class EncryptedFolderDialog : Window
     public bool Success { get; private set; }
 
     /// <summary>
+    /// Parameterless constructor for XAML loader.
+    /// </summary>
+    public EncryptedFolderDialog()
+    {
+        InitializeComponent();
+    }
+
+    /// <summary>
     /// Constructor for creating a new encrypted folder.
     /// </summary>
     public EncryptedFolderDialog(FolderEncryptionService encryptionService)
