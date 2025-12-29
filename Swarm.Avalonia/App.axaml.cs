@@ -15,6 +15,7 @@ using Swarm.Core.Services;
 using Swarm.Core.Abstractions;
 using Swarm.Avalonia.Services;
 using Swarm.Core.Models;
+using Swarm.Core.Security;
 
 namespace Swarm.Avalonia;
 
@@ -92,7 +93,29 @@ public partial class App : Application
 
         // Core Services
         services.AddSingleton<Settings>(sp => Settings.Load());
-        services.AddSingleton<CryptoService>();
+        
+        // Platform-specific secure key storage
+        var keysDirectory = CryptoService.GetKeysDirectory();
+        if (OperatingSystem.IsWindows())
+        {
+            services.AddSingleton<ISecureKeyStorage>(sp => 
+                new WindowsSecureKeyStorage(keysDirectory, sp.GetRequiredService<ILogger<WindowsSecureKeyStorage>>()));
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            services.AddSingleton<ISecureKeyStorage>(sp => 
+                new MacOSSecureKeyStorage(keysDirectory, sp.GetRequiredService<ILogger<MacOSSecureKeyStorage>>()));
+        }
+        else // Linux and others
+        {
+            services.AddSingleton<ISecureKeyStorage>(sp => 
+                new LinuxSecureKeyStorage(keysDirectory, sp.GetRequiredService<ILogger<LinuxSecureKeyStorage>>()));
+        }
+        
+        services.AddSingleton<CryptoService>(sp => 
+            new CryptoService(
+                sp.GetRequiredService<ILogger<CryptoService>>(),
+                sp.GetRequiredService<ISecureKeyStorage>()));
         services.AddSingleton<IHashingService, HashingService>();
         
         // Avalonia Services (must be registered before consumers like DiscoveryService)

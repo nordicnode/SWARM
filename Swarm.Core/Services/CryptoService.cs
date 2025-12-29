@@ -2,6 +2,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Swarm.Core.Security;
 
 namespace Swarm.Core.Services;
 
@@ -12,11 +13,15 @@ namespace Swarm.Core.Services;
 public class CryptoService : IDisposable
 {
     private const string PortableMarkerFile = "portable.marker";
-    private readonly ILogger<CryptoService> _logger;
+    private const string IdentityKeyName = "identity";
     
-    public CryptoService(ILogger<CryptoService> logger)
+    private readonly ILogger<CryptoService> _logger;
+    private readonly ISecureKeyStorage? _secureStorage;
+    
+    public CryptoService(ILogger<CryptoService> logger, ISecureKeyStorage? secureStorage = null)
     {
         _logger = logger;
+        _secureStorage = secureStorage;
     }
 
     /// <summary>
@@ -24,7 +29,7 @@ public class CryptoService : IDisposable
     /// In portable mode, keys are stored next to the executable.
     /// Otherwise, they're in AppData/Roaming/Swarm/keys.
     /// </summary>
-    private static string GetKeysDirectory()
+    public static string GetKeysDirectory()
     {
         var exeDir = GetExecutableDirectory();
         var isPortable = File.Exists(Path.Combine(exeDir, PortableMarkerFile));
@@ -49,13 +54,14 @@ public class CryptoService : IDisposable
     }
     
     private static readonly string KeyDirectory = GetKeysDirectory();
-    private static readonly string IdentityKeyPath = Path.Combine(KeyDirectory, "identity.key");
+    private static readonly string LegacyIdentityKeyPath = Path.Combine(KeyDirectory, "identity.key");
 
     private ECDsa? _identityKey;
     private readonly object _keyLock = new();
 
     /// <summary>
     /// Gets or creates the persistent ECDSA identity key for this device.
+    /// Uses platform-specific secure storage (DPAPI on Windows, Keychain on macOS).
     /// </summary>
     public ECDsa GetOrCreateIdentityKey()
     {
@@ -65,31 +71,113 @@ public class CryptoService : IDisposable
 
             Directory.CreateDirectory(KeyDirectory);
 
-            if (File.Exists(IdentityKeyPath))
+            // Try to load from secure storage first
+            if (_secureStorage != null)
             {
-                try
+                var keyData = _secureStorage.RetrieveKey(IdentityKeyName);
+                if (keyData != null)
                 {
-                    var keyData = File.ReadAllBytes(IdentityKeyPath);
-                    _identityKey = ECDsa.Create();
-                    _identityKey.ImportECPrivateKey(keyData, out _);
-                    _logger.LogInformation("Loaded existing identity key");
+                    try
+                    {
+                        _identityKey = ECDsa.Create();
+                        _identityKey.ImportECPrivateKey(keyData, out _);
+                        _logger.LogInformation("Loaded identity key from secure storage");
+                        
+                        // Check for and migrate legacy unprotected key
+                        MigrateLegacyKeyIfNeeded();
+                        
+                        return _identityKey;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to load identity key from secure storage");
+                        _identityKey = null;
+                    }
                 }
-                catch (Exception ex)
+                
+                // Check for legacy unprotected key to migrate
+                if (File.Exists(LegacyIdentityKeyPath))
                 {
-                    _logger.LogError(ex, "Failed to load identity key: {Message}", ex.Message);
-                    _identityKey = null;
+                    try
+                    {
+                        var legacyKeyData = File.ReadAllBytes(LegacyIdentityKeyPath);
+                        _identityKey = ECDsa.Create();
+                        _identityKey.ImportECPrivateKey(legacyKeyData, out _);
+                        
+                        // Migrate to secure storage
+                        _secureStorage.StoreKey(IdentityKeyName, legacyKeyData);
+                        
+                        // Remove legacy file after successful migration
+                        File.Delete(LegacyIdentityKeyPath);
+                        _logger.LogInformation("Migrated legacy identity key to secure storage");
+                        
+                        return _identityKey;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to migrate legacy identity key");
+                        _identityKey = null;
+                    }
+                }
+            }
+            else
+            {
+                // Fallback: no secure storage available, use legacy file-based storage
+                if (File.Exists(LegacyIdentityKeyPath))
+                {
+                    try
+                    {
+                        var keyData = File.ReadAllBytes(LegacyIdentityKeyPath);
+                        _identityKey = ECDsa.Create();
+                        _identityKey.ImportECPrivateKey(keyData, out _);
+                        _logger.LogWarning("Loaded identity key from unprotected file (no secure storage available)");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to load identity key: {Message}", ex.Message);
+                        _identityKey = null;
+                    }
                 }
             }
 
+            // Generate new key if none exists
             if (_identityKey == null)
             {
                 _identityKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
                 var keyData = _identityKey.ExportECPrivateKey();
-                File.WriteAllBytes(IdentityKeyPath, keyData);
-                _logger.LogInformation("Generated new identity key");
+                
+                if (_secureStorage != null)
+                {
+                    _secureStorage.StoreKey(IdentityKeyName, keyData);
+                    _logger.LogInformation("Generated new identity key (stored in secure storage)");
+                }
+                else
+                {
+                    File.WriteAllBytes(LegacyIdentityKeyPath, keyData);
+                    _logger.LogWarning("Generated new identity key (stored unprotected - no secure storage)");
+                }
             }
 
             return _identityKey;
+        }
+    }
+    
+    /// <summary>
+    /// Removes legacy unprotected key file if secure storage is in use.
+    /// </summary>
+    private void MigrateLegacyKeyIfNeeded()
+    {
+        if (File.Exists(LegacyIdentityKeyPath) && _secureStorage != null)
+        {
+            try
+            {
+                File.Delete(LegacyIdentityKeyPath);
+                _logger.LogInformation("Removed legacy unprotected key file after migration");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not remove legacy key file");
+            }
         }
     }
 

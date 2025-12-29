@@ -107,7 +107,7 @@
                                     BorderBrush="{StaticResource BorderLightBrush}"
                                     BorderThickness="1">
                                 <ListBox ItemsSource="{Binding ExcludedFolders}"
-                                         SelectedItem="{Binding SelectedExcludedFolder}"
+                                         SelectedItem="{Binding SelectedExcludedFolder, Mode=TwoWay}"
                                          Background="Transparent">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
@@ -265,7 +265,7 @@
                                     BorderBrush="{StaticResource BorderLightBrush}"
                                     BorderThickness="1">
                                 <ListBox ItemsSource="{Binding TrustedPeers}"
-                                         SelectedItem="{Binding SelectedPeer}"
+                                         SelectedItem="{Binding SelectedPeer, Mode=TwoWay}"
                                          Background="Transparent">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>

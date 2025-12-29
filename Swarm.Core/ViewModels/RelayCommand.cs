@@ -16,11 +16,19 @@ public class RelayCommand : ICommand
     {
         _execute = execute ?? throw new ArgumentNullException(nameof(execute));
         _canExecute = canExecute;
+        
+        // Subscribe to global CanExecuteChanged to relay to this instance
+        GlobalCanExecuteChanged += OnGlobalCanExecuteChanged;
     }
 
     public RelayCommand(Action execute, Func<bool>? canExecute = null)
         : this(_ => execute(), canExecute != null ? _ => canExecute() : null)
     {
+    }
+
+    private void OnGlobalCanExecuteChanged(object? sender, EventArgs e)
+    {
+        CanExecuteChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public bool CanExecute(object? parameter) => _canExecute?.Invoke(parameter) ?? true;
