@@ -3,6 +3,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Makaretu.Dns;
+using Serilog;
 using Swarm.Core.Models;
 
 namespace Swarm.Core.Services;
@@ -15,6 +16,7 @@ public class MdnsDiscoveryService : IDisposable
 {
     private const string ServiceType = "_swarm._tcp";
     private const string ServiceDomain = "local";
+    private const string InstancePrefix = "swarm-";
     
     private readonly string _localId;
     private readonly CryptoService _cryptoService;
@@ -52,7 +54,7 @@ public class MdnsDiscoveryService : IDisposable
             
             // Create our service profile
             _localProfile = new ServiceProfile(
-                instanceName: $"swarm-{_localId}",
+                instanceName: $"{InstancePrefix}{_localId}",
                 serviceName: ServiceType,
                 port: (ushort)transferPort
             );
@@ -85,11 +87,11 @@ public class MdnsDiscoveryService : IDisposable
             
             _mdns.Start();
             
-            System.Diagnostics.Debug.WriteLine($"mDNS discovery started for {_localId}");
+            Log.Debug("mDNS discovery started for {LocalId}", _localId);
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to start mDNS discovery: {ex.Message}");
+            Log.Warning(ex, "Failed to start mDNS discovery");
             // mDNS is optional, don't crash if it fails
         }
     }
@@ -104,7 +106,7 @@ public class MdnsDiscoveryService : IDisposable
             _serviceDiscovery.Unadvertise(_localProfile);
             
             _localProfile = new ServiceProfile(
-                instanceName: $"swarm-{_localId}",
+                instanceName: $"{InstancePrefix}{_localId}",
                 serviceName: ServiceType,
                 port: (ushort)_transferPort
             );
@@ -120,7 +122,7 @@ public class MdnsDiscoveryService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to update mDNS advertisement: {ex.Message}");
+            Log.Warning(ex, "Failed to update mDNS advertisement");
         }
     }
     
@@ -129,7 +131,7 @@ public class MdnsDiscoveryService : IDisposable
         try
         {
             var instanceName = e.ServiceInstanceName.Labels.FirstOrDefault();
-            if (string.IsNullOrEmpty(instanceName) || !instanceName.StartsWith("swarm-"))
+            if (string.IsNullOrEmpty(instanceName) || !instanceName.StartsWith(InstancePrefix))
                 return;
             
             // Query for more details
@@ -145,7 +147,7 @@ public class MdnsDiscoveryService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"mDNS discovery error: {ex.Message}");
+            Log.Warning(ex, "mDNS discovery error");
         }
     }
     
@@ -235,7 +237,7 @@ public class MdnsDiscoveryService : IDisposable
             
             if (_discoveredPeers.TryAdd(peerId, peer))
             {
-                System.Diagnostics.Debug.WriteLine($"mDNS discovered peer: {peerName} ({ipAddress})");
+                Log.Debug("mDNS discovered peer: {PeerName} ({IpAddress})", peerName, ipAddress);
                 PeerDiscovered?.Invoke(peer);
             }
             else if (_discoveredPeers.TryGetValue(peerId, out var existing))
@@ -249,7 +251,7 @@ public class MdnsDiscoveryService : IDisposable
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Error processing mDNS answers: {ex.Message}");
+            Log.Warning(ex, "Error processing mDNS answers");
         }
     }
     
@@ -258,20 +260,20 @@ public class MdnsDiscoveryService : IDisposable
         try
         {
             var instanceName = e.ServiceInstanceName.Labels.FirstOrDefault();
-            if (string.IsNullOrEmpty(instanceName) || !instanceName.StartsWith("swarm-"))
+            if (string.IsNullOrEmpty(instanceName) || !instanceName.StartsWith(InstancePrefix))
                 return;
                 
-            var peerId = instanceName.Replace("swarm-", "");
+            var peerId = instanceName.Replace(InstancePrefix, "");
             
             if (_discoveredPeers.TryRemove(peerId, out var peer))
             {
-                System.Diagnostics.Debug.WriteLine($"mDNS peer left: {peer.Name}");
+                Log.Debug("mDNS peer left: {PeerName}", peer.Name);
                 PeerLost?.Invoke(peer);
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"mDNS shutdown handler error: {ex.Message}");
+            Log.Warning(ex, "mDNS shutdown handler error");
         }
     }
     
@@ -295,7 +297,7 @@ public class MdnsDiscoveryService : IDisposable
         _mdns?.Dispose();
         _cts?.Dispose();
         
-        System.Diagnostics.Debug.WriteLine("mDNS discovery stopped");
+        Log.Debug("mDNS discovery stopped");
     }
 }
 

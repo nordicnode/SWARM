@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -176,18 +177,13 @@ public class DiscoveryService : IDiscoveryService
         var broadcastEndpoint = new IPEndPoint(IPAddress.Broadcast, DISCOVERY_PORT);
         await _udpClient.SendAsync(data, data.Length, broadcastEndpoint);
 
-        // Also send to common subnet broadcasts
-        foreach (var ip in GetLocalIpAddresses())
+        // Also send to subnet-specific broadcast addresses using actual subnet masks
+        foreach (var broadcastAddress in GetSubnetBroadcastAddresses())
         {
             try
             {
-                var parts = ip.Split('.');
-                if (parts.Length == 4)
-                {
-                    var subnetBroadcast = $"{parts[0]}.{parts[1]}.{parts[2]}.255";
-                    var endpoint = new IPEndPoint(IPAddress.Parse(subnetBroadcast), DISCOVERY_PORT);
-                    await _udpClient.SendAsync(data, data.Length, endpoint);
-                }
+                var endpoint = new IPEndPoint(broadcastAddress, DISCOVERY_PORT);
+                await _udpClient.SendAsync(data, data.Length, endpoint);
             }
             catch { /* ignore individual failures */ }
         }
@@ -369,6 +365,62 @@ public class DiscoveryService : IDiscoveryService
         {
             action();
         }
+    }
+
+    /// <summary>
+    /// Gets broadcast addresses for all active network interfaces using their actual subnet masks.
+    /// This correctly handles networks of any size (e.g., /8, /16, /23, /24).
+    /// </summary>
+    private IEnumerable<IPAddress> GetSubnetBroadcastAddresses()
+    {
+        var addresses = new List<IPAddress>();
+
+        try
+        {
+            foreach (var networkInterface in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                // Only use active, non-loopback interfaces
+                if (networkInterface.OperationalStatus != OperationalStatus.Up ||
+                    networkInterface.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                    continue;
+
+                var properties = networkInterface.GetIPProperties();
+                foreach (var unicast in properties.UnicastAddresses)
+                {
+                    // Only process IPv4 addresses
+                    if (unicast.Address.AddressFamily != AddressFamily.InterNetwork)
+                        continue;
+
+                    var ipBytes = unicast.Address.GetAddressBytes();
+                    var maskBytes = unicast.IPv4Mask?.GetAddressBytes();
+
+                    if (maskBytes == null || maskBytes.Length != 4)
+                        continue;
+
+                    // Calculate broadcast: IP | (~Mask)
+                    var broadcastBytes = new byte[4];
+                    for (int i = 0; i < 4; i++)
+                    {
+                        broadcastBytes[i] = (byte)(ipBytes[i] | ~maskBytes[i]);
+                    }
+
+                    var broadcastAddress = new IPAddress(broadcastBytes);
+                    
+                    // Don't add duplicates or the global broadcast
+                    if (!addresses.Contains(broadcastAddress) && 
+                        !broadcastAddress.Equals(IPAddress.Broadcast))
+                    {
+                        addresses.Add(broadcastAddress);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to enumerate network interfaces for broadcast");
+        }
+
+        return addresses;
     }
 
     private async Task CleanupLoop(CancellationToken ct)
