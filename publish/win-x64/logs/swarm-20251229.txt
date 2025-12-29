@@ -1,17 +1,17 @@
-2025-12-29 08:03:12.636 -08:00 [INF] Swarm Avalonia application started.
-2025-12-29 08:03:13.000 -08:00 [INF] [ShareLink] Loaded 1 share links
-2025-12-29 08:03:13.001 -08:00 [INF] BandwidthTrackingService initialized
-2025-12-29 08:03:13.029 -08:00 [INF] IPv6 discovery enabled
-2025-12-29 08:03:13.191 -08:00 [WRN] Failed to start mDNS discovery
+2025-12-29 08:13:23.045 -08:00 [INF] Swarm Avalonia application started.
+2025-12-29 08:13:23.407 -08:00 [INF] [ShareLink] Loaded 1 share links
+2025-12-29 08:13:23.408 -08:00 [INF] BandwidthTrackingService initialized
+2025-12-29 08:13:23.436 -08:00 [INF] IPv6 discovery enabled
+2025-12-29 08:13:23.594 -08:00 [WRN] Failed to start mDNS discovery
 System.ArgumentOutOfRangeException: Specified argument was out of the range of valid values. (Parameter 'Exceeds max packet size of 0.')
    at Makaretu.Dns.MulticastService.Send(Message msg, Boolean checkDuplicate, IPEndPoint remoteEndPoint)
    at Makaretu.Dns.MulticastService.SendQuery(Message msg)
    at Makaretu.Dns.MulticastService.SendQuery(DomainName name, DnsClass klass, DnsType type)
    at Makaretu.Dns.ServiceDiscovery.QueryServiceInstances(DomainName service)
    at Swarm.Core.Services.MdnsDiscoveryService.Start(Int32 transferPort) in C:\Users\Mikey\Desktop\Web Dev\swarm\Swarm.Core\Services\MdnsDiscoveryService.cs:line 86
-2025-12-29 08:03:13.217 -08:00 [INF] Loaded 5 items from file state cache
-2025-12-29 08:03:13.218 -08:00 [INF] Built initial state. Cache hits: 2, Misses/Updates: 0. Total tracked: 2
-2025-12-29 08:03:13.228 -08:00 [WRN] Failed to save file state cache
+2025-12-29 08:13:23.611 -08:00 [INF] Loaded 5 items from file state cache
+2025-12-29 08:13:23.612 -08:00 [INF] Built initial state. Cache hits: 2, Misses/Updates: 0. Total tracked: 2
+2025-12-29 08:13:23.616 -08:00 [WRN] Failed to save file state cache
 System.UnauthorizedAccessException: Access to the path 'C:\Users\Mikey\Documents\SWARM\Synced\.swarm-cache' is denied.
    at Microsoft.Win32.SafeHandles.SafeFileHandle.CreateFile(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options)
    at Microsoft.Win32.SafeHandles.SafeFileHandle.Open(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)
@@ -19,6 +19,6 @@ System.UnauthorizedAccessException: Access to the path 'C:\Users\Mikey\Documents
    at System.IO.File.WriteToFile(String path, FileMode mode, ReadOnlySpan`1 contents, Encoding encoding)
    at System.IO.File.WriteAllText(String path, String contents, Encoding encoding)
    at Swarm.Core.Services.FileStateCacheService.SaveCache(IDictionary`2 fileStates) in C:\Users\Mikey\Desktop\Web Dev\swarm\Swarm.Core\Services\FileStateCacheService.cs:line 70
-2025-12-29 08:03:13.229 -08:00 [INF] FileWatcherService started, watching: C:\Users\Mikey\Documents\SWARM\Synced
-2025-12-29 08:03:13.230 -08:00 [INF] SyncService started, watching: C:\Users\Mikey\Documents\SWARM\Synced
-2025-12-29 08:03:23.046 -08:00 [INF] Swarm Avalonia application exiting.
+2025-12-29 08:13:23.618 -08:00 [INF] FileWatcherService started, watching: C:\Users\Mikey\Documents\SWARM\Synced
+2025-12-29 08:13:23.618 -08:00 [INF] SyncService started, watching: C:\Users\Mikey\Documents\SWARM\Synced
+2025-12-29 08:13:45.677 -08:00 [INF] Swarm Avalonia application exiting.

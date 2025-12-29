@@ -187,13 +187,19 @@ public class Settings
     public bool CloseToTray { get; set; } = true;
 
     /// <summary>
+    /// Sync schedule configuration for time-based sync windows.
+    /// </summary>
+    public Models.SyncSchedule SyncSchedule { get; set; } = new();
+
+    /// <summary>
     /// Returns true if sync is currently in a paused state (either manual or auto).
     /// </summary>
     [JsonIgnore]
     public bool IsSyncCurrentlyPaused => 
         (SyncPausedUntil.HasValue && SyncPausedUntil.Value > DateTime.Now) ||
         (PauseOnBattery && IsOnBattery()) ||
-        (PauseOnMeteredNetwork && IsOnMeteredConnection());
+        (PauseOnMeteredNetwork && IsOnMeteredConnection()) ||
+        (SyncSchedule.IsEnabled && !SyncSchedule.IsSyncAllowedNow);
 
     /// <summary>
     /// Gets the remaining pause time as a human-readable string.
@@ -359,7 +365,19 @@ public class Settings
             SyncPausedUntil = SyncPausedUntil,
             PauseOnBattery = PauseOnBattery,
             PauseOnMeteredNetwork = PauseOnMeteredNetwork,
-            CloseToTray = CloseToTray
+            CloseToTray = CloseToTray,
+            SyncSchedule = new Models.SyncSchedule
+            {
+                IsEnabled = SyncSchedule.IsEnabled,
+                Mode = SyncSchedule.Mode,
+                TimeWindows = SyncSchedule.TimeWindows.Select(w => new Models.SyncTimeWindow
+                {
+                    Name = w.Name,
+                    StartTime = w.StartTime,
+                    EndTime = w.EndTime,
+                    Days = new List<DayOfWeek>(w.Days)
+                }).ToList()
+            }
         };
 
         foreach (var peer in TrustedPeers)
@@ -406,6 +424,20 @@ public class Settings
         PauseOnBattery = source.PauseOnBattery;
         PauseOnMeteredNetwork = source.PauseOnMeteredNetwork;
         CloseToTray = source.CloseToTray;
+        
+        SyncSchedule.IsEnabled = source.SyncSchedule.IsEnabled;
+        SyncSchedule.Mode = source.SyncSchedule.Mode;
+        SyncSchedule.TimeWindows.Clear();
+        foreach (var window in source.SyncSchedule.TimeWindows)
+        {
+            SyncSchedule.TimeWindows.Add(new Models.SyncTimeWindow
+            {
+                Name = window.Name,
+                StartTime = window.StartTime,
+                EndTime = window.EndTime,
+                Days = new List<DayOfWeek>(window.Days)
+            });
+        }
         
         TrustedPeers.Clear();
         foreach (var peer in source.TrustedPeers)

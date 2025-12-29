@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Windows.Input;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
@@ -35,6 +37,11 @@ public class SettingsViewModel : ViewModelBase
     private bool _syncEnabled = true;
     private string _syncFolderPath = "";
     private bool _pauseOnBattery;
+    
+    // Schedule
+    private bool _scheduleEnabled;
+    private int _scheduleModeIndex; // 0 = AllowDuring, 1 = BlockDuring
+    private ObservableCollection<SyncTimeWindowViewModel> _scheduleWindows = new();
 
     // Transfers
     private string _downloadPath = "";
@@ -106,6 +113,12 @@ public class SettingsViewModel : ViewModelBase
         SyncFolderPath = _settings.SyncFolderPath;
         PauseOnBattery = _settings.PauseOnBattery;
 
+        // Schedule
+        ScheduleEnabled = _settings.SyncSchedule.IsEnabled;
+        ScheduleModeIndex = _settings.SyncSchedule.Mode == ScheduleMode.BlockDuring ? 1 : 0;
+        ScheduleWindows = new ObservableCollection<SyncTimeWindowViewModel>(
+            _settings.SyncSchedule.TimeWindows.Select(w => new SyncTimeWindowViewModel(w)));
+
         // Transfers
         DownloadPath = _settings.DownloadPath;
         AutoAcceptFromTrusted = _settings.AutoAcceptFromTrusted;
@@ -176,6 +189,62 @@ public class SettingsViewModel : ViewModelBase
     {
         get => _pauseOnBattery;
         set => SetProperty(ref _pauseOnBattery, value);
+    }
+
+    public bool ScheduleEnabled
+    {
+        get => _scheduleEnabled;
+        set => SetProperty(ref _scheduleEnabled, value);
+    }
+
+    public int ScheduleModeIndex
+    {
+        get => _scheduleModeIndex;
+        set => SetProperty(ref _scheduleModeIndex, value);
+    }
+
+    public string[] ScheduleModeOptions => new[] { "Sync only during windows", "Block sync during windows" };
+
+    public ObservableCollection<SyncTimeWindowViewModel> ScheduleWindows
+    {
+        get => _scheduleWindows;
+        set => SetProperty(ref _scheduleWindows, value);
+    }
+
+    public string ScheduleStatusDisplay => _settings.SyncSchedule.StatusDisplay;
+    
+    public void AddScheduleWindow()
+    {
+        ScheduleWindows.Add(new SyncTimeWindowViewModel(new SyncTimeWindow
+        {
+            Name = $"Window {ScheduleWindows.Count + 1}",
+            StartTime = new TimeSpan(9, 0, 0),
+            EndTime = new TimeSpan(17, 0, 0),
+            Days = new List<DayOfWeek> { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday }
+        }));
+        HasUnsavedChanges = true;
+    }
+
+    public void RemoveScheduleWindow(SyncTimeWindowViewModel window)
+    {
+        ScheduleWindows.Remove(window);
+        HasUnsavedChanges = true;
+    }
+
+    public void ApplyPreset(string preset)
+    {
+        SyncSchedule schedule = preset switch
+        {
+            "business" => SyncSchedule.CreateBusinessHours(),
+            "nights" => SyncSchedule.CreateNightsOnly(),
+            _ => new SyncSchedule()
+        };
+        
+        ScheduleEnabled = schedule.IsEnabled;
+        ScheduleModeIndex = schedule.Mode == ScheduleMode.BlockDuring ? 1 : 0;
+        ScheduleWindows = new ObservableCollection<SyncTimeWindowViewModel>(
+            schedule.TimeWindows.Select(w => new SyncTimeWindowViewModel(w)));
+        HasUnsavedChanges = true;
     }
 
     #endregion
@@ -369,6 +438,15 @@ public class SettingsViewModel : ViewModelBase
         }
         _settings.PauseOnBattery = PauseOnBattery;
 
+        // Schedule
+        _settings.SyncSchedule.IsEnabled = ScheduleEnabled;
+        _settings.SyncSchedule.Mode = ScheduleModeIndex == 1 ? ScheduleMode.BlockDuring : ScheduleMode.AllowDuring;
+        _settings.SyncSchedule.TimeWindows.Clear();
+        foreach (var windowVm in ScheduleWindows)
+        {
+            _settings.SyncSchedule.TimeWindows.Add(windowVm.ToModel());
+        }
+
         // Transfers
         _settings.DownloadPath = DownloadPath;
         _settings.AutoAcceptFromTrusted = AutoAcceptFromTrusted;
@@ -482,4 +560,105 @@ public class SettingsViewModel : ViewModelBase
     }
 
     #endregion
+}
+
+/// <summary>
+/// ViewModel for editing a sync time window.
+/// </summary>
+public class SyncTimeWindowViewModel : ViewModelBase
+{
+    private string _name = "";
+    private TimeSpan _startTime = new(9, 0, 0);
+    private TimeSpan _endTime = new(17, 0, 0);
+    private bool _monday = true;
+    private bool _tuesday = true;
+    private bool _wednesday = true;
+    private bool _thursday = true;
+    private bool _friday = true;
+    private bool _saturday;
+    private bool _sunday;
+
+    public SyncTimeWindowViewModel(SyncTimeWindow model)
+    {
+        Name = model.Name;
+        StartTime = model.StartTime;
+        EndTime = model.EndTime;
+        Monday = model.Days.Contains(DayOfWeek.Monday);
+        Tuesday = model.Days.Contains(DayOfWeek.Tuesday);
+        Wednesday = model.Days.Contains(DayOfWeek.Wednesday);
+        Thursday = model.Days.Contains(DayOfWeek.Thursday);
+        Friday = model.Days.Contains(DayOfWeek.Friday);
+        Saturday = model.Days.Contains(DayOfWeek.Saturday);
+        Sunday = model.Days.Contains(DayOfWeek.Sunday);
+    }
+
+    public string Name
+    {
+        get => _name;
+        set => SetProperty(ref _name, value);
+    }
+
+    public TimeSpan StartTime
+    {
+        get => _startTime;
+        set => SetProperty(ref _startTime, value);
+    }
+
+    public TimeSpan EndTime
+    {
+        get => _endTime;
+        set => SetProperty(ref _endTime, value);
+    }
+
+    // Individual day toggles for easy binding
+    public bool Monday { get => _monday; set => SetProperty(ref _monday, value); }
+    public bool Tuesday { get => _tuesday; set => SetProperty(ref _tuesday, value); }
+    public bool Wednesday { get => _wednesday; set => SetProperty(ref _wednesday, value); }
+    public bool Thursday { get => _thursday; set => SetProperty(ref _thursday, value); }
+    public bool Friday { get => _friday; set => SetProperty(ref _friday, value); }
+    public bool Saturday { get => _saturday; set => SetProperty(ref _saturday, value); }
+    public bool Sunday { get => _sunday; set => SetProperty(ref _sunday, value); }
+
+    public string TimeDisplay => $"{StartTime:hh\\:mm} - {EndTime:hh\\:mm}";
+    
+    public string DaysDisplay
+    {
+        get
+        {
+            var days = new List<string>();
+            if (Monday) days.Add("Mon");
+            if (Tuesday) days.Add("Tue");
+            if (Wednesday) days.Add("Wed");
+            if (Thursday) days.Add("Thu");
+            if (Friday) days.Add("Fri");
+            if (Saturday) days.Add("Sat");
+            if (Sunday) days.Add("Sun");
+            
+            if (days.Count == 7) return "Every day";
+            if (days.Count == 5 && !Saturday && !Sunday) return "Weekdays";
+            if (days.Count == 2 && Saturday && Sunday) return "Weekends";
+            
+            return string.Join(", ", days);
+        }
+    }
+
+    public SyncTimeWindow ToModel()
+    {
+        var days = new List<DayOfWeek>();
+        if (Monday) days.Add(DayOfWeek.Monday);
+        if (Tuesday) days.Add(DayOfWeek.Tuesday);
+        if (Wednesday) days.Add(DayOfWeek.Wednesday);
+        if (Thursday) days.Add(DayOfWeek.Thursday);
+        if (Friday) days.Add(DayOfWeek.Friday);
+        if (Saturday) days.Add(DayOfWeek.Saturday);
+        if (Sunday) days.Add(DayOfWeek.Sunday);
+
+        return new SyncTimeWindow
+        {
+            Name = Name,
+            StartTime = StartTime,
+            EndTime = EndTime,
+            Days = days
+        };
+    }
 }
