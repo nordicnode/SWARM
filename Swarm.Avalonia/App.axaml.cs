@@ -105,7 +105,7 @@ public partial class App : Application
         services.AddSingleton<ITransferService>(sp => sp.GetRequiredService<TransferService>());
         services.AddSingleton<VersioningService>();
         services.AddSingleton<ActivityLogService>();
-        services.AddSingleton<IFileStateRepository, FileStateRepository>();
+        services.AddSingleton<IFileStateRepository, SqliteFileStateRepository>();
         
         // Complex Services
         services.AddSingleton<SyncService>();
