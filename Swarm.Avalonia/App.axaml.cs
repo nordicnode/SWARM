@@ -136,7 +136,14 @@ public partial class App : Application
             return new DiscoveryService(settings.LocalId, crypto, settings, logger, dispatcher);
         });
         services.AddSingleton<IDiscoveryService>(sp => sp.GetRequiredService<DiscoveryService>());
-        services.AddSingleton<TransferService>();
+        services.AddSingleton<TransferCheckpointService>();
+        services.AddSingleton<TransferService>(sp => new TransferService(
+            sp.GetRequiredService<Settings>(),
+            sp.GetRequiredService<CryptoService>(),
+            sp.GetRequiredService<ILogger<TransferService>>(),
+            sp.GetRequiredService<TransferCheckpointService>(),
+            sp.GetRequiredService<Swarm.Core.Abstractions.IDispatcher>()
+        ));
         services.AddSingleton<ITransferService>(sp => sp.GetRequiredService<TransferService>());
         services.AddSingleton<VersioningService>();
         services.AddSingleton<ActivityLogService>();

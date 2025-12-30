@@ -269,6 +269,21 @@ public static class ProtocolConstants
     /// </summary>
     public const byte MSG_FILE_CHANGED_COMPRESSED = 0x20;
 
+    /// <summary>
+    /// Message type: Request to resume transfer at specific offset.
+    /// </summary>
+    public const byte MSG_RESUME_REQUEST = 0x21;
+
+    /// <summary>
+    /// Message type: Resume request accepted, start from offset.
+    /// </summary>
+    public const byte MSG_RESUME_ACCEPTED = 0x22;
+
+    /// <summary>
+    /// Message type: Resume not possible, restart from beginning.
+    /// </summary>
+    public const byte MSG_RESUME_RESTART = 0x23;
+
 
     // --- Parallel Transfers ---
 

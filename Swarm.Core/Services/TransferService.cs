@@ -32,6 +32,7 @@ public class TransferService : ITransferService
     private readonly SemaphoreSlim _connectionLimiter = new(MAX_CONCURRENT_CONNECTIONS, MAX_CONCURRENT_CONNECTIONS);
     private readonly ConnectionManager _connectionManager;
     private readonly SecureHandshakeHandler _handshakeHandler;
+    private readonly TransferCheckpointService? _checkpointService;
     private readonly ILogger<TransferService> _logger;
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
@@ -40,11 +41,12 @@ public class TransferService : ITransferService
     public int ListenPort { get; private set; }
     public ObservableCollection<FileTransfer> Transfers { get; } = [];
     
-    public TransferService(Settings settings, CryptoService cryptoService, ILogger<TransferService> logger, Abstractions.IDispatcher? dispatcher = null)
+    public TransferService(Settings settings, CryptoService cryptoService, ILogger<TransferService> logger, TransferCheckpointService? checkpointService = null, Abstractions.IDispatcher? dispatcher = null)
     {
         _settings = settings;
         _cryptoService = cryptoService;
         _logger = logger;
+        _checkpointService = checkpointService;
         _dispatcher = dispatcher;
         _downloadPath = _settings.DownloadPath;
         
@@ -55,6 +57,10 @@ public class TransferService : ITransferService
         // Wire up handshake callback for connection pool
         _connectionManager.HandshakeHandler = async (conn, peer, ct) =>
             await _handshakeHandler.PerformHandshakeAsClient(conn, peer, ct);
+        
+        // Cleanup stale checkpoints on startup
+        _checkpointService?.CleanupStaleCheckpoints(TimeSpan.FromDays(7));
+        _checkpointService?.CleanupCompletedCheckpoints();
     }
     
     private void InvokeOnUI(Action action)
@@ -468,17 +474,28 @@ public class TransferService : ITransferService
         
         if (compressedSize > STREAMING_THRESHOLD)
         {
-            // Large file: stream to temp file to avoid memory pressure
-            var tempPath = Path.GetTempFileName();
+            // Large file: stream to temp file to avoid memory pressure, with checkpoint tracking
+            var tempPath = Path.Combine(Path.GetTempPath(), $"swarm_transfer_{Guid.NewGuid():N}.tmp");
+            Guid? checkpointId = null;
+            
             try
             {
-                // Stream compressed data to temp file
+                // Create checkpoint for resume support
+                if (_checkpointService != null)
+                {
+                    checkpointId = _checkpointService.CreateCheckpoint(
+                        relativePath, remotePeer.Id, isIncoming: true, 
+                        compressedSize, contentHash, tempPath);
+                }
+
+                // Stream compressed data to temp file with progress tracking
                 await using (var tempFile = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, BUFFER_SIZE, useAsync: true))
                 {
                     var buffer = ArrayPool<byte>.Shared.Rent(BUFFER_SIZE);
                     try
                     {
                         var remaining = compressedSize;
+                        var totalReceived = 0L;
                         while (remaining > 0)
                         {
                             var toRead = (int)Math.Min(BUFFER_SIZE, remaining);
@@ -486,6 +503,13 @@ public class TransferService : ITransferService
                             if (bytesRead == 0) throw new EndOfStreamException("Unexpected end of stream while receiving compressed data");
                             await tempFile.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
                             remaining -= bytesRead;
+                            totalReceived += bytesRead;
+                            
+                            // Update checkpoint progress (every 1MB)
+                            if (checkpointId.HasValue)
+                            {
+                                _checkpointService?.UpdateProgress(checkpointId.Value, totalReceived);
+                            }
                         }
                     }
                     finally
@@ -499,16 +523,27 @@ public class TransferService : ITransferService
                 await using var brotliStream = new BrotliStream(compressedFileStream, CompressionMode.Decompress, leaveOpen: true);
                 
                 SyncFileReceived?.Invoke(syncFile, brotliStream, remotePeer);
+                
+                // Mark checkpoint complete
+                if (checkpointId.HasValue)
+                {
+                    _checkpointService?.CompleteCheckpoint(checkpointId.Value);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Transfer interrupted for {Path}, checkpoint saved for resume", relativePath);
+                throw;
             }
             finally
             {
-                // Clean up temp file
+                // Clean up temp file after successful completion
                 try { File.Delete(tempPath); } catch { }
             }
         }
         else
         {
-            // Small file: use ArrayPool for memory efficiency
+            // Small file: use ArrayPool for memory efficiency (no checkpoint needed)
             var compressedData = ArrayPool<byte>.Shared.Rent((int)compressedSize);
             try
             {
