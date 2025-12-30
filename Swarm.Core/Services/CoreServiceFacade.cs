@@ -14,6 +14,7 @@ public class CoreServiceFacade
     public VersioningService VersioningService { get; }
     public IntegrityService IntegrityService { get; }
     public RescanService RescanService { get; }
+    public IntegrityVerificationService IntegrityVerificationService { get; }
     public ActivityLogService ActivityLogService { get; }
     public ConflictResolutionService ConflictResolutionService { get; }
     public ShareLinkService ShareLinkService { get; }
@@ -31,6 +32,7 @@ public class CoreServiceFacade
         VersioningService versioningService,
         IntegrityService integrityService,
         RescanService rescanService,
+        IntegrityVerificationService integrityVerificationService,
         ActivityLogService activityLogService,
         ConflictResolutionService conflictResolutionService,
         ShareLinkService shareLinkService,
@@ -47,6 +49,7 @@ public class CoreServiceFacade
         VersioningService = versioningService;
         IntegrityService = integrityService;
         RescanService = rescanService;
+        IntegrityVerificationService = integrityVerificationService;
         ActivityLogService = activityLogService;
         ConflictResolutionService = conflictResolutionService;
         ShareLinkService = shareLinkService;

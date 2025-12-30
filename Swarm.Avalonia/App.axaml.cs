@@ -145,6 +145,7 @@ public partial class App : Application
             Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
             var context = new FileStateDbContext(dbPath);
             context.Database.EnsureCreated();
+            context.EnableWalMode(); // Enable WAL for better concurrent read/write
             return context;
         });
         
@@ -179,6 +180,7 @@ public partial class App : Application
         });
         services.AddSingleton<IntegrityService>();
         services.AddSingleton<RescanService>();
+        services.AddSingleton<IntegrityVerificationService>();
         services.AddSingleton<ConflictResolutionService>();
         services.AddSingleton<ShareLinkService>();
         services.AddSingleton<PairingService>();

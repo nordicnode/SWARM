@@ -21,7 +21,23 @@ public class FileStateDbContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
+        // Use Cache=Shared for better connection pooling
         optionsBuilder.UseSqlite($"Data Source={_dbPath};Mode=ReadWriteCreate;Cache=Shared");
+    }
+
+    /// <summary>
+    /// Ensures the database is created and configured with WAL mode for better concurrency.
+    /// Call this after creating the context to enable Write-Ahead Logging.
+    /// </summary>
+    public void EnableWalMode()
+    {
+        // WAL mode provides:
+        // - Readers don't block writers
+        // - Writers don't block readers
+        // - Better crash resilience
+        // - ~10x faster writes in many cases
+        Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
+        Database.ExecuteSqlRaw("PRAGMA synchronous=NORMAL;"); // Good balance of safety and speed
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

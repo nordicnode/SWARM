@@ -30,6 +30,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private readonly SyncService _syncService;
     private readonly IntegrityService _integrityService;
     private readonly RescanService _rescanService;
+    private readonly IntegrityVerificationService _integrityVerificationService;
     private readonly ActivityLogService _activityLogService;
     private readonly ConflictResolutionService _conflictResolutionService;
     private readonly ShareLinkService _shareLinkService;
@@ -79,6 +80,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         _syncService = coreServices.SyncService;
         _integrityService = coreServices.IntegrityService;
         _rescanService = coreServices.RescanService;
+        _integrityVerificationService = coreServices.IntegrityVerificationService;
         _activityLogService = coreServices.ActivityLogService;
         _conflictResolutionService = coreServices.ConflictResolutionService;
         _shareLinkService = coreServices.ShareLinkService;
@@ -148,6 +150,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         {
             _syncService.Start();
             _rescanService.Start();
+            _integrityVerificationService.Start(); // Periodic tree verification
         }
 
         // Subscribe to events
