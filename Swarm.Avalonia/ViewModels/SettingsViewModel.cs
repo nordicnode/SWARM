@@ -4,7 +4,9 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Notifications;
 using Avalonia.Platform.Storage;
+using Swarm.Avalonia.Services;
 using Swarm.Core.Models;
 using Swarm.Core.Services;
 using Swarm.Core.ViewModels;
@@ -23,6 +25,7 @@ public class SettingsViewModel : ViewModelBase
     private readonly RescanService _rescanService = null!;
     private readonly ActivityLogService _activityLogService = null!;
     private readonly VersioningService _versioningService = null!;
+    private readonly AvaloniaToastService? _toastService;
 
     public event Action<Settings>? SettingsChanged;
 
@@ -77,7 +80,8 @@ public class SettingsViewModel : ViewModelBase
         IntegrityService integrityService,
         RescanService rescanService,
         ActivityLogService activityLogService,
-        VersioningService versioningService)
+        VersioningService versioningService,
+        AvaloniaToastService? toastService = null)
     {
         _settings = settings;
         _syncService = syncService;
@@ -86,6 +90,7 @@ public class SettingsViewModel : ViewModelBase
         _rescanService = rescanService;
         _activityLogService = activityLogService;
         _versioningService = versioningService;
+        _toastService = toastService;
 
         LoadSettings();
 
@@ -490,6 +495,10 @@ public class SettingsViewModel : ViewModelBase
 
         HasUnsavedChanges = false;
         SettingsChanged?.Invoke(_settings);
+        
+        // Show save confirmation toast
+        _toastService?.Show("Settings Saved", "Your settings have been saved successfully.", 
+            NotificationType.Success);
     }
 
     /// <summary>

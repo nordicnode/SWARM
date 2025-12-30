@@ -106,7 +106,8 @@ public class MainViewModel : ViewModelBase, IDisposable
             _integrityService,
             _rescanService,
             _activityLogService,
-            _versioningService
+            _versioningService,
+            toastService
         );
         BandwidthVM = new BandwidthViewModel(_bandwidthTrackingService);
         StatsVM = new StatsViewModel(_syncStatisticsService);

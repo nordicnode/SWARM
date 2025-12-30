@@ -213,7 +213,14 @@ public class FilesViewModel : ViewModelBase, IDisposable
         try
         {
             IsLoading = true;
-            if (!Directory.Exists(CurrentPath)) return;
+            System.Diagnostics.Debug.WriteLine($"[FilesVM] LoadFiles called. CurrentPath: '{CurrentPath}'");
+            System.Diagnostics.Debug.WriteLine($"[FilesVM] Directory exists: {Directory.Exists(CurrentPath)}");
+            
+            if (!Directory.Exists(CurrentPath))
+            {
+                System.Diagnostics.Debug.WriteLine($"[FilesVM] Directory does not exist, returning early");
+                return;
+            }
 
             var items = new List<FileItemViewModel>();
 
@@ -261,6 +268,7 @@ public class FilesViewModel : ViewModelBase, IDisposable
 
             // Cache all items for filtering
             _allFiles = items;
+            System.Diagnostics.Debug.WriteLine($"[FilesVM] Loaded {items.Count} items (dirs + files)");
             
             // Apply filter and sorting
             ApplyFilter();
