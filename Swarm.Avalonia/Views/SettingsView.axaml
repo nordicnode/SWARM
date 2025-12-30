@@ -106,17 +106,27 @@
                                     MinHeight="80"
                                     BorderBrush="{StaticResource BorderLightBrush}"
                                     BorderThickness="1">
-                                <ListBox ItemsSource="{Binding ExcludedFolders}"
-                                         SelectedItem="{Binding SelectedExcludedFolder, Mode=TwoWay}"
-                                         Background="Transparent">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding}" 
-                                                       Margin="8,4"
-                                                       Foreground="{StaticResource TextPrimaryBrush}"/>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
+                                <Grid>
+                                    <ListBox ItemsSource="{Binding ExcludedFolders}"
+                                             SelectedItem="{Binding SelectedExcludedFolder, Mode=TwoWay}"
+                                             Background="Transparent">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}" 
+                                                           Margin="8,4"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    
+                                    <!-- Empty state -->
+                                    <TextBlock Text="No folders excluded"
+                                               FontSize="12"
+                                               Foreground="{StaticResource TextMutedBrush}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding !ExcludedFolders.Count}"/>
+                                </Grid>
                             </Border>
                             
                             <StackPanel Orientation="Horizontal" Spacing="8">
@@ -264,28 +274,46 @@
                                     MinHeight="120"
                                     BorderBrush="{StaticResource BorderLightBrush}"
                                     BorderThickness="1">
-                                <ListBox ItemsSource="{Binding TrustedPeers}"
-                                         SelectedItem="{Binding SelectedPeer, Mode=TwoWay}"
-                                         Background="Transparent">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid Margin="8,6">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel>
-                                                    <TextBlock Text="{Binding Name}" 
-                                                               FontWeight="Medium"
-                                                               Foreground="{StaticResource TextPrimaryBrush}"/>
-                                                    <TextBlock Text="{Binding Id}" 
-                                                               FontSize="11" 
-                                                               Foreground="{StaticResource TextMutedBrush}"/>
-                                                </StackPanel>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
+                                <Grid>
+                                    <ListBox ItemsSource="{Binding TrustedPeers}"
+                                             SelectedItem="{Binding SelectedPeer, Mode=TwoWay}"
+                                             Background="Transparent">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="8,6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}" 
+                                                                   FontWeight="Medium"
+                                                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                        <TextBlock Text="{Binding Id}" 
+                                                                   FontSize="11" 
+                                                                   Foreground="{StaticResource TextMutedBrush}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    
+                                    <!-- Empty state -->
+                                    <StackPanel HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                IsVisible="{Binding !TrustedPeers.Count}">
+                                        <TextBlock Text="No trusted peers"
+                                                   FontSize="12"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   TextAlignment="Center"/>
+                                        <TextBlock Text="Pair with devices to add them"
+                                                   FontSize="11"
+                                                   Foreground="{StaticResource TextMutedBrush}"
+                                                   Opacity="0.7"
+                                                   TextAlignment="Center"
+                                                   Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Grid>
                             </Border>
                             
                             <Button Command="{Binding RemoveTrustedPeerCommand}"

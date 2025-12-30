@@ -20,6 +20,7 @@ public class CoreServiceFacade
     public PairingService PairingService { get; }
     public BandwidthTrackingService BandwidthTrackingService { get; }
     public FolderEncryptionService FolderEncryptionService { get; }
+    public SyncStatisticsService SyncStatisticsService { get; }
 
     public CoreServiceFacade(
         Settings settings,
@@ -35,7 +36,8 @@ public class CoreServiceFacade
         ShareLinkService shareLinkService,
         PairingService pairingService,
         BandwidthTrackingService bandwidthTrackingService,
-        FolderEncryptionService folderEncryptionService)
+        FolderEncryptionService folderEncryptionService,
+        SyncStatisticsService syncStatisticsService)
     {
         Settings = settings;
         CryptoService = cryptoService;
@@ -51,5 +53,6 @@ public class CoreServiceFacade
         PairingService = pairingService;
         BandwidthTrackingService = bandwidthTrackingService;
         FolderEncryptionService = folderEncryptionService;
+        SyncStatisticsService = syncStatisticsService;
     }
 }

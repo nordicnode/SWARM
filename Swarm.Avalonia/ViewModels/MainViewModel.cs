@@ -12,6 +12,7 @@ using Swarm.Core.Services;
 using Swarm.Core.ViewModels;
 using Avalonia.Controls.Notifications;
 using Swarm.Core.Abstractions;
+using Avalonia.Media;
 
 namespace Swarm.Avalonia.ViewModels;
 
@@ -35,6 +36,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private readonly PairingService _pairingService;
     private readonly BandwidthTrackingService _bandwidthTrackingService;
     private readonly FolderEncryptionService _folderEncryptionService;
+    private readonly SyncStatisticsService _syncStatisticsService;
 
     // Services specific to Avalonia
     private readonly AvaloniaDispatcher _dispatcher;
@@ -52,6 +54,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private bool _isFilesSelected;
     private bool _isPeersSelected;
     private bool _isBandwidthSelected;
+    private bool _isStatsSelected;
     private bool _isSettingsSelected;
 
     // Sub-ViewModels
@@ -59,6 +62,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     public FilesViewModel FilesVM { get; }
     public PeersViewModel PeersVM { get; }
     public BandwidthViewModel BandwidthVM { get; }
+    public StatsViewModel StatsVM { get; }
     public SettingsViewModel SettingsVM { get; }
 
     public MainViewModel(
@@ -81,6 +85,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         _pairingService = coreServices.PairingService;
         _bandwidthTrackingService = coreServices.BandwidthTrackingService;
         _folderEncryptionService = coreServices.FolderEncryptionService;
+        _syncStatisticsService = coreServices.SyncStatisticsService;
         
         // Avalonia services
         _dispatcher = dispatcher;
@@ -104,6 +109,7 @@ public class MainViewModel : ViewModelBase, IDisposable
             _versioningService
         );
         BandwidthVM = new BandwidthViewModel(_bandwidthTrackingService);
+        StatsVM = new StatsViewModel(_syncStatisticsService);
 
         SettingsVM.SettingsChanged += ApplySettings;
 
@@ -112,8 +118,10 @@ public class MainViewModel : ViewModelBase, IDisposable
         NavigateToFilesCommand = new RelayCommand(NavigateToFiles);
         NavigateToPeersCommand = new RelayCommand(NavigateToPeers);
         NavigateToBandwidthCommand = new RelayCommand(NavigateToBandwidth);
+        NavigateToStatsCommand = new RelayCommand(NavigateToStats);
         NavigateToSettingsCommand = new RelayCommand(NavigateToSettings);
         ToggleSyncCommand = new RelayCommand(ToggleSync);
+        PauseSyncCommand = new RelayCommand(PauseSyncWithReason);
         OpenActivityLogCommand = new RelayCommand(OpenActivityLog);
         OpenConflictHistoryCommand = new RelayCommand(OpenConflictHistory);
         OpenTransferQueueCommand = new RelayCommand(OpenTransferQueue);
@@ -302,7 +310,56 @@ public class MainViewModel : ViewModelBase, IDisposable
         ApplySettings(_settings);
         // Refresh UI properties
         OnPropertyChanged(nameof(IsPaused));
-        OnPropertyChanged(nameof(PauseIconKind));
+        OnPropertyChanged(nameof(PauseIconGeometry));
+    }
+
+    private async void PauseSyncWithReason()
+    {
+        try
+        {
+            var mainWindow = global::Avalonia.Application.Current?.ApplicationLifetime is 
+                global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                ? desktop.MainWindow
+                : null;
+
+            if (mainWindow == null) return;
+
+            var dialog = new Dialogs.PauseSyncDialog();
+            var result = await dialog.ShowDialog<Dialogs.PauseSyncResult?>(mainWindow);
+
+            if (result != null)
+            {
+                // Handle indefinite pause (0 minutes = until resume)
+                var duration = result.DurationMinutes > 0 
+                    ? TimeSpan.FromMinutes(result.DurationMinutes)
+                    : TimeSpan.FromDays(365); // Effectively indefinite
+
+                _settings.PauseSyncFor(duration, result.Reason);
+                
+                // Log the pause event
+                var logMessage = result.DurationMinutes > 0
+                    ? $"Sync paused for {result.DurationMinutes} minutes"
+                    : "Sync paused indefinitely";
+                    
+                if (!string.IsNullOrEmpty(result.Reason))
+                {
+                    logMessage += $": {result.Reason}";
+                }
+                
+                _activityLogService.LogInfo(logMessage);
+                
+                // Refresh UI
+                OnPropertyChanged(nameof(IsPaused));
+                OnPropertyChanged(nameof(PauseIconGeometry));
+                OnPropertyChanged(nameof(PauseStatusText));
+                
+                ToastService.Show("Sync Paused", logMessage, NotificationType.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Pause dialog error: {ex.Message}");
+        }
     }
 
     public void ApplySettings(Settings settings)
@@ -363,7 +420,39 @@ public class MainViewModel : ViewModelBase, IDisposable
     }
 
     public bool IsPaused => !_settings.IsSyncEnabled;
-    public string PauseIconKind => IsPaused ? "Play" : "Pause";
+    
+    public Geometry HelpIconGeometry => StreamGeometry.Parse("M11,18H13V16H11V18M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,6A4,4 0 0,0 8,10H10A2,2 0 0,1 12,8A2,2 0 0,1 14,10C14,12 11,11.75 11,15H11.5L13,15C13,12.75 16,12.5 16,10A4,4 0 0,0 12,6Z");
+    
+    public Geometry ActivityLogIconGeometry => StreamGeometry.Parse("M19,3H14.82C14.4,1.84 13.3,1 12,1C10.7,1 9.6,1.84 9.18,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5A2,2 0 0,0 19,3M12,3A1,1 0 0,1 13,4A1,1 0 0,1 12,5A1,1 0 0,1 11,4A1,1 0 0,1 12,3M7,7H17V5H19V19H5V5H7V7Z");
+
+    public Geometry PauseIconGeometry => StreamGeometry.Parse(IsPaused 
+        ? "M8,5V19L19,12L8,5Z" // Play
+        : "M14,19H18V5H14M6,19H10V5H6V19Z"); // Pause
+
+    /// <summary>
+    /// Gets the pause status text including remaining time and reason.
+    /// </summary>
+    public string? PauseStatusText
+    {
+        get
+        {
+            if (!_settings.IsSyncCurrentlyPaused) return null;
+            
+            var text = _settings.PauseRemainingDisplay;
+            if (!string.IsNullOrEmpty(_settings.SyncPauseReason))
+            {
+                text = string.IsNullOrEmpty(text) 
+                    ? $"Paused: {_settings.SyncPauseReason}"
+                    : $"{text} • {_settings.SyncPauseReason}";
+            }
+            return text;
+        }
+    }
+
+    /// <summary>
+    /// Whether there is an active pause with a reason or time.
+    /// </summary>
+    public bool HasPauseStatus => !string.IsNullOrEmpty(PauseStatusText);
 
     // Navigation state properties
     public bool IsOverviewSelected
@@ -396,6 +485,46 @@ public class MainViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _isBandwidthSelected, value);
     }
 
+    public bool IsStatsSelected
+    {
+        get => _isStatsSelected;
+        set => SetProperty(ref _isStatsSelected, value);
+    }
+
+    /// <summary>
+    /// Whether sync is currently paused due to schedule restrictions.
+    /// </summary>
+    public bool IsSyncPausedBySchedule => _settings.SyncSchedule.IsEnabled && !_settings.SyncSchedule.IsSyncAllowedNow;
+
+    /// <summary>
+    /// Display text for the current schedule status.
+    /// </summary>
+    public string ScheduleStatusText => _settings.SyncSchedule.StatusDisplay;
+
+    /// <summary>
+    /// The next time the schedule status will change.
+    /// </summary>
+    public DateTime? NextScheduleChange => _settings.SyncSchedule.NextChangeTime;
+
+    /// <summary>
+    /// Formatted text for when sync will resume/pause.
+    /// </summary>
+    public string? NextScheduleChangeText
+    {
+        get
+        {
+            var next = NextScheduleChange;
+            if (next == null) return null;
+            
+            var diff = next.Value - DateTime.Now;
+            if (diff.TotalMinutes < 60)
+                return $"in {(int)diff.TotalMinutes} min";
+            if (diff.TotalHours < 24)
+                return $"in {(int)diff.TotalHours}h {diff.Minutes}m";
+            return $"at {next.Value:ddd HH:mm}";
+        }
+    }
+
     #endregion
 
     #region Commands
@@ -404,8 +533,10 @@ public class MainViewModel : ViewModelBase, IDisposable
     public ICommand NavigateToFilesCommand { get; }
     public ICommand NavigateToPeersCommand { get; }
     public ICommand NavigateToBandwidthCommand { get; }
+    public ICommand NavigateToStatsCommand { get; }
     public ICommand NavigateToSettingsCommand { get; }
     public ICommand ToggleSyncCommand { get; }
+    public ICommand PauseSyncCommand { get; }
     public ICommand OpenActivityLogCommand { get; }
     public ICommand OpenConflictHistoryCommand { get; }
     public ICommand OpenTransferQueueCommand { get; }
@@ -427,6 +558,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         IsFilesSelected = false;
         IsPeersSelected = false;
         IsBandwidthSelected = false;
+        IsStatsSelected = false;
         IsSettingsSelected = false;
     }
 
@@ -456,6 +588,13 @@ public class MainViewModel : ViewModelBase, IDisposable
         ClearNavSelection();
         IsBandwidthSelected = true;
         CurrentView = BandwidthVM;
+    }
+
+    private void NavigateToStats()
+    {
+        ClearNavSelection();
+        IsStatsSelected = true;
+        CurrentView = StatsVM;
     }
 
     private void NavigateToSettings()

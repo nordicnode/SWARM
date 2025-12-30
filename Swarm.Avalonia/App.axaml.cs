@@ -165,6 +165,15 @@ public partial class App : Application
         services.AddSingleton<PairingService>();
         services.AddSingleton<BandwidthTrackingService>();
         services.AddSingleton<FolderEncryptionService>();
+        services.AddSingleton<SyncStatisticsService>(sp => 
+        {
+            var appDataPath = Settings.IsPortableMode 
+                ? AppContext.BaseDirectory
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Swarm");
+            return new SyncStatisticsService(
+                sp.GetRequiredService<ILogger<SyncStatisticsService>>(),
+                appDataPath);
+        });
 
         // Facade
         services.AddSingleton<CoreServiceFacade>();

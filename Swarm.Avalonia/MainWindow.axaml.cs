@@ -25,6 +25,32 @@ public partial class MainWindow : Window
 
         switch (e.Key)
         {
+            // Number keys for navigation (1-5)
+            case Key.D1 or Key.NumPad1:
+                vm.NavigateToOverviewCommand?.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.D2 or Key.NumPad2:
+                vm.NavigateToFilesCommand?.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.D3 or Key.NumPad3:
+                vm.NavigateToPeersCommand?.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.D4 or Key.NumPad4:
+                vm.NavigateToBandwidthCommand?.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.D5 or Key.NumPad5:
+                vm.NavigateToStatsCommand?.Execute(null);
+                e.Handled = true;
+                break;
+            case Key.D6 or Key.NumPad6:
+                vm.NavigateToSettingsCommand?.Execute(null);
+                e.Handled = true;
+                break;
+
             case Key.F5:
                 // Refresh - reload current view
                 if (vm.FilesVM != null && vm.IsFilesSelected)
@@ -63,7 +89,31 @@ public partial class MainWindow : Window
                 vm.FocusSearchCommand?.Execute(null);
                 e.Handled = true;
                 break;
+
+            case Key.Space:
+                // Space = Pause/Resume sync
+                vm.ToggleSyncCommand?.Execute(null);
+                e.Handled = true;
+                break;
+
+            case Key.F1:
+            case Key.OemQuestion: // ? key
+                // Show keyboard shortcuts help
+                ShowKeyboardShortcuts();
+                e.Handled = true;
+                break;
         }
+    }
+
+    private async void ShowKeyboardShortcuts()
+    {
+        var dialog = new Dialogs.KeyboardShortcutsDialog();
+        await dialog.ShowDialog(this);
+    }
+
+    private void HelpButton_Click(object? sender, RoutedEventArgs e)
+    {
+        ShowKeyboardShortcuts();
     }
 
     private void TitleBar_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -111,6 +161,16 @@ public partial class MainWindow : Window
     {
         _isClosingFromTray = true;
         Close();
+    }
+
+    private void ResumeSync_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MainViewModel vm)
+        {
+            vm.Settings.ResumeSync();
+            // Log resume event
+            vm.ToastService.Show("Sync Resumed", "Sync has been resumed.", global::Avalonia.Controls.Notifications.NotificationType.Information);
+        }
     }
 }
 

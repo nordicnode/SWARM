@@ -172,6 +172,11 @@ public class Settings
     public DateTime? SyncPausedUntil { get; set; }
 
     /// <summary>
+    /// Optional reason/note for why sync was paused.
+    /// </summary>
+    public string? SyncPauseReason { get; set; }
+
+    /// <summary>
     /// Whether to automatically pause sync when on battery power.
     /// </summary>
     public bool PauseOnBattery { get; set; } = false;
@@ -232,20 +237,22 @@ public class Settings
     }
 
     /// <summary>
-    /// Pauses sync for a specified duration.
+    /// Pauses sync for a specified duration with an optional reason.
     /// </summary>
-    public void PauseSyncFor(TimeSpan duration)
+    public void PauseSyncFor(TimeSpan duration, string? reason = null)
     {
         SyncPausedUntil = DateTime.Now.Add(duration);
+        SyncPauseReason = reason;
         Save();
     }
 
     /// <summary>
-    /// Resumes sync immediately by clearing the pause timer.
+    /// Resumes sync immediately by clearing the pause timer and reason.
     /// </summary>
     public void ResumeSync()
     {
         SyncPausedUntil = null;
+        SyncPauseReason = null;
         Save();
     }
 
@@ -373,6 +380,7 @@ public class Settings
             RescanMode = RescanMode,
             ConflictResolution = ConflictResolution,
             SyncPausedUntil = SyncPausedUntil,
+            SyncPauseReason = SyncPauseReason,
             PauseOnBattery = PauseOnBattery,
             PauseOnMeteredNetwork = PauseOnMeteredNetwork,
             CloseToTray = CloseToTray,
@@ -443,6 +451,7 @@ public class Settings
         RescanMode = source.RescanMode;
         ConflictResolution = source.ConflictResolution;
         SyncPausedUntil = source.SyncPausedUntil;
+        SyncPauseReason = source.SyncPauseReason;
         PauseOnBattery = source.PauseOnBattery;
         PauseOnMeteredNetwork = source.PauseOnMeteredNetwork;
         CloseToTray = source.CloseToTray;

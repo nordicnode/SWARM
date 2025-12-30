@@ -1,0 +1,158 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Swarm.Avalonia.Dialogs.KeyboardShortcutsDialog"
+        Title="Keyboard Shortcuts"
+        Width="450"
+        Height="720"
+        WindowStartupLocation="CenterOwner"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        Background="{StaticResource BackgroundPrimaryBrush}"
+        SystemDecorations="BorderOnly"
+        CanResize="False">
+    
+    <Border Background="{StaticResource BackgroundPrimaryBrush}" 
+            BorderBrush="#40ffffff" 
+            BorderThickness="1" 
+            CornerRadius="12">
+        <Grid RowDefinitions="Auto,*,Auto">
+            
+            <!-- Header -->
+            <Border Grid.Row="0" 
+                    Background="{StaticResource BackgroundSecondaryBrush}" 
+                    CornerRadius="12,12,0,0" 
+                    Padding="20,16">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <PathIcon Data="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+                                  Width="24" Height="24"
+                                  Foreground="{StaticResource AccentPrimaryBrush}"/>
+                        <TextBlock Text="Keyboard Shortcuts" 
+                                   Classes="section-header" 
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" 
+                            Classes="icon" 
+                            Click="CloseButton_Click"
+                            ToolTip.Tip="Close (Esc)">
+                        <PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" 
+                                  Width="16" Height="16"
+                                  Foreground="{StaticResource TextSecondaryBrush}"/>
+                    </Button>
+                </Grid>
+            </Border>
+            
+            <!-- Shortcuts List -->
+            <ScrollViewer Grid.Row="1" Padding="20,16">
+                <StackPanel Spacing="16">
+                    
+                    <!-- Navigation Section -->
+                    <TextBlock Text="NAVIGATION" 
+                               Foreground="{StaticResource TextMutedBrush}" 
+                               FontSize="11" 
+                               FontWeight="Bold"
+                               Margin="0,0,0,4"/>
+                    
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,12">
+                        <Border Grid.Row="0" Classes="shortcut-key"><TextBlock Text="1"/></Border>
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="Go to Overview" Classes="shortcut-desc"/>
+                        
+                        <Border Grid.Row="1" Classes="shortcut-key"><TextBlock Text="2"/></Border>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="Go to Files" Classes="shortcut-desc"/>
+                        
+                        <Border Grid.Row="2" Classes="shortcut-key"><TextBlock Text="3"/></Border>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="Go to Peers" Classes="shortcut-desc"/>
+                        
+                        <Border Grid.Row="3" Classes="shortcut-key"><TextBlock Text="4"/></Border>
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="Go to Bandwidth" Classes="shortcut-desc"/>
+                        
+                        <Border Grid.Row="4" Classes="shortcut-key"><TextBlock Text="5"/></Border>
+                        <TextBlock Grid.Row="4" Grid.Column="1" Text="Go to Statistics" Classes="shortcut-desc"/>
+                        
+                        <Border Grid.Row="5" Classes="shortcut-key"><TextBlock Text="6"/></Border>
+                        <TextBlock Grid.Row="5" Grid.Column="1" Text="Go to Settings" Classes="shortcut-desc"/>
+                    </Grid>
+                    
+                    <!-- Actions Section -->
+                    <TextBlock Text="ACTIONS" 
+                               Foreground="{StaticResource TextMutedBrush}" 
+                               FontSize="11" 
+                               FontWeight="Bold"
+                               Margin="0,0,0,4"/>
+                    
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,12">
+                        <Border Grid.Row="0" Classes="shortcut-key"><TextBlock Text="Ctrl+F"/></Border>
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="Search files" Classes="shortcut-desc"/>
+                        
+                        <Border Grid.Row="1" Classes="shortcut-key"><TextBlock Text="F5"/></Border>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="Refresh / Force sync" Classes="shortcut-desc"/>
+                        
+                        <Border Grid.Row="2" Classes="shortcut-key"><TextBlock Text="Ctrl+,"/></Border>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="Open Settings" Classes="shortcut-desc"/>
+                        
+                        <Border Grid.Row="3" Classes="shortcut-key"><TextBlock Text="Delete"/></Border>
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="Delete selected file" Classes="shortcut-desc"/>
+                        
+                        <Border Grid.Row="4" Classes="shortcut-key"><TextBlock Text="Space"/></Border>
+                        <TextBlock Grid.Row="4" Grid.Column="1" Text="Pause/Resume sync" Classes="shortcut-desc"/>
+                    </Grid>
+                    
+                    <!-- Window Section -->
+                    <TextBlock Text="WINDOW" 
+                               Foreground="{StaticResource TextMutedBrush}" 
+                               FontSize="11" 
+                               FontWeight="Bold"
+                               Margin="0,0,0,4"/>
+                    
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto">
+                        <Border Grid.Row="0" Classes="shortcut-key"><TextBlock Text="?"/></Border>
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="Show this help" Classes="shortcut-desc"/>
+                        
+                        <Border Grid.Row="1" Classes="shortcut-key"><TextBlock Text="Esc"/></Border>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="Close dialog / Minimize to tray" Classes="shortcut-desc"/>
+                        
+                        <Border Grid.Row="2" Classes="shortcut-key"><TextBlock Text="F1"/></Border>
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="Show this help" Classes="shortcut-desc"/>
+                    </Grid>
+                    
+                </StackPanel>
+            </ScrollViewer>
+            
+            <!-- Footer -->
+            <Border Grid.Row="2" 
+                    Background="{StaticResource BackgroundSecondaryBrush}" 
+                    CornerRadius="0,0,12,12"
+                    Padding="20,12">
+                <TextBlock Text="Press Esc to close" 
+                           Foreground="{StaticResource TextMutedBrush}" 
+                           FontSize="12"
+                           HorizontalAlignment="Center"/>
+            </Border>
+        </Grid>
+    </Border>
+    
+    <Window.Styles>
+        <Style Selector="Border.shortcut-key">
+            <Setter Property="Background" Value="#20ffffff"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Margin" Value="0,4,12,4"/>
+            <Setter Property="MinWidth" Value="60"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+        </Style>
+        <Style Selector="Border.shortcut-key TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource AccentPrimaryBrush}"/>
+            <Setter Property="FontFamily" Value="Consolas, Monaco, monospace"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.shortcut-desc">
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,4"/>
+        </Style>
+    </Window.Styles>
+    
+</Window>

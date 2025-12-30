@@ -53,6 +53,9 @@
             <SolidColorBrush x:Key="StatusTransferBrush" Color="{StaticResource StatusTransfer}"/>
             <SolidColorBrush x:Key="StatusErrorBrush" Color="{StaticResource StatusError}"/>
             
+            <SolidColorBrush x:Key="UploadBrush" Color="{StaticResource AccentWarning}"/>
+            <SolidColorBrush x:Key="DownloadBrush" Color="{StaticResource AccentPrimary}"/>
+            
             <!-- Border Brushes -->
             <SolidColorBrush x:Key="BorderLightBrush" Color="#27272a"/>
             <SolidColorBrush x:Key="BorderSubtleBrush" Color="#20ffffff"/>
@@ -261,6 +264,16 @@
     </Style>
     <Style Selector="Button.nav-button:pressed">
         <Setter Property="Background" Value="#152dd4bf"/>
+    </Style>
+    <!-- Active state for selected navigation items -->
+    <Style Selector="Button.nav-button.active">
+        <Setter Property="Background" Value="#202dd4bf"/>
+        <Setter Property="Foreground" Value="{StaticResource AccentPrimaryBrush}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.nav-button.active:pointerover">
+        <Setter Property="Background" Value="#252dd4bf"/>
+        <Setter Property="Foreground" Value="{StaticResource AccentPrimaryBrush}"/>
     </Style>
 
 </Styles>

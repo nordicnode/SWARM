@@ -31,7 +31,7 @@
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="↑" FontSize="18" 
-                                   Foreground="{StaticResource AccentPrimaryBrush}"
+                                   Foreground="{StaticResource UploadBrush}"
                                    FontWeight="Bold"/>
                         <TextBlock Text="Upload Speed"
                                    Foreground="{StaticResource TextSecondaryBrush}"
@@ -40,7 +40,7 @@
                     <TextBlock Text="{Binding CurrentUploadSpeed}"
                                FontSize="24"
                                FontWeight="Bold"
-                               Foreground="{StaticResource AccentPrimaryBrush}"
+                               Foreground="{StaticResource UploadBrush}"
                                Margin="0,8,0,0"/>
                 </StackPanel>
             </Border>
@@ -50,7 +50,7 @@
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="↓" FontSize="18" 
-                                   Foreground="{StaticResource AccentSecondaryBrush}"
+                                   Foreground="{StaticResource DownloadBrush}"
                                    FontWeight="Bold"/>
                         <TextBlock Text="Download Speed"
                                    Foreground="{StaticResource TextSecondaryBrush}"
@@ -59,7 +59,7 @@
                     <TextBlock Text="{Binding CurrentDownloadSpeed}"
                                FontSize="24"
                                FontWeight="Bold"
-                               Foreground="{StaticResource AccentSecondaryBrush}"
+                               Foreground="{StaticResource DownloadBrush}"
                                Margin="0,8,0,0"/>
                 </StackPanel>
             </Border>
@@ -116,12 +116,12 @@
                     <!-- Legend -->
                     <StackPanel Orientation="Horizontal" Spacing="16">
                         <StackPanel Orientation="Horizontal" Spacing="6">
-                            <Border Width="12" Height="12" CornerRadius="2" Background="#2ed4bf"/>
-                            <TextBlock Text="Upload" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <Border Width="12" Height="12" CornerRadius="2" Background="{StaticResource UploadBrush}"/>
+                            <TextBlock Text="↑ Upload" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" Spacing="6">
-                            <Border Width="12" Height="12" CornerRadius="2" Background="#06b6d4"/>
-                            <TextBlock Text="Download" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            <Border Width="12" Height="12" CornerRadius="2" Background="{StaticResource DownloadBrush}"/>
+                            <TextBlock Text="↓ Download" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
                         </StackPanel>
                     </StackPanel>
                 </StackPanel>

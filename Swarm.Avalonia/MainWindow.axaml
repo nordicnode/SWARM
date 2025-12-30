@@ -33,6 +33,9 @@
         <DataTemplate DataType="{x:Type vm:BandwidthViewModel}">
             <views:BandwidthView/>
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:StatsViewModel}">
+            <views:StatsView/>
+        </DataTemplate>
         <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
             <views:SettingsView/>
         </DataTemplate>
@@ -183,6 +186,18 @@
                                 </Grid>
                             </Button>
                             <Button Classes="nav-button" 
+                                    Command="{Binding NavigateToStatsCommand}"
+                                    Classes.active="{Binding IsStatsSelected}">
+                                <Grid ColumnDefinitions="Auto,*">
+                                    <PathIcon Data="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z" 
+                                              Foreground="{StaticResource TextSecondaryBrush}" 
+                                              Width="18" Height="18"/>
+                                    <TextBlock Grid.Column="1" Text="Statistics" 
+                                               VerticalAlignment="Center" 
+                                               Margin="12,0,0,0"/>
+                                </Grid>
+                            </Button>
+                            <Button Classes="nav-button" 
                                     Command="{Binding NavigateToSettingsCommand}"
                                     Classes.active="{Binding IsSettingsSelected}">
                                 <Grid ColumnDefinitions="Auto,*">
@@ -207,7 +222,7 @@
                                          Foreground="{StaticResource AccentPrimaryBrush}"
                                          Background="#20FFFFFF"/>
 
-                            <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="0,0,0,8">
                                 <!-- Version Info -->
                                 <TextBlock Text="v0.4.0-beta" 
                                            Foreground="{StaticResource TextMutedBrush}" 
@@ -215,41 +230,133 @@
                                            VerticalAlignment="Center"
                                            Margin="16,0,0,0"/>
 
-                                <!-- Activity Log Button -->
+                                <!-- Help Button -->
                                 <Button Grid.Column="1" 
+                                        Classes="icon"
+                                        Click="HelpButton_Click"
+                                        ToolTip.Tip="Keyboard Shortcuts (F1)"
+                                        Margin="0,0,4,0">
+                                    <Path Data="{Binding HelpIconGeometry}"
+                                          Fill="{Binding $parent[Button].Foreground}"
+                                          Stretch="Uniform"
+                                          Width="16" Height="16"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                                </Button>
+
+                                <!-- Activity Log Button -->
+                                <Button Grid.Column="2" 
                                         Command="{Binding OpenActivityLogCommand}"
                                         Classes="icon"
                                         ToolTip.Tip="Activity Log"
-                                        Margin="0,0,8,0">
-                                    <avalonia:MaterialIcon Kind="ClipboardTextClock" 
-                                                         Width="16" Height="16"
-                                                         Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        Margin="0,0,4,0">
+                                    <Path Data="{Binding ActivityLogIconGeometry}"
+                                          Fill="{Binding $parent[Button].Foreground}"
+                                          Stretch="Uniform"
+                                          Width="16" Height="16"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
                                 </Button>
 
-                                <!-- Pause/Resume Button -->
-                                <Button Grid.Column="2" 
+                                <!-- Quick Pause/Resume Button -->
+                                <Button Grid.Column="3" 
                                         Command="{Binding ToggleSyncCommand}"
                                         Classes="icon"
-                                        ToolTip.Tip="Pause/Resume Sync"
-                                        Margin="0,0,16,0">
-                                    <avalonia:MaterialIcon Kind="{Binding PauseIconKind}" 
-                                                         Width="16" Height="16"
-                                                         Foreground="{StaticResource TextSecondaryBrush}"/>
+                                        ToolTip.Tip="Quick Pause/Resume (Space)"
+                                        Margin="0,0,4,0">
+                                    <Path Data="{Binding PauseIconGeometry}"
+                                          Fill="{Binding $parent[Button].Foreground}"
+                                          Stretch="Uniform"
+                                          Width="16" Height="16"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                                </Button>
+                                
+                                <!-- Pause Timer Button (opens dialog with duration/reason) -->
+                                <Button Grid.Column="4" 
+                                        Command="{Binding PauseSyncCommand}"
+                                        Classes="icon"
+                                        ToolTip.Tip="Pause with timer..."
+                                        Margin="0,0,16,0"
+                                        IsVisible="{Binding !IsPaused}">
+                                    <PathIcon Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"
+                                              Width="14" Height="14"
+                                              Foreground="{StaticResource TextSecondaryBrush}"/>
                                 </Button>
                             </Grid>
                             
                             <!-- Status Indicator -->
                             <Border Background="#10ffffff" CornerRadius="8" Padding="12,8">
                                 <Grid ColumnDefinitions="Auto,*">
-                                    <Ellipse Width="8" Height="8" 
-                                             Fill="{StaticResource StatusOnlineBrush}" 
-                                             VerticalAlignment="Center" 
-                                             Margin="0,0,8,0"/>
+                                    <PathIcon Width="12" Height="12"
+                                              Data="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"
+                                              Foreground="{StaticResource StatusOnlineBrush}"
+                                              VerticalAlignment="Center" 
+                                              Margin="0,0,8,0"/>
                                     <TextBlock Grid.Column="1" 
                                                Text="{Binding StatusText}" 
                                                Foreground="{StaticResource TextSecondaryBrush}" 
                                                FontSize="12" 
                                                TextTrimming="CharacterEllipsis"/>
+                                </Grid>
+                            </Border>
+                            
+                            <!-- Schedule Paused Indicator -->
+                            <Border Background="#20fbbf24" 
+                                    CornerRadius="8" 
+                                    Padding="12,8"
+                                    IsVisible="{Binding IsSyncPausedBySchedule}"
+                                    ToolTip.Tip="{Binding ScheduleStatusText}">
+                                <Grid ColumnDefinitions="Auto,Auto,Auto">
+                                    <PathIcon Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" 
+                                              Width="12" Height="12"
+                                              Foreground="{StaticResource AccentWarningBrush}"
+                                              VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" 
+                                               Text="Scheduled pause" 
+                                               Foreground="{StaticResource AccentWarningBrush}" 
+                                               FontSize="12"
+                                               FontWeight="Medium"
+                                               VerticalAlignment="Center"
+                                               Margin="8,0,0,0"/>
+                                    <TextBlock Grid.Column="2" 
+                                               Text="{Binding NextScheduleChangeText, StringFormat='({0})'}" 
+                                               Foreground="{StaticResource TextMutedBrush}" 
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               Margin="6,0,0,0"
+                                               IsVisible="{Binding NextScheduleChangeText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                </Grid>
+                            </Border>
+                            
+                            <!-- Manual Pause Indicator (with reason) -->
+                            <Border Background="#20ef4444" 
+                                    CornerRadius="8" 
+                                    Padding="12,8"
+                                    IsVisible="{Binding HasPauseStatus}"
+                                    ToolTip.Tip="{Binding PauseStatusText}">
+                                <Grid ColumnDefinitions="Auto,Auto,Auto">
+                                    <PathIcon Data="M14,19H18V5H14M6,19H10V5H6V19Z" 
+                                              Width="12" Height="12"
+                                              Foreground="{StaticResource StatusWarningBrush}"
+                                              VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" 
+                                               Text="{Binding PauseStatusText}" 
+                                               Foreground="{StaticResource TextSecondaryBrush}" 
+                                               FontSize="12"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               MaxWidth="200"
+                                               Margin="8,0,0,0"/>
+                                    <Button Grid.Column="2" 
+                                            Classes="icon"
+                                            Click="ResumeSync_Click"
+                                            ToolTip.Tip="Resume sync"
+                                            Margin="8,0,0,0">
+                                        <PathIcon Data="M8,5V19L19,12L8,5Z" 
+                                                  Width="12" Height="12"
+                                                  Foreground="{StaticResource StatusOnlineBrush}"/>
+                                    </Button>
                                 </Grid>
                             </Border>
                         </StackPanel>

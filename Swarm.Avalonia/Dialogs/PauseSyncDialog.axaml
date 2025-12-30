@@ -1,0 +1,100 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Swarm.Avalonia.Dialogs.PauseSyncDialog"
+        Title="Pause Sync"
+        Width="400"
+        Height="360"
+        WindowStartupLocation="CenterOwner"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaChromeHints="NoChrome"
+        Background="{StaticResource BackgroundPrimaryBrush}"
+        SystemDecorations="BorderOnly"
+        CanResize="False">
+    
+    <Border Background="{StaticResource BackgroundPrimaryBrush}" 
+            BorderBrush="#40ffffff" 
+            BorderThickness="1" 
+            CornerRadius="12">
+        <Grid RowDefinitions="Auto,*,Auto">
+            
+            <!-- Header -->
+            <Border Grid.Row="0" 
+                    Background="{StaticResource BackgroundSecondaryBrush}" 
+                    CornerRadius="12,12,0,0" 
+                    Padding="20,16">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <PathIcon Data="M12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22C6.47,22 2,17.5 2,12A10,10 0 0,1 12,2M12.5,7V12.25L17,14.92L16.25,16.15L11,13V7H12.5Z"
+                                  Width="24" Height="24"
+                                  Foreground="{StaticResource AccentPrimaryBrush}"/>
+                        <TextBlock Text="Pause Sync" 
+                                   Classes="section-header" 
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" 
+                            Classes="icon" 
+                            Click="CancelButton_Click"
+                            ToolTip.Tip="Close (Esc)">
+                        <PathIcon Data="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" 
+                                  Width="16" Height="16"
+                                  Foreground="{StaticResource TextSecondaryBrush}"/>
+                    </Button>
+                </Grid>
+            </Border>
+            
+            <!-- Content -->
+            <StackPanel Grid.Row="1" Margin="20,20" Spacing="16">
+                
+                <!-- Duration Selection -->
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Pause Duration" 
+                               FontWeight="Medium"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <ComboBox x:Name="DurationComboBox" 
+                              SelectedIndex="1"
+                              HorizontalAlignment="Stretch">
+                        <ComboBoxItem Content="15 minutes" Tag="15"/>
+                        <ComboBoxItem Content="30 minutes" Tag="30"/>
+                        <ComboBoxItem Content="1 hour" Tag="60"/>
+                        <ComboBoxItem Content="2 hours" Tag="120"/>
+                        <ComboBoxItem Content="4 hours" Tag="240"/>
+                        <ComboBoxItem Content="Until I resume" Tag="0"/>
+                    </ComboBox>
+                </StackPanel>
+                
+                <!-- Reason Input -->
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Reason (optional)" 
+                               FontWeight="Medium"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBox x:Name="ReasonTextBox" 
+                             Watermark="e.g., Large file upload, System maintenance..."
+                             MaxLength="100"
+                             AcceptsReturn="False"/>
+                    <TextBlock Text="This will be shown in the status area and logged."
+                               FontSize="11"
+                               Foreground="{StaticResource TextMutedBrush}"/>
+                </StackPanel>
+                
+            </StackPanel>
+            
+            <!-- Footer -->
+            <Border Grid.Row="2" 
+                    Background="{StaticResource BackgroundSecondaryBrush}" 
+                    CornerRadius="0,0,12,12"
+                    Padding="20,16">
+                <Grid ColumnDefinitions="*,Auto,Auto">
+                    <Button Grid.Column="1" 
+                            Content="Cancel" 
+                            Classes="secondary"
+                            Click="CancelButton_Click"
+                            Margin="0,0,12,0"/>
+                    <Button Grid.Column="2" 
+                            Content="Pause Sync" 
+                            Classes="primary"
+                            Click="PauseButton_Click"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

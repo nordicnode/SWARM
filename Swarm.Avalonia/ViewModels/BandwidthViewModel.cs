@@ -91,8 +91,8 @@ public class BandwidthViewModel : ViewModelBase, IDisposable
         {
             Values = _uploadSpeeds,
             Name = "Upload",
-            Stroke = new SolidColorPaint(new SKColor(46, 212, 191)) { StrokeThickness = 2 },
-            Fill = new SolidColorPaint(new SKColor(46, 212, 191, 40)),
+            Stroke = new SolidColorPaint(new SKColor(251, 191, 36)) { StrokeThickness = 2 }, // #fbbf24
+            Fill = new SolidColorPaint(new SKColor(251, 191, 36, 40)),
             GeometrySize = 0,
             LineSmoothness = 0.5
         },
@@ -100,8 +100,8 @@ public class BandwidthViewModel : ViewModelBase, IDisposable
         {
             Values = _downloadSpeeds,
             Name = "Download",
-            Stroke = new SolidColorPaint(new SKColor(6, 182, 212)) { StrokeThickness = 2 },
-            Fill = new SolidColorPaint(new SKColor(6, 182, 212, 40)),
+            Stroke = new SolidColorPaint(new SKColor(45, 212, 191)) { StrokeThickness = 2 }, // #2dd4bf
+            Fill = new SolidColorPaint(new SKColor(45, 212, 191, 40)),
             GeometrySize = 0,
             LineSmoothness = 0.5
         }

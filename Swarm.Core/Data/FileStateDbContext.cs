@@ -12,6 +12,7 @@ public class FileStateDbContext : DbContext
     private readonly string _dbPath;
 
     public DbSet<FileStateEntity> FileStates { get; set; } = null!;
+    public DbSet<TransferCheckpointEntity> TransferCheckpoints { get; set; } = null!;
 
     public FileStateDbContext(string dbPath)
     {
@@ -32,6 +33,16 @@ public class FileStateDbContext : DbContext
             entity.Property(e => e.ContentHash).HasMaxLength(128);
             entity.Property(e => e.SourcePeerId).HasMaxLength(64);
             entity.HasIndex(e => e.ContentHash);
+        });
+
+        modelBuilder.Entity<TransferCheckpointEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.RelativePath).HasMaxLength(1024).IsRequired();
+            entity.Property(e => e.PeerId).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.ContentHash).HasMaxLength(128);
+            entity.Property(e => e.TempFilePath).HasMaxLength(2048);
+            entity.HasIndex(e => new { e.RelativePath, e.PeerId }).IsUnique();
         });
     }
 }
@@ -77,3 +88,65 @@ public class FileStateEntity
         };
     }
 }
+
+/// <summary>
+/// Entity for storing transfer checkpoint data to enable resumable transfers.
+/// </summary>
+public class TransferCheckpointEntity
+{
+    /// <summary>
+    /// Unique identifier for this checkpoint.
+    /// </summary>
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>
+    /// Relative path of the file being transferred.
+    /// </summary>
+    public string RelativePath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Peer ID the transfer is with.
+    /// </summary>
+    public string PeerId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Whether this is an incoming (download) or outgoing (upload) transfer.
+    /// </summary>
+    public bool IsIncoming { get; set; }
+
+    /// <summary>
+    /// Total size of the file in bytes.
+    /// </summary>
+    public long TotalBytes { get; set; }
+
+    /// <summary>
+    /// Number of bytes already transferred.
+    /// </summary>
+    public long BytesTransferred { get; set; }
+
+    /// <summary>
+    /// Content hash of the file for integrity verification.
+    /// </summary>
+    public string ContentHash { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Path to the temporary file for partial downloads.
+    /// </summary>
+    public string TempFilePath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// When the transfer was started.
+    /// </summary>
+    public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Last time the checkpoint was updated.
+    /// </summary>
+    public DateTime LastUpdatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Whether the transfer was completed successfully.
+    /// </summary>
+    public bool IsCompleted { get; set; }
+}
+

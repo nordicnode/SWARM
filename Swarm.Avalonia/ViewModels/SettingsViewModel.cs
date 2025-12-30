@@ -412,13 +412,27 @@ public class SettingsViewModel : ViewModelBase
 
     private bool CanRemoveSelectedPeer() => SelectedPeer != null;
 
-    private void RemoveSelectedPeer()
+    private async void RemoveSelectedPeer()
     {
-        if (SelectedPeer != null)
-        {
-            TrustedPeers.Remove(SelectedPeer);
-            SelectedPeer = null;
-        }
+        if (SelectedPeer == null) return;
+
+        var mainWindow = global::Avalonia.Application.Current?.ApplicationLifetime is 
+            global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+            ? desktop.MainWindow
+            : null;
+            
+        if (mainWindow == null) return;
+
+        var dialog = new Dialogs.ConfirmationDialog();
+        dialog.SetTitle("Untrust Peer?");
+        dialog.SetMessage($"Are you sure you want to remove \"{SelectedPeer.Name}\" from trusted peers?\n\nThis device will no longer auto-accept files from this peer.");
+        dialog.SetConfirmButton("Untrust", isDestructive: true);
+        
+        var result = await dialog.ShowDialog<bool>(mainWindow);
+        if (!result) return;
+
+        TrustedPeers.Remove(SelectedPeer);
+        SelectedPeer = null;
     }
 
     private void SaveSettings()

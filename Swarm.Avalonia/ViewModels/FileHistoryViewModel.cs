@@ -111,9 +111,19 @@ public class FileHistoryViewModel : ViewModelBase
 
     private bool CanDelete() => SelectedVersion != null;
 
-    private void DeleteVersion()
+    private async void DeleteVersion()
     {
         if (SelectedVersion == null) return;
+
+        if (ParentWindow == null) return;
+
+        var dialog = new ConfirmationDialog();
+        dialog.SetTitle("Delete Version?");
+        dialog.SetMessage($"Are you sure you want to delete the version from {SelectedVersion.CreatedAtDisplay}?\n\nThis action cannot be undone.");
+        dialog.SetConfirmButton("Delete", isDestructive: true);
+        
+        var result = await dialog.ShowDialog<bool>(ParentWindow);
+        if (!result) return;
 
         if (_versioningService.DeleteVersion(SelectedVersion))
         {

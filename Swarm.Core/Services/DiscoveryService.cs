@@ -30,6 +30,15 @@ public class DiscoveryService : IDiscoveryService
     private readonly ILogger<DiscoveryService> _logger;
     private MdnsDiscoveryService? _mdnsService;
     
+    // Rate limiting: track message count per source IP
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, RateLimitEntry> _rateLimiter = new();
+    private const int MAX_MESSAGES_PER_SECOND = 10;
+    private const int RATE_LIMIT_WINDOW_MS = 1000;
+    
+    // Timestamp validation: reject stale/future messages
+    private const int MAX_MESSAGE_AGE_SECONDS = 60;
+    private const int MAX_MESSAGE_FUTURE_SECONDS = 30;
+    
     public ObservableCollection<Peer> Peers { get; } = [];
     public string LocalId { get; }
     public string LocalName { get; set; } = Environment.MachineName;
@@ -43,6 +52,11 @@ public class DiscoveryService : IDiscoveryService
     /// Event raised when an untrusted peer is discovered. UI should prompt for trust confirmation.
     /// </summary>
     public event Action<Peer>? UntrustedPeerDiscovered;
+
+    /// <summary>
+    /// Event raised when a trusted peer's public key has changed. This could indicate a MITM attack.
+    /// </summary>
+    public event Action<Peer, string>? TrustedPeerKeyChanged;
 
     /// <summary>
     /// Whether this local instance has sync enabled. Set by SyncService.
@@ -235,6 +249,14 @@ public class DiscoveryService : IDiscoveryService
 
     private void ProcessDiscoveryMessage(string message, IPEndPoint remoteEndPoint)
     {
+        // Rate limiting: prevent DoS via message flooding
+        var sourceIp = remoteEndPoint.Address.ToString();
+        if (!CheckRateLimit(sourceIp))
+        {
+            _logger.LogDebug($"Rate limit exceeded for {sourceIp}, dropping discovery message");
+            return;
+        }
+        
         string peerId;
         string peerName;
         int transferPort;
@@ -256,6 +278,23 @@ public class DiscoveryService : IDiscoveryService
                 transferPort = discoveryMessage.TransferPort;
                 isSyncEnabled = discoveryMessage.SyncEnabled;
                 publicKeyBase64 = discoveryMessage.PublicKey;
+
+                // Timestamp validation: reject stale or future messages (replay attack prevention)
+                if (discoveryMessage.Timestamp.HasValue && discoveryMessage.Timestamp.Value > 0)
+                {
+                    var messageTime = DateTimeOffset.FromUnixTimeMilliseconds(discoveryMessage.Timestamp.Value);
+                    var age = DateTimeOffset.UtcNow - messageTime;
+                    if (age > TimeSpan.FromSeconds(MAX_MESSAGE_AGE_SECONDS))
+                    {
+                        _logger.LogDebug($"Discovery message from {peerId} is stale ({age.TotalSeconds:F0}s old), ignoring");
+                        return;
+                    }
+                    if (age < TimeSpan.FromSeconds(-MAX_MESSAGE_FUTURE_SECONDS))
+                    {
+                        _logger.LogDebug($"Discovery message from {peerId} has future timestamp, ignoring");
+                        return;
+                    }
+                }
 
                 // Verify signature if present (v2.0)
                 if (!string.IsNullOrEmpty(discoveryMessage.PublicKey) && !string.IsNullOrEmpty(discoveryMessage.Signature))
@@ -316,6 +355,17 @@ public class DiscoveryService : IDiscoveryService
             var existingPeer = Peers.FirstOrDefault(p => p.Id == peerId);
             if (existingPeer != null)
             {
+                // Detect public key change for trusted peers (potential MITM)
+                if (existingPeer.IsTrusted && 
+                    !string.IsNullOrEmpty(existingPeer.PublicKeyBase64) && 
+                    !string.IsNullOrEmpty(publicKeyBase64) &&
+                    existingPeer.PublicKeyBase64 != publicKeyBase64)
+                {
+                    _logger.LogWarning($"Trusted peer {peerId} has changed public key! Old: {existingPeer.PublicKeyBase64?.Substring(0, 20)}..., New: {publicKeyBase64.Substring(0, 20)}...");
+                    var oldKey = existingPeer.PublicKeyBase64!; // We know it's not null from the check above
+                    TrustedPeerKeyChanged?.Invoke(existingPeer, oldKey);
+                }
+                
                 existingPeer.LastSeen = DateTime.Now;
                 existingPeer.IpAddress = remoteEndPoint.Address.ToString();
                 existingPeer.Port = transferPort;
@@ -473,8 +523,11 @@ public class DiscoveryService : IDiscoveryService
         _cts?.Cancel();
         _udpClient?.Close();
         _udpClient?.Dispose();
+        _udpClientV6?.Close();
+        _udpClientV6?.Dispose();
         _cts?.Dispose();
         _mdnsService?.Dispose();
+        _rateLimiter.Clear();
     }
 
     #region mDNS Event Handlers
@@ -523,6 +576,35 @@ public class DiscoveryService : IDiscoveryService
                 PeerLost?.Invoke(peerToRemove);
             });
         }
+    }
+
+    #endregion
+
+    #region Rate Limiting
+
+    private bool CheckRateLimit(string sourceIp)
+    {
+        var now = DateTime.UtcNow;
+        var entry = _rateLimiter.GetOrAdd(sourceIp, _ => new RateLimitEntry());
+        
+        lock (entry)
+        {
+            // Reset window if expired
+            if ((now - entry.WindowStart).TotalMilliseconds > RATE_LIMIT_WINDOW_MS)
+            {
+                entry.WindowStart = now;
+                entry.MessageCount = 0;
+            }
+            
+            entry.MessageCount++;
+            return entry.MessageCount <= MAX_MESSAGES_PER_SECOND;
+        }
+    }
+
+    private class RateLimitEntry
+    {
+        public DateTime WindowStart { get; set; } = DateTime.UtcNow;
+        public int MessageCount { get; set; } = 0;
     }
 
     #endregion

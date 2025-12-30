@@ -54,40 +54,58 @@
                     BorderThickness="1"
                     CornerRadius="8"
                     ClipToBounds="True">
-                <DataGrid ItemsSource="{Binding Versions}"
-                          SelectedItem="{Binding SelectedVersion}"
-                          AutoGenerateColumns="False"
-                          IsReadOnly="True"
-                          HeadersVisibility="Column"
-                          GridLinesVisibility="Horizontal"
-                          HorizontalGridLinesBrush="#15ffffff"
-                          BorderThickness="0"
-                          Background="Transparent">
+                <Grid>
+                    <DataGrid ItemsSource="{Binding Versions}"
+                              SelectedItem="{Binding SelectedVersion}"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              HeadersVisibility="Column"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="#15ffffff"
+                              BorderThickness="0"
+                              Background="Transparent">
+                        
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Date" 
+                                                Binding="{Binding CreatedAtDisplay}" 
+                                                Width="160"/>
+                            <DataGridTextColumn Header="Size" 
+                                                Binding="{Binding FileSizeDisplay}" 
+                                                Width="100"/>
+                            <DataGridTextColumn Header="Reason" 
+                                                Binding="{Binding Reason}" 
+                                                Width="*"/>
+                            <DataGridTextColumn Header="Source" 
+                                                Binding="{Binding SourcePeerId}" 
+                                                Width="100"/>
+                        </DataGrid.Columns>
+                        
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Restore" Command="{Binding RestoreCommand}"/>
+                                <MenuItem Header="Open Location" Command="{Binding OpenLocationCommand}"/>
+                                <Separator/>
+                                <MenuItem Header="Delete" Command="{Binding DeleteCommand}" Foreground="#ff4444"/>
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                    </DataGrid>
                     
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Date" 
-                                            Binding="{Binding CreatedAtDisplay}" 
-                                            Width="160"/>
-                        <DataGridTextColumn Header="Size" 
-                                            Binding="{Binding FileSizeDisplay}" 
-                                            Width="100"/>
-                        <DataGridTextColumn Header="Reason" 
-                                            Binding="{Binding Reason}" 
-                                            Width="*"/>
-                        <DataGridTextColumn Header="Source" 
-                                            Binding="{Binding SourcePeerId}" 
-                                            Width="100"/>
-                    </DataGrid.Columns>
-                    
-                    <DataGrid.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="Restore" Command="{Binding RestoreCommand}"/>
-                            <MenuItem Header="Open Location" Command="{Binding OpenLocationCommand}"/>
-                            <Separator/>
-                            <MenuItem Header="Delete" Command="{Binding DeleteCommand}" Foreground="#ff4444"/>
-                        </ContextMenu>
-                    </DataGrid.ContextMenu>
-                </DataGrid>
+                    <!-- Empty state -->
+                    <StackPanel HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                IsVisible="{Binding !Versions.Count}">
+                        <TextBlock Text="No versions available"
+                                   FontSize="14"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   TextAlignment="Center"
+                                   FontWeight="Medium"/>
+                        <TextBlock Text="File versioning keeps backup copies&#x0a;when files are modified or synced"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource TextMutedBrush}"
+                                   TextAlignment="Center"
+                                   Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Grid>
             </Border>
 
             <!-- Actions -->

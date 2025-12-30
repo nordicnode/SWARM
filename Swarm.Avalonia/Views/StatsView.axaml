@@ -1,0 +1,289 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Swarm.Avalonia.ViewModels"
+             xmlns:lvc="using:LiveChartsCore.SkiaSharpView.Avalonia"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="800"
+             x:Class="Swarm.Avalonia.Views.StatsView"
+             x:DataType="vm:StatsViewModel">
+
+    <ScrollViewer>
+        <StackPanel Margin="30" Spacing="24">
+            
+            <!-- Header -->
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel>
+                    <TextBlock Text="Sync Statistics"
+                               FontSize="28"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="{Binding TrackingSince, StringFormat='Tracking since: {0}'}"
+                               FontSize="13"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Summary Cards Row -->
+            <Grid ColumnDefinitions="*,*,*,*" Margin="0,0,0,8">
+                
+                <!-- Total Files Synced -->
+                <Border Grid.Column="0" Classes="stat-card" Margin="0,0,12,0">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <PathIcon Data="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"
+                                      Width="16" Height="16"
+                                      Foreground="{StaticResource AccentPrimaryBrush}"/>
+                            <TextBlock Text="Files Synced"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="12"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding TotalFilesSynced}"
+                                   FontSize="28"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding TodayFilesSynced, StringFormat='Today: {0}'}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Total Uploaded -->
+                <Border Grid.Column="1" Classes="stat-card" Margin="6,0">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="↑" FontSize="16" 
+                                       Foreground="{StaticResource UploadBrush}"
+                                       FontWeight="Bold"/>
+                            <TextBlock Text="Uploaded"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="12"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding TotalUploaded}"
+                                   FontSize="28"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource UploadBrush}"
+                                   Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding TodayUploaded, StringFormat='Today: {0}'}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Total Downloaded -->
+                <Border Grid.Column="2" Classes="stat-card" Margin="6,0">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="↓" FontSize="16" 
+                                       Foreground="{StaticResource DownloadBrush}"
+                                       FontWeight="Bold"/>
+                            <TextBlock Text="Downloaded"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="12"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding TotalDownloaded}"
+                                   FontSize="28"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource DownloadBrush}"
+                                   Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding TodayDownloaded, StringFormat='Today: {0}'}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Conflicts Resolved -->
+                <Border Grid.Column="3" Classes="stat-card" Margin="12,0,0,0">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <PathIcon Data="M12,2L4,5V11.09C4,16.14 7.41,20.85 12,22C16.59,20.85 20,16.14 20,11.09V5L12,2M12,4L18,6.5V11.09C18,15.05 15.45,18.83 12,19.95C8.55,18.83 6,15.05 6,11.09V6.5L12,4"
+                                      Width="16" Height="16"
+                                      Foreground="{StaticResource StatusWarningBrush}"/>
+                            <TextBlock Text="Conflicts"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontSize="12"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding TotalConflicts}"
+                                   FontSize="28"
+                                   FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Margin="0,8,0,0"/>
+                        <TextBlock Text="{Binding TodayConflicts, StringFormat='Today: {0}'}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource TextMutedBrush}"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Files Synced Chart -->
+            <Border Classes="chart-card">
+                <StackPanel>
+                    <TextBlock Text="Files Synced (Last 30 Days)"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Margin="0,0,0,12"/>
+                    <lvc:CartesianChart Height="200"
+                                        Series="{Binding FilesSyncedSeries}"
+                                        XAxes="{Binding DateXAxes}"
+                                        YAxes="{Binding CountYAxes}"
+                                        TooltipPosition="Center"
+                                        ZoomMode="None"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Bandwidth Chart -->
+            <Border Classes="chart-card">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="24" Margin="0,0,0,12">
+                        <TextBlock Text="Bandwidth Usage (Last 30 Days)"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <!-- Legend -->
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Border Width="12" Height="12" CornerRadius="2" Background="{StaticResource UploadBrush}"/>
+                                <TextBlock Text="↑ Upload" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Border Width="12" Height="12" CornerRadius="2" Background="{StaticResource DownloadBrush}"/>
+                                <TextBlock Text="↓ Download" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                    <lvc:CartesianChart Height="200"
+                                        Series="{Binding BandwidthSeries}"
+                                        XAxes="{Binding DateXAxes}"
+                                        YAxes="{Binding BandwidthYAxes}"
+                                        TooltipPosition="Center"
+                                        ZoomMode="None"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Conflicts Chart -->
+            <Border Classes="chart-card">
+                <StackPanel>
+                    <TextBlock Text="Conflicts Resolved (Last 30 Days)"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Margin="0,0,0,12"/>
+                    <lvc:CartesianChart Height="150"
+                                        Series="{Binding ConflictsSeries}"
+                                        XAxes="{Binding DateXAxes}"
+                                        YAxes="{Binding CountYAxes}"
+                                        TooltipPosition="Center"
+                                        ZoomMode="None"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Peer Bandwidth Stats -->
+            <Border Classes="chart-card">
+                <StackPanel>
+                    <TextBlock Text="Bandwidth by Peer"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Margin="0,0,0,12"/>
+                    
+                    <Grid>
+                        <!-- Peer List -->
+                        <ItemsControl ItemsSource="{Binding PeerStats}"
+                                      IsVisible="{Binding HasPeerStats}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#08ffffff" 
+                                            CornerRadius="8" 
+                                            Padding="16,12"
+                                            Margin="0,0,0,8">
+                                        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding PeerName}"
+                                                           FontWeight="Medium"
+                                                           FontSize="14"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                                                <TextBlock Text="{Binding LastActivityDisplay, StringFormat='Last active: {0}'}"
+                                                           FontSize="11"
+                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                           Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                            
+                                            <StackPanel Grid.Column="1" Margin="24,0">
+                                                <TextBlock Text="↑ Uploaded" FontSize="10" 
+                                                           Foreground="{StaticResource TextMutedBrush}"/>
+                                                <TextBlock Text="{Binding Uploaded}"
+                                                           FontSize="13"
+                                                           FontWeight="Medium"
+                                                           Foreground="{StaticResource UploadBrush}"/>
+                                            </StackPanel>
+                                            
+                                            <StackPanel Grid.Column="2" Margin="24,0">
+                                                <TextBlock Text="↓ Downloaded" FontSize="10" 
+                                                           Foreground="{StaticResource TextMutedBrush}"/>
+                                                <TextBlock Text="{Binding Downloaded}"
+                                                           FontSize="13"
+                                                           FontWeight="Medium"
+                                                           Foreground="{StaticResource DownloadBrush}"/>
+                                            </StackPanel>
+                                            
+                                            <StackPanel Grid.Column="3" Margin="24,0">
+                                                <TextBlock Text="Files" FontSize="10" 
+                                                           Foreground="{StaticResource TextMutedBrush}"/>
+                                                <TextBlock Text="{Binding FilesExchanged}"
+                                                           FontSize="13"
+                                                           FontWeight="Medium"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        
+                        <!-- Empty State -->
+                        <StackPanel HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    IsVisible="{Binding !HasPeerStats}"
+                                    Margin="0,24">
+                            <TextBlock Text="No peer activity recorded yet"
+                                       FontSize="13"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       TextAlignment="Center"/>
+                            <TextBlock Text="Statistics will appear here as you sync with peers"
+                                       FontSize="11"
+                                       Foreground="{StaticResource TextMutedBrush}"
+                                       Opacity="0.7"
+                                       TextAlignment="Center"
+                                       Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+
+    <UserControl.Styles>
+        <Style Selector="Border.stat-card">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="20"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderLightBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+        <Style Selector="Border.chart-card">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="20"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderLightBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+    </UserControl.Styles>
+</UserControl>

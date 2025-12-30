@@ -95,8 +95,7 @@ public class ConnectionManager : IDisposable
             var remoteEndpoint = socket.RemoteEndPoint as IPEndPoint;
             if (remoteEndpoint != null)
             {
-                var ip = remoteEndpoint.Address.ToString();
-                if (ip.StartsWith("127.") || ip.StartsWith("192.168.") || ip.StartsWith("10.") || ip.StartsWith("172."))
+                if (IsPrivateNetwork(remoteEndpoint.Address))
                 {
                     // Likely LAN - assume fast
                     return Task.FromResult(2);
@@ -111,6 +110,37 @@ public class ConnectionManager : IDisposable
             // If we can't measure, assume medium speed
             return Task.FromResult(25);
         }
+    }
+
+    /// <summary>
+    /// Checks if an IP address is in a private/local network range.
+    /// </summary>
+    private static bool IsPrivateNetwork(IPAddress address)
+    {
+        var ip = address.ToString();
+        
+        // IPv4 private ranges
+        if (ip.StartsWith("127.")) return true;           // Loopback
+        if (ip.StartsWith("10.")) return true;            // 10.0.0.0/8
+        if (ip.StartsWith("192.168.")) return true;       // 192.168.0.0/16
+        
+        // 172.16.0.0/12 range (172.16.x.x - 172.31.x.x)
+        if (ip.StartsWith("172."))
+        {
+            var parts = ip.Split('.');
+            if (parts.Length >= 2 && int.TryParse(parts[1], out var secondOctet))
+            {
+                if (secondOctet >= 16 && secondOctet <= 31) return true;
+            }
+        }
+        
+        // IPv6 link-local (fe80::/10)
+        if (ip.StartsWith("fe80:", StringComparison.OrdinalIgnoreCase)) return true;
+        
+        // IPv6 loopback
+        if (ip == "::1") return true;
+        
+        return false;
     }
 
     /// <summary>

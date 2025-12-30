@@ -26,6 +26,8 @@ public class WindowsSecureKeyStorage : ISecureKeyStorage
 
     public void StoreKey(string keyName, byte[] keyData)
     {
+        ValidateKeyName(keyName);
+        
         try
         {
             // Encrypt the key data using DPAPI with CurrentUser scope
@@ -51,6 +53,8 @@ public class WindowsSecureKeyStorage : ISecureKeyStorage
 
     public byte[]? RetrieveKey(string keyName)
     {
+        ValidateKeyName(keyName);
+        
         var filePath = GetKeyPath(keyName);
         if (!File.Exists(filePath))
             return null;
@@ -96,11 +100,14 @@ public class WindowsSecureKeyStorage : ISecureKeyStorage
 
     public bool KeyExists(string keyName)
     {
+        ValidateKeyName(keyName);
         return File.Exists(GetKeyPath(keyName));
     }
 
     public void DeleteKey(string keyName)
     {
+        ValidateKeyName(keyName);
+        
         var filePath = GetKeyPath(keyName);
         if (File.Exists(filePath))
         {
@@ -121,6 +128,18 @@ public class WindowsSecureKeyStorage : ISecureKeyStorage
         var fileData = File.ReadAllBytes(filePath);
         return fileData.Length <= ProtectedFileHeader.Length ||
                !fileData.AsSpan(0, ProtectedFileHeader.Length).SequenceEqual(ProtectedFileHeader);
+    }
+
+    /// <summary>
+    /// Validates key name to prevent path traversal and injection attacks.
+    /// </summary>
+    private static void ValidateKeyName(string keyName)
+    {
+        if (string.IsNullOrWhiteSpace(keyName))
+            throw new ArgumentException("Key name cannot be empty", nameof(keyName));
+            
+        if (keyName.Contains("..") || keyName.Contains('/') || keyName.Contains('\\'))
+            throw new ArgumentException("Key name contains invalid characters", nameof(keyName));
     }
 
     private string GetKeyPath(string keyName)
