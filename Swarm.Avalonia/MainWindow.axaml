@@ -274,12 +274,6 @@
                                 </Button>
                             </StackPanel>
                             
-                            <!-- Version Info Row -->
-                            <TextBlock Text="v0.4.0-beta" 
-                                       Foreground="{StaticResource TextMutedBrush}" 
-                                       FontSize="11" 
-                                       Margin="16,0,0,8"/>
-                            
                             <!-- Status Indicator -->
                             <Border Background="#10ffffff" CornerRadius="8" Padding="12,8">
                                 <Grid ColumnDefinitions="Auto,*">
@@ -295,6 +289,13 @@
                                                TextTrimming="CharacterEllipsis"/>
                                 </Grid>
                             </Border>
+                            
+                            <!-- Version Info -->
+                            <TextBlock Text="v0.4.0-beta" 
+                                       Foreground="{StaticResource TextMutedBrush}" 
+                                       FontSize="10" 
+                                       HorizontalAlignment="Center"
+                                       Margin="0,8,0,0"/>
                             
                             <!-- Schedule Paused Indicator -->
                             <Border Background="#20fbbf24" 
