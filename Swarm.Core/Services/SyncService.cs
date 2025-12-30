@@ -95,6 +95,15 @@ public class SyncService : IDisposable
     public event Action<SyncProgress>? SyncProgressChanged;
     
     /// <summary>
+    /// Notifies subscribers that sync status has changed (e.g., paused/resumed).
+    /// </summary>
+    public void NotifyStatusChanged(string? status = null)
+    {
+        var statusMessage = status ?? (_settings.IsSyncCurrentlyPaused ? "Sync paused" : "Sync enabled - Watching for changes");
+        SyncStatusChanged?.Invoke(statusMessage);
+    }
+    
+    /// <summary>
     /// Raised when a deep rescan is recommended (e.g., after FSW buffer overflow).
     /// External services like RescanService can subscribe to this.
     /// </summary>

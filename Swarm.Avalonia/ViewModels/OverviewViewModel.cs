@@ -243,6 +243,11 @@ public class OverviewViewModel : ViewModelBase, IDisposable
             SyncStatus = "Disabled";
             SyncStatusColor = "#6b7280"; // Gray
         }
+        else if (_settings.IsSyncCurrentlyPaused)
+        {
+            SyncStatus = "Paused";
+            SyncStatusColor = "#fbbf24"; // Yellow
+        }
         else if (_syncService.IsRunning)
         {
             SyncStatus = "Active";

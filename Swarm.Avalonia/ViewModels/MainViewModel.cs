@@ -348,10 +348,11 @@ public class MainViewModel : ViewModelBase, IDisposable
                 
                 _activityLogService.LogInfo(logMessage);
                 
-                // Refresh UI
-                OnPropertyChanged(nameof(IsPaused));
-                OnPropertyChanged(nameof(PauseIconGeometry));
-                OnPropertyChanged(nameof(PauseStatusText));
+                // Notify sync service to update status subscribers (dashboard, footer)
+                _syncService.NotifyStatusChanged();
+                
+                // Refresh pause-related UI properties
+                RefreshPauseState();
                 
                 ToastService.Show("Sync Paused", logMessage, NotificationType.Information);
             }
@@ -360,6 +361,24 @@ public class MainViewModel : ViewModelBase, IDisposable
         {
             System.Diagnostics.Debug.WriteLine($"Pause dialog error: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Resumes sync by clearing the pause timer.
+    /// </summary>
+    public void ResumeSync()
+    {
+        _settings.ResumeSync();
+        
+        // Notify sync service to update status in dashboard and footer
+        _syncService.NotifyStatusChanged();
+        
+        // Refresh pause-related UI properties
+        RefreshPauseState();
+        
+        // Log resume event
+        _activityLogService.LogInfo("Sync resumed manually");
+        ToastService.Show("Sync Resumed", "Sync has been resumed.", NotificationType.Information);
     }
 
     public void ApplySettings(Settings settings)
@@ -453,6 +472,17 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// Whether there is an active pause with a reason or time.
     /// </summary>
     public bool HasPauseStatus => !string.IsNullOrEmpty(PauseStatusText);
+
+    /// <summary>
+    /// Refreshes all pause-related UI properties (called when pause state changes).
+    /// </summary>
+    public void RefreshPauseState()
+    {
+        OnPropertyChanged(nameof(IsPaused));
+        OnPropertyChanged(nameof(PauseIconGeometry));
+        OnPropertyChanged(nameof(PauseStatusText));
+        OnPropertyChanged(nameof(HasPauseStatus));
+    }
 
     // Navigation state properties
     public bool IsOverviewSelected

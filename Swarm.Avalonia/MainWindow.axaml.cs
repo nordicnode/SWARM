@@ -167,9 +167,7 @@ public partial class MainWindow : Window
     {
         if (DataContext is MainViewModel vm)
         {
-            vm.Settings.ResumeSync();
-            // Log resume event
-            vm.ToastService.Show("Sync Resumed", "Sync has been resumed.", global::Avalonia.Controls.Notifications.NotificationType.Information);
+            vm.ResumeSync();
         }
     }
 }
