@@ -204,6 +204,7 @@ public class AppTrayViewModel : INotifyPropertyChanged
         ExitCommand = new RelayCommand(Exit);
         OpenSyncFolderCommand = new RelayCommand(OpenSyncFolder);
         ToggleSyncCommand = _mainViewModel.ToggleSyncCommand;
+        PauseSyncCommand = _mainViewModel.PauseSyncCommand;
         OpenSettingsCommand = new RelayCommand(OpenSettings);
         OpenActivityLogCommand = new RelayCommand(OpenActivityLog);
         OpenConflictHistoryCommand = new RelayCommand(OpenConflictHistory);
@@ -218,6 +219,7 @@ public class AppTrayViewModel : INotifyPropertyChanged
     public ICommand ExitCommand { get; }
     public ICommand OpenSyncFolderCommand { get; }
     public ICommand ToggleSyncCommand { get; }
+    public ICommand PauseSyncCommand { get; }
     public ICommand OpenSettingsCommand { get; }
     public ICommand OpenActivityLogCommand { get; }
     public ICommand OpenConflictHistoryCommand { get; }

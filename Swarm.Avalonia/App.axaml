@@ -26,6 +26,7 @@
                         <NativeMenuItemSeparator />
                         <NativeMenuItem Header="Open Sync Folder" Command="{ReflectionBinding OpenSyncFolderCommand}" />
                         <NativeMenuItem Header="Toggle Sync" Command="{ReflectionBinding ToggleSyncCommand}" />
+                        <NativeMenuItem Header="Pause Timer..." Command="{ReflectionBinding PauseSyncCommand}" />
                         <NativeMenuItemSeparator />
                         <NativeMenuItem Header="Activity Log" Command="{ReflectionBinding OpenActivityLogCommand}" />
                         <NativeMenuItem Header="Conflict History" Command="{ReflectionBinding OpenConflictHistoryCommand}" />

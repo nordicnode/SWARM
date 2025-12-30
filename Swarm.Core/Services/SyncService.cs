@@ -254,6 +254,13 @@ public class SyncService : IDisposable
     /// </summary>
     public async Task ForceSyncAsync()
     {
+        // Don't sync if paused
+        if (_settings.IsSyncCurrentlyPaused)
+        {
+            SyncStatusChanged?.Invoke("Sync paused");
+            return;
+        }
+
         SyncStatusChanged?.Invoke("Syncing...");
         
         // Rebuild local state
@@ -491,6 +498,13 @@ public class SyncService : IDisposable
     {
         try
         {
+            // Skip if sync is paused
+            if (_settings.IsSyncCurrentlyPaused)
+            {
+                _logger.LogDebug("[SYNC] Skipping file change while sync is paused: {Path}", fullPath);
+                return;
+            }
+
             var relativePath = Path.GetRelativePath(_settings.SyncFolderPath, fullPath);
             LogActivityDebounced(relativePath, action.ToString().ToLower());
             
@@ -506,6 +520,13 @@ public class SyncService : IDisposable
     {
         try
         {
+            // Skip if sync is paused
+            if (_settings.IsSyncCurrentlyPaused)
+            {
+                _logger.LogDebug("[SYNC] Skipping rename while sync is paused: {OldPath} -> {NewPath}", oldPath, newPath);
+                return;
+            }
+
             var oldRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, oldPath);
             var newRelativePath = Path.GetRelativePath(_settings.SyncFolderPath, newPath);
             _activityLogService?.LogFileSync(newRelativePath, $"renamed from {oldRelativePath}");
@@ -745,6 +766,13 @@ public class SyncService : IDisposable
 
     private async Task BroadcastChangeToAllPeers(SyncedFile syncFile, string fullPath)
     {
+        // Don't broadcast if sync is paused
+        if (_settings.IsSyncCurrentlyPaused)
+        {
+            _logger.LogDebug("[SYNC] Skipping broadcast while sync is paused: {Path}", syncFile.RelativePath);
+            return;
+        }
+
         foreach (var peer in _discoveryService.Peers.Where(p => p.IsSyncEnabled))
         {
             try
