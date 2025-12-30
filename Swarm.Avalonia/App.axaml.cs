@@ -16,6 +16,7 @@ using Swarm.Core.Abstractions;
 using Swarm.Avalonia.Services;
 using Swarm.Core.Models;
 using Swarm.Core.Security;
+using Swarm.Core.Data;
 
 namespace Swarm.Avalonia;
 
@@ -136,6 +137,17 @@ public partial class App : Application
             return new DiscoveryService(settings.LocalId, crypto, settings, logger, dispatcher);
         });
         services.AddSingleton<IDiscoveryService>(sp => sp.GetRequiredService<DiscoveryService>());
+        
+        // Database context for file state and checkpoints
+        services.AddSingleton<FileStateDbContext>(sp => {
+            var settings = sp.GetRequiredService<Settings>();
+            var dbPath = Path.Combine(settings.SyncFolderPath, ".swarm-cache", "filestate.db");
+            Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
+            var context = new FileStateDbContext(dbPath);
+            context.Database.EnsureCreated();
+            return context;
+        });
+        
         services.AddSingleton<TransferCheckpointService>();
         services.AddSingleton<TransferService>(sp => new TransferService(
             sp.GetRequiredService<Settings>(),
