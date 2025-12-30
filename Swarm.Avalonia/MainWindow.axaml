@@ -222,25 +222,13 @@
                                          Foreground="{StaticResource AccentPrimaryBrush}"
                                          Background="#20FFFFFF"/>
 
-                            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto" Margin="0,0,0,8">
-                                <!-- Version Info -->
-                                <TextBlock Text="v0.4.0-beta" 
-                                           Foreground="{StaticResource TextMutedBrush}" 
-                                           FontSize="11" 
-                                           VerticalAlignment="Center"
-                                           Margin="16,0,12,0"/>
-                                
-                                <!-- Separator -->
-                                <Border Grid.Column="1" Width="1" Height="16" 
-                                        Background="{StaticResource SurfaceBorderBrush}" 
-                                        Margin="0,0,12,0" VerticalAlignment="Center"/>
-
+                            <!-- Action Icons Row -->
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="12,0,12,8">
                                 <!-- Help Button -->
-                                <Button Grid.Column="2" 
-                                        Classes="icon"
+                                <Button Classes="icon"
                                         Click="HelpButton_Click"
                                         ToolTip.Tip="Keyboard Shortcuts (F1)"
-                                        Margin="0,0,8,0">
+                                        Margin="0,0,4,0">
                                     <Path Data="{Binding HelpIconGeometry}"
                                           Fill="{Binding $parent[Button].Foreground}"
                                           Stretch="Uniform"
@@ -249,15 +237,11 @@
                                           VerticalAlignment="Center"/>
                                 </Button>
 
-                                <!-- Spacer -->
-                                <Border Grid.Column="3"/>
-
                                 <!-- Activity Log Button -->
-                                <Button Grid.Column="4" 
-                                        Command="{Binding OpenActivityLogCommand}"
+                                <Button Command="{Binding OpenActivityLogCommand}"
                                         Classes="icon"
                                         ToolTip.Tip="Activity Log"
-                                        Margin="0,0,8,0">
+                                        Margin="0,0,4,0">
                                     <Path Data="{Binding ActivityLogIconGeometry}"
                                           Fill="{Binding $parent[Button].Foreground}"
                                           Stretch="Uniform"
@@ -267,11 +251,10 @@
                                 </Button>
 
                                 <!-- Quick Pause/Resume Button -->
-                                <Button Grid.Column="5" 
-                                        Command="{Binding ToggleSyncCommand}"
+                                <Button Command="{Binding ToggleSyncCommand}"
                                         Classes="icon"
                                         ToolTip.Tip="Quick Pause/Resume (Space)"
-                                        Margin="0,0,8,0">
+                                        Margin="0,0,4,0">
                                     <Path Data="{Binding PauseIconGeometry}"
                                           Fill="{Binding $parent[Button].Foreground}"
                                           Stretch="Uniform"
@@ -281,17 +264,21 @@
                                 </Button>
                                 
                                 <!-- Pause Timer Button (opens dialog with duration/reason) -->
-                                <Button Grid.Column="6" 
-                                        Command="{Binding PauseSyncCommand}"
+                                <Button Command="{Binding PauseSyncCommand}"
                                         Classes="icon"
                                         ToolTip.Tip="Pause with timer..."
-                                        Margin="0,0,16,0"
                                         IsVisible="{Binding !IsPaused}">
                                     <PathIcon Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"
                                               Width="14" Height="14"
                                               Foreground="{StaticResource TextSecondaryBrush}"/>
                                 </Button>
-                            </Grid>
+                            </StackPanel>
+                            
+                            <!-- Version Info Row -->
+                            <TextBlock Text="v0.4.0-beta" 
+                                       Foreground="{StaticResource TextMutedBrush}" 
+                                       FontSize="11" 
+                                       Margin="16,0,0,8"/>
                             
                             <!-- Status Indicator -->
                             <Border Background="#10ffffff" CornerRadius="8" Padding="12,8">
