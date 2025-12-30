@@ -1,0 +1,16 @@
+2025-12-29 21:04:09.766 -08:00 [INF] Swarm Avalonia application started.
+2025-12-29 21:04:10.877 -08:00 [INF] Initialized SQLite file state repository: C:\Users\Mikey\Documents\SWARM\Synced\.swarm-state.db
+2025-12-29 21:04:10.901 -08:00 [INF] [ShareLink] Loaded 1 share links
+2025-12-29 21:04:10.902 -08:00 [INF] BandwidthTrackingService initialized
+2025-12-29 21:04:10.926 -08:00 [INF] IPv6 discovery enabled
+2025-12-29 21:04:10.940 -08:00 [INF] Stored key 'identity' with DPAPI protection
+2025-12-29 21:04:10.940 -08:00 [INF] Generated new identity key (stored in secure storage)
+2025-12-29 21:04:11.121 -08:00 [DBG] SQLite repository ready with 0 entries
+2025-12-29 21:04:11.129 -08:00 [INF] Built initial state. Cache hits: 0, Misses/Updates: 0. Total tracked: 0
+2025-12-29 21:04:11.135 -08:00 [DBG] Saved 0 file states to SQLite
+2025-12-29 21:04:11.136 -08:00 [INF] SyncService started, watching: C:\Users\Mikey\Documents\SWARM\Synced
+2025-12-29 21:04:20.117 -08:00 [DBG] SQLite repository ready with 0 entries
+2025-12-29 21:04:20.118 -08:00 [INF] Built initial state. Cache hits: 0, Misses/Updates: 0. Total tracked: 0
+2025-12-29 21:04:20.118 -08:00 [DBG] Saved 0 file states to SQLite
+2025-12-29 21:04:20.122 -08:00 [INF] SyncService started, watching: C:\Users\Mikey\Documents\SWARM\Synced
+2025-12-29 21:06:11.486 -08:00 [INF] Swarm Avalonia application exiting.
