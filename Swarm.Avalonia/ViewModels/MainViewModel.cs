@@ -353,8 +353,6 @@ public class MainViewModel : ViewModelBase, IDisposable
                 
                 // Refresh pause-related UI properties
                 RefreshPauseState();
-                
-                ToastService.Show("Sync Paused", logMessage, NotificationType.Information);
             }
         }
         catch (Exception ex)
@@ -378,7 +376,6 @@ public class MainViewModel : ViewModelBase, IDisposable
         
         // Log resume event
         _activityLogService.LogInfo("Sync resumed manually");
-        ToastService.Show("Sync Resumed", "Sync has been resumed.", NotificationType.Information);
     }
 
     public void ApplySettings(Settings settings)
